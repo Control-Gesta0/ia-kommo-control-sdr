@@ -8,11 +8,12 @@ import { guardarComentarioIncoming, iniciarConversa } from '../lib/iniciar'
 import { sleep } from '../lib/kommo'
 
 /**
- * Entrada do lead de indicação. Duas origens, mesma rotina (idempotente):
+ * Entrada do lead de indicação (idempotente). NÃO aceita lead: o aceite é só no
+ * navegador. Aqui a IA é avisada de que o lead JÁ foi aceito e manda a 1ª mensagem.
  *
- * 1. Userscript (JSON, ?secret=INDICACAO_SECRET):
+ * 1. Userscript (o caminho principal; JSON, ?secret=INDICACAO_SECRET):
  *      { leadId, comentario, origem: "userscript" }
- * 2. Webhook da Kommo (form-urlencoded, ?secret=WEBHOOK_SECRET), eventos:
+ * 2. Reserva opcional, webhook da Kommo (form-urlencoded, ?secret=WEBHOOK_SECRET):
  *      add_unsorted    → unsorted[add][i][lead_id] + source_data: GUARDA o Comment (ainda não inicia)
  *      delete_unsorted → unsorted[delete][i][action]=accept + ...[accept_result][leads][0]: INICIA
  *      status_lead     → leads[status][i][id]: INICIA se o lead estiver na etapa de entrada

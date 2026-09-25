@@ -164,8 +164,11 @@ export function buildTools(porta: Porta): OpenAI.Chat.ChatCompletionTool[] {
           description: 'Marca a reunião no horário que o LEAD ESCOLHEU entre as opções oferecidas. Só chame depois que ele escolheu ou confirmou um horário. Se der erro, siga a instrução do erro. Depois do sucesso, confirme dia e hora ao lead e NÃO faça pergunta.',
           parameters: {
             type: 'object',
-            properties: { horario: { type: 'string', description: 'O horário escolhido, exatamente como foi oferecido (ex.: "amanhã, quinta 26/09 às 10h")' } },
-            required: ['horario'],
+            properties: {
+              horario: { type: 'string', description: 'O horário escolhido, exatamente como foi oferecido (ex.: "amanhã, quinta 26/09 às 10h")' },
+              decisor_convidado: { type: 'string', description: 'Se quem decide é OUTRA pessoa: nome/cargo dela, que foi convidada para a reunião. Vazio se o próprio lead decide.' },
+            },
+            required: ['horario', 'decisor_convidado'],
             additionalProperties: false,
           },
         },
@@ -368,8 +371,9 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
         if (!cfg.ativa || !cfg.responsavelId) return err('Agenda não configurada.')
         const state = await port.getState()
         if (state.reuniao) return err(`A reunião já está marcada (${state.reuniao.label}). Confirme esse horário ao lead.`)
-        const faltando = CRM_MAP.exigirAntesDeAgendar.filter(key => !state.respostas?.[key] && !(state.semResposta || []).includes(key))
-        if (faltando.length) return err(`Antes de marcar, falta: ${faltando.map(key => campoByKey(key)?.name || key).join('; ')}. Pergunte isso primeiro (uma pergunta) e grave com salvar_respostas.`)
+        const respondido = (key: string) => !!state.respostas?.[key] || (state.semResposta || []).includes(key)
+        const faltando = CRM_MAP.exigirAntesDeAgendar.filter(grupo => !grupo.some(respondido))
+        if (faltando.length) return err(`Antes de marcar, falta (CHAMP): ${faltando.map(g => g.map(key => campoByKey(key)?.name || key).join(' OU ')).join('; ')}. Pergunte o próximo item (uma pergunta) e grave com salvar_respostas.`)
         const oferta: Slot[] = state.oferta || []
         const agora = ctx.agora ?? Date.now()
         if (!oferta.length) return err('Nenhum horário foi oferecido ainda. Chame consultar_horarios e ofereça as opções.')
@@ -394,7 +398,8 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
           return err('Esse horário acabou de ser ocupado. Peça desculpa, chame consultar_horarios e ofereça novas opções.')
         }
         const resumoCampos = snapshot(porta, state).preenchidos.map(p => `${p.campo.name}: ${p.valor}`).join(' · ')
-        const texto = `Reunião (indicação Kommo) · ${resumoCampos}${state.comentario ? ` · Comment: ${state.comentario.slice(0, 300)}` : ''}`.slice(0, 1000)
+        const convidado = String(input.decisor_convidado || '').trim().slice(0, 120)
+        const texto = `Reunião (indicação Kommo) · ${convidado ? `Decisor convidado: ${convidado} · ` : ''}${resumoCampos}${state.comentario ? ` · Comment: ${state.comentario.slice(0, 300)}` : ''}`.slice(0, 1000)
         const taskId = await port.criarReuniao({ ini: slot.ini, fim: slot.fim, texto })
         await port.patchState({ reuniao: { ...slot, taskId, em: new Date(agora).toISOString() }, oferta: [] })
         // Efeitos que só acontecem DEPOIS da reunião existir
@@ -404,8 +409,8 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
           const lead = await port.getLead()
           if (lead.pipelineId === et.pipelineId && !CRM_MAP.etapasProtegidas.includes(lead.statusId) && lead.statusId !== et.id) await port.moveStage(et.id, et.pipelineId)
         }
-        await aplicarFinalizacao(ctx, 'agendado', `Reunião marcada para ${slot.label}. ${resumoCampos}`)
-        return ok(`Reunião marcada: ${slot.label} (${cfg.duracaoMin} min). Confirme ao lead o dia e a hora com essas palavras, diga que o especialista chama no horário e NÃO faça pergunta.`, { handoff: true })
+        await aplicarFinalizacao(ctx, 'agendado', `Reunião marcada para ${slot.label}.${convidado ? ` Decisor convidado: ${convidado}.` : ''} ${resumoCampos}`)
+        return ok(`Reunião marcada: ${slot.label} (${cfg.duracaoMin} min). Confirme ao lead o dia e a hora com essas palavras${convidado ? `, reforce que ${convidado} participa junto` : ''}, diga que o especialista chama no horário e NÃO faça pergunta.`, { handoff: true })
       }
 
       case 'mover_etapa': {

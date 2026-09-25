@@ -39,7 +39,7 @@ export function problemasOffline(): { problems: string[]; avisos: string[] } {
     for (const key of [...p.roteiro, ...p.obrigatorios]) if (!CRM_MAP.campos[key]) problems.push(`porta "${p.id}": campo "${key}" não existe em CRM_MAP.campos`)
   }
   if (!CRM_MAP.portas.find(p => p.id === CRM_MAP.menu.portaUnica)) problems.push(`menu.portaUnica "${CRM_MAP.menu.portaUnica}" não existe`)
-  for (const key of CRM_MAP.exigirAntesDeAgendar) if (!CRM_MAP.campos[key]) problems.push(`exigirAntesDeAgendar: campo "${key}" não existe`)
+  for (const key of CRM_MAP.exigirAntesDeAgendar.flat()) if (!CRM_MAP.campos[key]) problems.push(`exigirAntesDeAgendar: campo "${key}" não existe`)
 
   if (!CRM_MAP.entrada.pipelineId) problems.push('entrada.pipelineId = 0 (funil onde o lead aceito cai)')
   if (CRM_MAP.agenda.ativa) {

@@ -58,27 +58,31 @@ var FiltroIndicacao = (function () {
   ]
 
   /**
-   * modo "inteligente" (padrão): teste explícito bloqueia; a palavra "teste" solta
-   *   também bloqueia, EXCETO em contexto de trial ("estou no período de teste do Kommo").
-   * modo "estrito": qualquer ocorrência da palavra bloqueia, sem exceção.
-   * Retorna { teste, nivel: 'frase'|'so-lixo'|'palavra'|'nenhum', motivo }
+   * Camada 1 (regras, instantânea, igual no navegador e no servidor):
+   *   - frase de teste explícita ou comentário só com "teste"  → teste, certeza
+   *   - nenhuma palavra de teste                                → real, certeza
+   *   - a palavra aparece dentro de uma frase maior             → AMBÍGUO
+   * Ambíguo é decidido pela INTENÇÃO (camada 2: IA em /api/classificar). Sem a IA,
+   * vale o palpite abaixo: contexto de trial/avaliação do sistema passa, o resto bloqueia.
+   * modo "estrito": qualquer ocorrência da palavra bloqueia, sem ambíguo.
+   * Retorna { teste, ambiguo, nivel: 'frase'|'so-lixo'|'palavra'|'nenhum', motivo }
    */
   function classificarTeste(comentario, modo) {
     var n = normalizar(comentario)
-    if (!n) return { teste: false, nivel: 'nenhum', motivo: 'comentário vazio' }
+    if (!n) return { teste: false, ambiguo: false, nivel: 'nenhum', motivo: 'comentário vazio' }
     for (var i = 0; i < FRASES_TESTE.length; i++) {
-      if ((' ' + n + ' ').indexOf(' ' + FRASES_TESTE[i] + ' ') >= 0) return { teste: true, nivel: 'frase', motivo: 'frase de teste: "' + FRASES_TESTE[i] + '"' }
+      if ((' ' + n + ' ').indexOf(' ' + FRASES_TESTE[i] + ' ') >= 0) return { teste: true, ambiguo: false, nivel: 'frase', motivo: 'frase de teste: "' + FRASES_TESTE[i] + '"' }
     }
-    if (SO_LIXO.test(n) && PALAVRA_TESTE.test(n)) return { teste: true, nivel: 'so-lixo', motivo: 'comentário só com palavra de teste' }
-    if (SO_LIXO.test(n) && n.length <= 12) return { teste: true, nivel: 'so-lixo', motivo: 'comentário sem conteúdo ("' + n + '")' }
+    if (SO_LIXO.test(n) && PALAVRA_TESTE.test(n)) return { teste: true, ambiguo: false, nivel: 'so-lixo', motivo: 'comentário só com palavra de teste' }
+    if (SO_LIXO.test(n) && n.length <= 12) return { teste: true, ambiguo: false, nivel: 'so-lixo', motivo: 'comentário sem conteúdo ("' + n + '")' }
     var m = PALAVRA_TESTE.exec(n)
-    if (!m) return { teste: false, nivel: 'nenhum', motivo: 'sem sinal de teste' }
+    if (!m) return { teste: false, ambiguo: false, nivel: 'nenhum', motivo: 'sem sinal de teste' }
     if (modo !== 'estrito') {
       for (var j = 0; j < EXCECOES_TRIAL.length; j++) {
-        if (EXCECOES_TRIAL[j].test(n)) return { teste: false, nivel: 'nenhum', motivo: 'palavra "' + m[1] + '" em contexto de trial/avaliação do sistema' }
+        if (EXCECOES_TRIAL[j].test(n)) return { teste: false, ambiguo: true, nivel: 'palavra', motivo: 'palavra "' + m[1] + '" em contexto de trial/avaliação do sistema' }
       }
     }
-    return { teste: true, nivel: 'palavra', motivo: 'palavra de teste: "' + m[1] + '"' }
+    return { teste: true, ambiguo: modo !== 'estrito', nivel: 'palavra', motivo: 'palavra de teste: "' + m[1] + '"' }
   }
 
   return { normalizar: normalizar, extrairComentario: extrairComentario, classificarTeste: classificarTeste }

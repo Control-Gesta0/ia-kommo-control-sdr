@@ -18,25 +18,38 @@
 import type { AgendaConfig, Alerta, Campo, Etapa, Porta } from './crm-map-types'
 export type { AgendaConfig, Alerta, Campo, CampoTipo, Etapa, Porta } from './crm-map-types'
 
+// CHAMP: Challenges (organização + dor + vendedores) · Authority (decisor) ·
+// Money (faturamento ou nº de usuários) · Prioritization (quando começar)
 const CAMPOS = {
-  objetivo: {
-    key: 'objetivo', id: 0, kommoName: '[PREENCHER: campo "Necessidade" ou similar]', name: 'O que quer resolver com o Kommo', type: 'textarea',
-    sinal: /[a-zà-ú]{4,}/i, pergunta: 'O que vocês querem resolver primeiro com o Kommo?',
+  organizacao: {
+    key: 'organizacao', id: 0, name: 'Onde organizam os leads hoje', type: 'text',
+    sinal: /planilha|excel|sheets|caderno|papel|whats|kommo|amo|crm|sistema|agenda|cabe[cç]a|mem[oó]ria|google|trello|notion|pipedrive|\brd\b|hubspot|bitrix|ploomes|anot|nada|nenhum|lugar nenhum|n[aã]o (organiz|temos|tenho|usamos)/i,
+    pergunta: 'Hoje vocês organizam os leads onde, em planilha, no próprio WhatsApp ou em algum sistema?',
   },
-  equipe: {
-    key: 'equipe', id: 0, kommoName: '[PREENCHER]', name: 'Quantas pessoas vão usar o Kommo', type: 'text',
-    sinal: /\d|um|uma|dois|duas|tr[eê]s|quatro|cinco|seis|sete|oito|nove|dez|vinte|s[oó] eu|sozinh|equipe|time|vendedor|pessoa|usu[aá]rio|atendente/i,
-    pergunta: 'Quantas pessoas vão usar o Kommo no dia a dia?',
+  vendedores: {
+    key: 'vendedores', id: 0, name: 'Quantos vendedores usariam o Kommo', type: 'text',
+    sinal: /\d|\b(um|uma|dois|duas|tr[eê]s|quatro|cinco|seis|sete|oito|nove|dez|vinte|trinta)\b|s[oó] eu|sozinh|vendedor|pessoa|usu[aá]rio|atendente|consultor|corretor|equipe|time/i,
+    pergunta: 'Quantos vendedores usariam o Kommo no dia a dia?',
   },
-  situacao: {
-    key: 'situacao', id: 0, kommoName: '[PREENCHER]', name: 'Onde está hoje (já usa o Kommo, outro CRM, planilha)', type: 'text',
-    sinal: /kommo|amo|crm|planilha|excel|caderno|whats|trial|per[ií]odo|teste|pipedrive|rd|hubspot|bitrix|ploomes|nada|nenhum|come[cç]ando|j[aá] (uso|usamos|tenho|temos)|ainda n[aã]o|n[aã]o (uso|usamos|tenho|temos)/i,
-    pergunta: 'Vocês já usam o Kommo ou ainda estão em outra ferramenta?',
+  dor: {
+    key: 'dor', id: 0, name: 'O que mais incomoda hoje (perder lead, não saber a etapa, falta de relatório)', type: 'textarea',
+    sinal: /perd|esquec|some|sum|escap|etapa|fase|onde (est|par)|relat[oó]rio|n[uú]mero|m[eé]trica|indicador|controle|acompanh|organiz|bagun|demor|follow|retorno|respond|resposta|vis[aã]o|gest[aã]o|funil|atendimento|whats/i,
+    pergunta: 'O que mais incomoda hoje: perder lead no caminho, não saber em que etapa cada um está ou não ter relatório?',
   },
-  prazo: {
-    key: 'prazo', id: 0, kommoName: '[PREENCHER]', name: 'Para quando precisa', type: 'text',
-    sinal: /semana|m[eê]s|dia|j[aá]|urgente|agora|logo|ano|hoje|amanh|r[aá]pido|pressa|sem pressa|quanto antes|\d/i,
-    pergunta: 'Para quando vocês precisam disso funcionando?',
+  decisor: {
+    key: 'decisor', id: 0, name: 'Quem decide a contratação', type: 'text',
+    sinal: /\beu\b|mim|s[oó]ci[oa]|dono|dona|diretor|gerente|gestor|decid|chefe|marido|esposa|mulher|pai|m[aã]e|junto|conselho|ceo|financeiro|propriet|presidente|patr[aã]o|\bnós\b|\bnos dois\b/i,
+    pergunta: 'A decisão de contratar passa só por você ou tem mais alguém junto?',
+  },
+  faturamento: {
+    key: 'faturamento', id: 0, name: 'Faturamento mensal ou faixa de investimento', type: 'text',
+    sinal: /\d|\bmil\b|milh|\bk\b|fatur|investi|or[cç]amento|budget|verba|reais|r\$|n[aã]o (sei|posso|quero) (dizer|informar|falar)/i,
+    pergunta: 'Pra eu entender o tamanho da operação, qual é mais ou menos o faturamento mensal da empresa?',
+  },
+  prioridade: {
+    key: 'prioridade', id: 0, name: 'Quando quer começar (este mês ou mais pra frente)', type: 'text',
+    sinal: /m[eê]s|semana|\bj[aá]\b|agora|urgente|logo|hoje|amanh|\bano\b|trimestre|depois|pra frente|sem pressa|quanto antes|imediat|r[aá]pido|pressa|\d/i,
+    pergunta: 'Vocês querem começar ainda este mês ou mais pra frente?',
   },
 } satisfies Record<string, Campo>
 
@@ -85,8 +98,8 @@ export const CRM_MAP = {
       ativa: true,
       promptFile: 'indicacao.md',
       sinais: /$^/,
-      roteiro: ['objetivo', 'equipe', 'situacao', 'prazo'],
-      obrigatorios: ['objetivo', 'equipe'],
+      roteiro: ['organizacao', 'vendedores', 'dor', 'decisor', 'faturamento', 'prioridade'],
+      obrigatorios: ['organizacao', 'vendedores'],
     },
   ] as Porta[],
 
@@ -102,8 +115,11 @@ export const CRM_MAP = {
   },
 
   agenda: AGENDA,
-  /** campos do roteiro que precisam estar respondidos antes de marcar */
-  exigirAntesDeAgendar: ['objetivo', 'equipe'] as string[],
+  /**
+   * CHAMP antes de marcar: cada grupo precisa de PELO MENOS UM campo respondido
+   * (ou "não sei" dito pelo lead). Money vale por faturamento OU nº de vendedores.
+   */
+  exigirAntesDeAgendar: [['dor', 'organizacao'], ['decisor'], ['faturamento', 'vendedores'], ['prioridade']] as string[][],
   /** etapa para onde `agendar_reuniao` move o lead DEPOIS da tarefa criada (id 0 = não move) */
   etapaAgendado: { id: 0, pipelineId: 0, name: '[PREENCHER: etapa de reunião agendada]' } as Etapa,
   /** campo date_time "Data da reunião" (epoch em SEGUNDOS). 0 = não grava */
@@ -122,10 +138,10 @@ export const CRM_MAP = {
   etapas: [] as Etapa[],
   etapasProtegidas: [142, 143] as number[],
 
-  /** abertura sem LLM (se o modelo falhar ou reprovar na trava). {nome} = " Ana" ou vazio */
-  aberturaFixa: 'Oi{nome}! Aqui é da Control Gestão, parceira da Kommo. A Kommo me passou o seu pedido e eu sigo com você por aqui. Pra eu entender melhor, quantas pessoas vão usar o Kommo no dia a dia?',
+  /** abertura sem LLM (se o modelo falhar ou reprovar na trava). {saudacao} = "Bom dia"; {nome} = ", Ana" ou vazio */
+  aberturaFixa: '{saudacao}{nome}! Aqui é a Lara, da Control Gestão, parceira oficial da Kommo. A Kommo me passou o seu pedido e eu vou te ajudar por aqui. Pra eu entender o cenário de vocês, hoje os leads ficam organizados onde?',
 
-  textoSeguro: 'Entendi. Me conta mais um pouco sobre como vocês trabalham hoje?',
+  textoSeguro: 'Entendi. Me conta um pouco de como vocês trabalham os leads hoje?',
   textoSeguroFinal: 'Combinado, anotei tudo aqui. O nosso time segue com você por aqui.',
 
   midia: {

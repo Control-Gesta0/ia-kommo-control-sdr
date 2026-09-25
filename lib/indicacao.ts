@@ -10,7 +10,7 @@ const F = require('../userscript/filtro-indicacao.js') as {
   classificarTeste(comentario: unknown, modo?: 'inteligente' | 'estrito'): Classificacao
 }
 
-export interface Classificacao { teste: boolean; nivel: 'frase' | 'so-lixo' | 'palavra' | 'nenhum'; motivo: string }
+export interface Classificacao { teste: boolean; ambiguo: boolean; nivel: 'frase' | 'so-lixo' | 'palavra' | 'nenhum'; motivo: string; fonte?: 'regra' | 'ia' }
 
 export const normalizar = F.normalizar
 export const extrairComentario = F.extrairComentario

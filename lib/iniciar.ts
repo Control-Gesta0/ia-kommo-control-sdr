@@ -4,12 +4,15 @@ import { CONFIG } from './config'
 import { CRM_MAP, portaById } from './crm-map'
 import { logExec } from './execlog'
 import { appendMessage } from './history'
-import { acharComentario, classificarTeste, type Classificacao } from './indicacao'
+import { acharComentario, type Classificacao } from './indicacao'
+import { classificarIntencao } from './intencao'
 import {
   addLeadNote, addLeadTags, contactPhones, getContact, getLead, getLeadNotes, leadTags, textoDasNotas, textoDoLead, updateLeadFields, type KommoLead,
 } from './kommo'
+import { primeiroNomeDe } from './llm'
 import { kommoPort } from './port'
 import { k, redis } from './redis'
+import { saudacao } from './saudacao'
 import { getState, patchState } from './state'
 import { sendReply } from './transport'
 
@@ -17,9 +20,8 @@ import { sendReply } from './transport'
  * A IA FALA PRIMEIRO. Lead de indicação aceito → confere que é indicação de
  * verdade, descarta teste, e manda a abertura pelo Salesbot.
  *
- * Duas portas de entrada chamam isto (as duas podem chegar para o mesmo lead):
- *  - o userscript, logo depois do aceite (traz o Comment que leu na tela);
- *  - o webhook da Kommo (status do lead mudou / Incoming lead aceito).
+ * Quem chama: o USERSCRIPT, logo depois do aceite no navegador (traz o Comment
+ * que leu na tela). O webhook da Kommo é só uma rota opcional de reserva.
  * Idempotência: chave `inicio:{leadId}` com NX. Só uma conversa por lead.
  */
 
@@ -34,12 +36,14 @@ export interface FatosInicio {
   pipelineId: number
   tags: string[]
   comentario: string | null
+  /** resultado do filtro de teste (regra + IA de intenção nos ambíguos) */
+  classificacao: Classificacao | null
   telefones: string[]
 }
 
 /** Decisão pura (testada em npm test). A ordem importa: teste vem antes de telefone. */
 export function decidirInicio(f: FatosInicio, cfg = {
-  humanTag: CONFIG.humanTag, exigirComentario: CONFIG.exigirComentario, filtro: CONFIG.filtroTesteModo,
+  humanTag: CONFIG.humanTag, exigirComentario: CONFIG.exigirComentario,
   modoInicio: modoInicio(), testLeadIds: CONFIG.testLeadIds, entrada: CRM_MAP.entrada,
 }): DecisaoInicio {
   if (f.tags.map(t => t.toLowerCase()).includes(cfg.humanTag)) return { acao: 'humano', motivo: `tag "${cfg.humanTag}"` }
@@ -47,10 +51,7 @@ export function decidirInicio(f: FatosInicio, cfg = {
     return { acao: 'fora-da-entrada', motivo: `lead em ${f.pipelineId}/${f.statusId}, entrada é ${cfg.entrada.pipelineId || '*'}/${cfg.entrada.statusId}` }
   }
   if (f.comentario === null && cfg.exigirComentario) return { acao: 'sem-comentario', motivo: 'nenhum "Comment:" no payload, no cache do Incoming lead, nas notas ou nos campos' }
-  if (f.comentario !== null) {
-    const c = classificarTeste(f.comentario, cfg.filtro)
-    if (c.teste) return { acao: 'teste', classificacao: c }
-  }
+  if (f.classificacao?.teste) return { acao: 'teste', classificacao: f.classificacao }
   if (!f.telefones.length) return { acao: 'sem-telefone', motivo: 'contato principal sem telefone' }
   if (cfg.modoInicio === 'desligado') return { acao: 'rampagem', motivo: 'MODO_INICIO=desligado' }
   if (cfg.modoInicio === 'teste' && !cfg.testLeadIds.includes(f.leadId)) return { acao: 'rampagem', motivo: 'MODO_INICIO=teste e o lead não está em TEST_LEAD_IDS' }
@@ -91,7 +92,8 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
     const contatoId = (lead._embedded?.contacts || []).find(c => c.is_main)?.id || lead._embedded?.contacts?.[0]?.id
     const telefones = contatoId ? contactPhones(await getContact(contatoId)) : []
     const comentario = await lerComentario(lead, comentarioInformado)
-    const d = decidirInicio({ leadId, statusId: lead.status_id, pipelineId: lead.pipeline_id, tags: leadTags(lead), comentario, telefones })
+    const classificacao = comentario ? await classificarIntencao(comentario) : null
+    const d = decidirInicio({ leadId, statusId: lead.status_id, pipelineId: lead.pipeline_id, tags: leadTags(lead), comentario, classificacao, telefones })
 
     if (d.acao === 'teste') {
       await addLeadTags(leadId, [CRM_MAP.tags.teste])
@@ -141,15 +143,9 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
   }
 }
 
-/** Primeiro nome "de gente" (nome de empresa ou apelido estranho vira vazio). */
-export function primeiroNome(nome: string): string {
-  const p = (nome || '').trim().split(/\s+/)[0] || ''
-  if (!/^[A-Za-zÀ-ú]{2,20}$/.test(p)) return ''
-  if (/^(lead|contato|cliente|empresa|ltda|me|eireli|sa|teste|novo|deal)$/i.test(p)) return ''
-  return p[0].toUpperCase() + p.slice(1).toLowerCase()
-}
+export const primeiroNome = primeiroNomeDe
 
-export function aberturaFixa(nome: string): string {
-  const n = primeiroNome(nome)
-  return CRM_MAP.aberturaFixa.replace('{nome}', n ? ` ${n}` : '')
+export function aberturaFixa(nome: string, agora = Date.now()): string {
+  const n = primeiroNomeDe(nome)
+  return CRM_MAP.aberturaFixa.replace('{saudacao}', saudacao(agora)).replace('{nome}', n ? `, ${n}` : '')
 }

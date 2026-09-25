@@ -26,6 +26,11 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   for (const c of BLOQUEIA) eq(`filtro bloqueia "${c}"`, teste(c), true)
   for (const c of PASSA) eq(`filtro passa "${c}"`, teste(c), false)
   eq('modo estrito: trial também bloqueia', teste('Estou no período de teste do Kommo', 'estrito'), true)
+  // Ambíguo = a IA de intenção decide (a regra só dá o palpite)
+  const amb = (c: string) => classificarTeste(c).ambiguo
+  eq('óbvio não vai para a IA', [amb('teste'), amb('lead de teste'), amb('Preciso organizar o funil')], [false, false, false])
+  eq('"teste" dentro de frase maior vai para a IA', [amb('Estamos testando o Kommo e precisamos de ajuda'), amb('teste de integração')], [true, true])
+  eq('modo estrito nunca é ambíguo', classificarTeste('teste de integração', 'estrito').ambiguo, false)
   eq('extrai Comment multilinha', extrairComentario('Name: Ana\nPhone: +55 11 9999\nComment: Quero organizar o funil\nEmail: a@b.com'), 'Quero organizar o funil')
   eq('extrai Comentário:', extrairComentario('Comentário: preciso de ajuda'), 'preciso de ajuda')
   eq('extrai de JSON', extrairComentario('{"name":"Ana","comment":"Quero automatizar","phone":"1"}'), 'Quero automatizar')
@@ -40,7 +45,8 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   vm.runInNewContext(`${bloco}\nthis.FiltroIndicacao = FiltroIndicacao`, sandbox)
   const divergentes = [...BLOQUEIA, ...PASSA].filter(c => sandbox.FiltroIndicacao!.classificarTeste(c, 'inteligente').teste !== teste(c))
   eq('userscript e servidor decidem igual', divergentes, [])
-  eq('userscript mantém o timer de 4min57s', /ESPERA_MS: 4 \* 60 \* 1000 \+ 57400/.test(src), true)
+  eq('userscript parte de 5 min e aprende a liberação real', [/LIBERACAO_MS: 5 \* 60 \* 1000/.test(src), /APRENDER: true/.test(src), /MODO: 'automatico'/.test(src)], [true, true, true])
+  eq('userscript entende as mensagens da Kommo', ['no longer available', 'already been accepted', 'requested lead is not found'].every(m => src.includes(m)), true)
 
   // ---------------- Entrada: webhook da Kommo e userscript ----------------
   const { parseEntrada } = await import('../api/novo-lead')
@@ -58,20 +64,31 @@ export default async function testesCliente(eq: Eq): Promise<number> {
 
   // ---------------- Decisão de início (fail-closed) ----------------
   const { decidirInicio, aberturaFixa, primeiroNome } = await import('../lib/iniciar')
-  const base = { leadId: 1, statusId: 55438567, pipelineId: 10, tags: [], comentario: 'Quero organizar o funil', telefones: ['+5511999999999'] }
-  const cfg = { humanTag: 'atendimento-humano', exigirComentario: true, filtro: 'inteligente' as const, modoInicio: 'ligado' as const, testLeadIds: [7], entrada: { pipelineId: 10, statusId: 55438567, name: 'x' } }
+  const cls = (c: string) => ({ ...classificarTeste(c), fonte: 'regra' as const })
+  const base = { leadId: 1, statusId: 55438567, pipelineId: 10, tags: [] as string[], comentario: 'Quero organizar o funil' as string | null, classificacao: cls('Quero organizar o funil') as ReturnType<typeof cls> | null, telefones: ['+5511999999999'] }
+  const cfg = { humanTag: 'atendimento-humano', exigirComentario: true, modoInicio: 'ligado' as const, testLeadIds: [7], entrada: { pipelineId: 10, statusId: 55438567, name: 'x' } }
   eq('início: lead real inicia', decidirInicio(base, cfg).acao, 'iniciar')
-  eq('início: teste NÃO inicia', decidirInicio({ ...base, comentario: 'teste' }, cfg).acao, 'teste')
-  eq('início: teste vence falta de telefone', decidirInicio({ ...base, comentario: 'lead de teste', telefones: [] }, cfg).acao, 'teste')
-  eq('início: sem Comment NÃO inicia (exigido)', decidirInicio({ ...base, comentario: null }, cfg).acao, 'sem-comentario')
-  eq('início: sem Comment inicia se não exigido', decidirInicio({ ...base, comentario: null }, { ...cfg, exigirComentario: false }).acao, 'iniciar')
+  eq('início: teste NÃO inicia', decidirInicio({ ...base, comentario: 'teste', classificacao: cls('teste') }, cfg).acao, 'teste')
+  eq('início: IA disse "real" num ambíguo → inicia', decidirInicio({ ...base, comentario: 'teste de integração do Kommo com o nosso site', classificacao: { ...cls('teste de integração'), teste: false, fonte: 'ia' as const } }, cfg).acao, 'iniciar')
+  eq('início: teste vence falta de telefone', decidirInicio({ ...base, comentario: 'lead de teste', classificacao: cls('lead de teste'), telefones: [] }, cfg).acao, 'teste')
+  eq('início: sem Comment NÃO inicia (exigido)', decidirInicio({ ...base, comentario: null, classificacao: null }, cfg).acao, 'sem-comentario')
+  eq('início: sem Comment inicia se não exigido', decidirInicio({ ...base, comentario: null, classificacao: null }, { ...cfg, exigirComentario: false }).acao, 'iniciar')
   eq('início: sem telefone', decidirInicio({ ...base, telefones: [] }, cfg).acao, 'sem-telefone')
   eq('início: outra etapa', decidirInicio({ ...base, statusId: 1 }, cfg).acao, 'fora-da-entrada')
   eq('início: outro funil', decidirInicio({ ...base, pipelineId: 11 }, cfg).acao, 'fora-da-entrada')
   eq('início: humano assumiu', decidirInicio({ ...base, tags: ['Atendimento-Humano'] }, cfg).acao, 'humano')
   eq('início: rampagem só TEST_LEAD_IDS', [decidirInicio(base, { ...cfg, modoInicio: 'teste' }).acao, decidirInicio({ ...base, leadId: 7 }, { ...cfg, modoInicio: 'teste' }).acao], ['rampagem', 'iniciar'])
   eq('nome de gente', [primeiroNome('ana souza'), primeiroNome('Lead #123'), primeiroNome('Empresa XPTO'), primeiroNome('')], ['Ana', '', '', ''])
-  eq('abertura fixa passa nas travas', [regras(aberturaFixa('Ana Souza')), aberturaFixa('Ana').startsWith('Oi Ana!')], [[], true])
+  const manha = Date.parse('2026-09-28T13:00:00Z') // 10h em Brasília
+  eq('abertura fixa: saudação do horário + Lara + passa nas travas', [regras(aberturaFixa('Ana Souza', manha)), aberturaFixa('Ana', manha).startsWith('Bom dia, Ana! Aqui é a Lara'), aberturaFixa('Lead #9', manha).startsWith('Bom dia! Aqui é a Lara')], [[], true, true])
+
+  // ---------------- Saudação por horário (regra geral 1) ----------------
+  const { saudacao, garantirSaudacao, abreComPergunta } = await import('../lib/saudacao')
+  const h = (hh: string) => Date.parse(`2026-09-28T${hh}:00-03:00`)
+  eq('saudação: 11h59 bom dia · 12h boa tarde · 17h59 boa tarde · 18h boa noite · 2h boa noite', [saudacao(h('11:59')), saudacao(h('12:00')), saudacao(h('17:59')), saudacao(h('18:00')), saudacao(h('02:00'))], ['Bom dia', 'Boa tarde', 'Boa tarde', 'Boa noite', 'Boa noite'])
+  eq('saudação errada é trocada', garantirSaudacao('Bom dia, Ana! Aqui é a Lara.', 'Boa noite', 'Ana'), 'Boa noite, Ana! Aqui é a Lara.')
+  eq('sem saudação ganha na frente', garantirSaudacao('Oi, Ana! Aqui é a Lara, da Control Gestão.', 'Boa tarde', 'Ana'), 'Boa tarde, Ana! Aqui é a Lara, da Control Gestão.')
+  eq('abrir com pergunta é detectado', [abreComPergunta('Tudo bem? Aqui é a Lara.'), abreComPergunta('Boa tarde, Ana! Tudo bem?')], [true, false])
 
   // ---------------- Roteador: porta única, sem menu ----------------
   const { rotear } = await import('../lib/router')
@@ -132,8 +149,11 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   const ctx = (lead: string, ia = '') => ({ port, porta, gateTag: 'gate', leadText: lead, lastLeadText: lead, lastAgentText: ia, agora }) as any
 
   let out = await runTool(ctx('quinta às 10'), 'agendar_reuniao', { horario: 'quinta 01/10 às 10h' })
-  eq('agendar antes do roteiro mínimo é recusado', [out.isError, /falta/.test(out.content)], [true, true])
-  w.state.respostas = { objetivo: 'organizar o funil', equipe: '5' }
+  eq('agendar antes do CHAMP é recusado', [out.isError, /CHAMP/.test(out.content)], [true, true])
+  w.state.respostas = { dor: 'perco lead', decisor: 'eu', vendedores: '5' }
+  out = await runTool(ctx('quinta às 10'), 'agendar_reuniao', { horario: 'quinta 01/10 às 10h' })
+  eq('CHAMP sem Prioridade ainda é recusado', [out.isError, /quando quer começar/i.test(out.content)], [true, true])
+  w.state.respostas.prioridade = 'este mês'
   out = await runTool(ctx('quinta às 10'), 'agendar_reuniao', { horario: 'quinta 01/10 às 10h' })
   eq('agendar sem oferta é recusado', [out.isError, /consultar_horarios/.test(out.content)], [true, true])
   out = await runTool(ctx('pode ser quinta de manhã'), 'consultar_horarios', { preferencia: 'quinta de manhã' })
@@ -147,7 +167,8 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   await runTool(ctx('pode ser quinta de manhã'), 'consultar_horarios', { preferencia: 'quinta de manhã' })
   out = await runTool(ctx('9h30 fica ótimo'), 'agendar_reuniao', { horario: 'quinta 01/10 às 9h' })
   eq('modelo pediu horário diferente do lead: recusado', [out.isError, w.reunioes.length], [true, 0])
-  out = await runTool(ctx('9h30 fica ótimo'), 'agendar_reuniao', { horario: 'quinta 01/10 às 9h30' })
+  out = await runTool(ctx('9h30 fica ótimo'), 'agendar_reuniao', { horario: 'quinta 01/10 às 9h30', decisor_convidado: 'Carlos (sócio)' })
+  eq('decisor convidado vai para a tarefa', /Decisor convidado: Carlos \(sócio\)/.test(w.reunioes[0]?.texto || ''), true)
   eq('agenda o horário do lead, finaliza e tira o gate', [out.isError, out.handoff, w.reunioes.length, new Date(w.reunioes[0]?.ini).toISOString(), w.state.finalizado?.motivo, w.tags.has('gate')],
     [false, true, 1, '2026-10-01T12:30:00.000Z', 'agendado', false])
   out = await runTool(ctx('e se for sexta?'), 'consultar_horarios', { preferencia: 'sexta' })
