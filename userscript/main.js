@@ -668,7 +668,16 @@
   // Retoma o que ficou no meio antes do reload e reenvia avisos pendentes ao agente
   Object.keys(memo).forEach(function (id) {
     // Aceito antes do reload: nunca reaceita, só termina a conferência
-    if (memo[id].estado === 'conferindo' || memo[id].estado === 'aceitando') { emAndamento[id] = true; agendar(now() + 2000, function () { conferir(id, typeof memo[id].offsetAceite === 'number' ? memo[id].offsetAceite : null, 1) }); return }
+    if (memo[id].estado === 'conferindo') { emAndamento[id] = true; agendar(now() + 2000, function () { conferir(id, typeof memo[id].offsetAceite === 'number' ? memo[id].offsetAceite : null, 1) }); return }
+    // Recarregou no meio do disparo: pergunta à API se o lead já saiu dos Incoming (aceito) antes de qualquer coisa
+    if (memo[id].estado === 'aceitando') {
+      emAndamento[id] = true
+      apiGet('/api/v4/leads/' + id).then(function (l) {
+        if (l && Number(l.status_id) === CFG.STATUS_ID) conferir(id, null, 1)
+        else { delete emAndamento[id]; marcar(id, { estado: 'perdido', motivo: 'página recarregada no meio do disparo' }) }
+      }, function () { delete emAndamento[id]; marcar(id, { estado: 'perdido', motivo: 'página recarregada no meio do disparo' }) })
+      return
+    }
     if (!FINAIS[memo[id].estado]) registrar(id, 'memória')
     else if (memo[id].estado === 'aceito' && memo[id].avisoPendente && now() - memo[id].atualizado < 2 * 3600 * 1000) avisarAgente(id)
   })
