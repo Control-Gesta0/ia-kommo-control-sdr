@@ -1,6 +1,7 @@
 import type { Intervalo } from './agenda'
 import { CONFIG } from './config'
 import { CRM_MAP } from './crm-map'
+import { agendarLembretes } from './followup'
 import { googleOcupados } from './google'
 import { addLeadNote, addLeadTags, createTask, getLead, leadTags, listOpenTasks, removeLeadTags, updateLeadFields, updateLeadStatus, type KommoFieldValue } from './kommo'
 import { getState, patchState } from './state'
@@ -34,6 +35,7 @@ export function kommoPort(leadId: number): LeadPort {
     async removeTags(tags) { await removeLeadTags(leadId, tags); cached = undefined },
     async addNote(text) { await addLeadNote(leadId, text) },
     buscarOcupados: ocupadosDoCloser,
+    agendarLembretes: r => agendarLembretes(leadId, r.ini, Number(r.taskId)),
     async criarReuniao(r) {
       const cfg = CRM_MAP.agenda
       const id = await createTask({

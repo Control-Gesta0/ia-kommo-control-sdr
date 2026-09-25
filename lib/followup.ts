@@ -1,9 +1,9 @@
-import { fromLocal, local } from './agenda'
+import { fromLocal, local, rotulo } from './agenda'
 import { CONFIG } from './config'
 import { CRM_MAP } from './crm-map'
 import { logExec } from './execlog'
 import { appendMessage, humanSpokeRecently } from './history'
-import { addLeadNote, addLeadTags, createTask, getLead, kommoGet, leadTags, patchLead, removeLeadTags, updateLeadFields } from './kommo'
+import { addLeadNote, addLeadTags, createTask, getContact, getLead, getTask, kommoGet, leadTags, patchLead, removeLeadTags, updateLeadFields } from './kommo'
 import { k, redis } from './redis'
 import { getState, patchState } from './state'
 import { sendReply } from './transport'
@@ -181,6 +181,9 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
     return `neg ${passo}/${n.dias.length} enviado`
   }
 
+  const lem = tipo.match(/^lem(\d+)$/)
+  if (lem) return processarLembrete(Number(lem[1]), leadId, agora)
+
   if (tipo === 'negfim') {
     const t = CRM_MAP.negociacao.tarefa
     const est = await redis.get<Cadencia>(chaveEstado('neg', leadId))
@@ -190,6 +193,63 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
     return 'tarefa criada'
   }
   return 'tipo desconhecido'
+}
+
+// ---------- lembretes da reunião (para o cliente) ----------
+
+interface Lembrete { ini: number; taskId: number }
+
+/** Agenda 24h e 1h antes (só os que ainda estão no futuro). Não segue o expediente: é hora marcada. */
+export async function agendarLembretes(leadId: number, ini: number, taskId: number, agora = Date.now()): Promise<void> {
+  const cfg = CRM_MAP.lembretes
+  if (!cfg.ativo) return
+  await redis.set(k('lem', leadId), { ini, taskId } satisfies Lembrete, { ex: 30 * 86400 })
+  for (const h of cfg.horasAntes) {
+    const quando = ini - h * HORA
+    if (quando > agora + 5 * MIN) await enfileirar(`lem${h}:${leadId}`, quando)
+  }
+}
+
+function primeiroNome(nome: string): string {
+  const p = (nome || '').trim().split(/\s+/)[0] || ''
+  return /^[A-Za-zÀ-ú]{2,20}$/.test(p) && !/^(lead|contato|cliente|empresa)$/i.test(p) ? p[0].toUpperCase() + p.slice(1).toLowerCase() : ''
+}
+
+/** Texto do lembrete (fixo, sem IA: data e hora não podem sair erradas). */
+export function textoLembrete(horas: number, ini: number, agora: number, nome: string, idioma: 'pt' | 'es' | 'en' = 'pt'): string {
+  const l = local(ini)
+  const hora = l.min ? `${l.h}h${String(l.min).padStart(2, '0')}` : `${l.h}h`
+  const quando = rotulo(ini, agora)
+  const n = nome ? `, ${nome}` : ''
+  const traduzir = (t: string, mapa: Record<string, string>) => Object.entries(mapa).reduce((acc, [pt, x]) => acc.replace(new RegExp(`(?<!\\p{L})${pt}(?!\\p{L})`, 'u'), x), t)
+  const ES = { amanhã: 'mañana', hoje: 'hoy', segunda: 'lunes', terça: 'martes', quarta: 'miércoles', quinta: 'jueves', sexta: 'viernes', sábado: 'sábado', domingo: 'domingo', 'às': 'a las' }
+  const EN = { amanhã: 'tomorrow', hoje: 'today', segunda: 'Monday', terça: 'Tuesday', quarta: 'Wednesday', quinta: 'Thursday', sexta: 'Friday', sábado: 'Saturday', domingo: 'Sunday', 'às': 'at' }
+  if (idioma === 'es') return horas >= 12 ? `¡Hola${n}! Te recuerdo nuestra reunión con el especialista de Control Gestão ${traduzir(quando, ES)}. ¿Todo bien para ti?` : `¡Hola${n}! En un rato, a las ${hora}, es nuestra reunión con el especialista de Control Gestão. ¡Nos vemos!`
+  if (idioma === 'en') return horas >= 12 ? `Hi${n}! Just a reminder of our meeting with the Control Gestão specialist ${traduzir(quando, EN)}. Does it still work for you?` : `Hi${n}! Our meeting with the Control Gestão specialist is in about an hour, at ${hora}. See you soon!`
+  return horas >= 12
+    ? `Oi${n}! Passando pra lembrar da nossa reunião ${quando} com o especialista da Control Gestão. Tudo certo pra você?`
+    : `Oi${n}! Daqui a pouco, às ${hora}, é a nossa reunião com o especialista da Control Gestão. Até já!`
+}
+
+async function processarLembrete(horas: number, leadId: number, agora: number): Promise<string> {
+  const lem = await redis.get<Lembrete>(k('lem', leadId))
+  if (!lem) return 'sem reunião registrada'
+  const task = lem.taskId ? await getTask(lem.taskId) : null
+  if (task && task.is_completed) return 'reunião concluída ou cancelada: sem lembrete'
+  // O Rodrigo remarcou no Kommo: reagenda os lembretes para o horário novo
+  if (task && task.complete_till * 1000 !== lem.ini) {
+    await agendarLembretes(leadId, task.complete_till * 1000, lem.taskId, agora)
+    return `remarcada para ${new Date(task.complete_till * 1000).toISOString()}: lembretes reagendados`
+  }
+  const lead = await getLead(leadId)
+  if (lead.status_id === 143) return 'lead perdido: sem lembrete'
+  const contatoId = (lead._embedded?.contacts || []).find(c => c.is_main)?.id
+  const nome = primeiroNome(contatoId ? (await getContact(contatoId)).name || '' : '')
+  const st = await getState(leadId)
+  const { idiomaDe } = await import('./saudacao')
+  const texto = textoLembrete(horas, lem.ini, agora, nome, idiomaDe(st.comentario, st.contexto?.idiomas))
+  await enviarFollowup(leadId, texto, `lembrete-${horas}h`, 0)
+  return `lembrete ${horas}h enviado`
 }
 
 // ---------- negociação: quem entrou na etapa ----------

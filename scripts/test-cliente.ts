@@ -121,6 +121,14 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   eq('sábado → segunda 9h', br('2026-10-03T11:00:00-03:00'), '2026-10-05T12:00:00.000Z')
   eq('sexta 18h30 → segunda 9h', br('2026-10-02T18:30:00-03:00'), '2026-10-05T12:00:00.000Z')
 
+  // ---------------- Lembretes para o cliente ----------------
+  const { textoLembrete } = await import('../lib/followup')
+  const reuniao = Date.parse('2026-10-01T09:30:00-03:00') // quinta 9h30
+  eq('lembrete 24h', textoLembrete(24, reuniao, reuniao - 24 * 3600000, 'Ana'), 'Oi, Ana! Passando pra lembrar da nossa reunião amanhã, quinta 01/10 às 9h30 com o especialista da Control Gestão. Tudo certo pra você?')
+  eq('lembrete 1h', textoLembrete(1, reuniao, reuniao - 3600000, 'Ana'), 'Oi, Ana! Daqui a pouco, às 9h30, é a nossa reunião com o especialista da Control Gestão. Até já!')
+  eq('lembrete em espanhol', textoLembrete(24, reuniao, reuniao - 24 * 3600000, 'Carlos', 'es').includes('mañana, jueves 01/10 a las 9h30'), true)
+  eq('lembretes passam nas travas', [regras(textoLembrete(24, reuniao, reuniao - 86400000, 'Ana')), regras(textoLembrete(1, reuniao, reuniao - 3600000, ''))], [[], []])
+
   // ---------------- Roteador: porta única, sem menu ----------------
   const { rotear } = await import('../lib/router')
   const r = rotear({}, 'oi')
@@ -173,6 +181,7 @@ export default async function testesCliente(eq: Eq): Promise<number> {
     removeTags: async (t: string[]) => { t.forEach(x => w.tags.delete(x)) },
     buscarOcupados: async () => [...w.ocupados, ...w.reunioes],
     criarReuniao: async (x: any) => { w.reunioes.push(x); return `t${w.reunioes.length}` },
+    agendarLembretes: async (x: any) => { w.lembretes = x },
     getState: async () => structuredClone(w.state),
     patchState: async (p: Record<string, unknown>) => Object.assign(w.state, p),
   }
@@ -199,6 +208,7 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   out = await runTool(ctx('9h30 fica ótimo'), 'agendar_reuniao', { horario: 'quinta 01/10 às 9h' })
   eq('modelo pediu horário diferente do lead: recusado', [out.isError, w.reunioes.length], [true, 0])
   out = await runTool(ctx('9h30 fica ótimo'), 'agendar_reuniao', { horario: 'quinta 01/10 às 9h30', decisor_convidado: 'Carlos (sócio)' })
+  eq('reunião agenda os lembretes', w.lembretes?.taskId, 't1')
   eq('decisor convidado vai para a tarefa', /Decisor convidado: Carlos \(sócio\)/.test(w.reunioes[0]?.texto || ''), true)
   eq('agenda o horário do lead, finaliza e tira o gate', [out.isError, out.handoff, w.reunioes.length, new Date(w.reunioes[0]?.ini).toISOString(), w.state.finalizado?.motivo, w.tags.has('gate')],
     [false, true, 1, '2026-10-01T12:30:00.000Z', 'agendado', false])

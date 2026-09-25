@@ -97,14 +97,17 @@ export const CRM_MAP = {
    * Respondeu: para. Sem resposta depois do último: tarefa para o Rodrigo.
    */
   negociacao: {
-    ativo: false, // liga depois de confirmar a etapa
+    ativo: true,
     pipelineId: 4338500,
-    statusId: 103456716, // "PROPOSTA ENVIADA" (confirmar se é esta a etapa de negociação)
-    nome: 'PROPOSTA ENVIADA',
+    statusId: 61597311, // "Negociação" (funil limpo pelo mestre em 25/09/2026)
+    nome: 'Negociação',
     dias: [2, 3, 5, 7, 10],
     proximoFollowupFieldId: 1048617, // campo date_time "Próximo Follow-up" (criado em 25/09/2026)
     tarefa: { taskTypeId: 1, responsavelId: 12725576, texto: 'Proposta sem resposta depois de 5 follow-ups: ligar ou marcar como Perdido' },
   },
+
+  /** Lembretes da reunião PARA O CLIENTE, no WhatsApp: horas antes do horário marcado */
+  lembretes: { ativo: true, horasAntes: [24, 1] },
 
   /** quem recebe o lead aceito (o USER_ID do userscript) */
   responsavelEntradaId: 12725576,

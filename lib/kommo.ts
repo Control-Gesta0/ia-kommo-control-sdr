@@ -99,9 +99,23 @@ export async function addLeadNote(leadId: number, text: string): Promise<void> {
   await kommo('POST', `/api/v4/leads/${leadId}/notes`, [{ note_type: 'common', params: { text } }])
 }
 
-/** Dispara o Salesbot de envio. Sem retry em 5xx (ver topo do arquivo). */
+/**
+ * Dispara o Salesbot de envio: endpoint oficial atual POST /api/v4/bots/run (202
+ * "Accepted"); o legado /api/v2/salesbot/run fica de reserva se o v4 não existir.
+ * Sem retry em 5xx: um 502 pode ter rodado o bot (repetir duplica a mensagem).
+ */
 export async function runSalesbot(botId: number, leadId: number): Promise<void> {
-  await kommo('POST', '/api/v2/salesbot/run', [{ bot_id: botId, entity_id: leadId, entity_type: 'leads' }], { retry5xx: false })
+  const corpo = [{ bot_id: botId, entity_id: leadId, entity_type: 'leads' }]
+  try {
+    await kommo('POST', '/api/v4/bots/run', corpo, { retry5xx: false })
+  } catch (e) {
+    if (!/-> (404|405)/.test(e instanceof Error ? e.message : '')) throw e
+    await kommo('POST', '/api/v2/salesbot/run', corpo, { retry5xx: false })
+  }
+}
+
+export async function getTask(taskId: number): Promise<KommoTask | null> {
+  try { return await kommo<KommoTask>('GET', `/api/v4/tasks/${taskId}`) } catch { return null }
 }
 
 export function fieldValue(lead: KommoLead, fieldId: number): unknown {

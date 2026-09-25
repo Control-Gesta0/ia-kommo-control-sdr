@@ -25,6 +25,8 @@ export interface LeadPort {
   buscarOcupados(ini: number, fim: number): Promise<Intervalo[]>
   /** agenda: cria a reunião (tarefa no Kommo). Devolve o id */
   criarReuniao(r: { ini: number; fim: number; texto: string }): Promise<string>
+  /** agenda os lembretes da reunião para o cliente (24h e 1h antes) */
+  agendarLembretes(r: { ini: number; taskId: string }): Promise<void>
   getState(): Promise<LeadState>
   patchState(p: Partial<LeadState>): Promise<LeadState>
 }
@@ -423,6 +425,7 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
         const texto = `Reunião (indicação Kommo) · ${convidado ? `Decisor convidado: ${convidado} · ` : ''}${resumoCampos}${state.comentario ? ` · Comment: ${state.comentario.slice(0, 300)}` : ''}`.slice(0, 1000)
         const taskId = await port.criarReuniao({ ini: slot.ini, fim: slot.fim, texto })
         await port.patchState({ reuniao: { ...slot, taskId, em: new Date(agora).toISOString() }, oferta: [] })
+        await port.agendarLembretes({ ini: slot.ini, taskId }).catch(e => console.warn('[lembretes]', e))
         // Efeitos que só acontecem DEPOIS da reunião existir
         if (CRM_MAP.dataReuniaoFieldId) await port.writeFields([{ field_id: CRM_MAP.dataReuniaoFieldId, values: [{ value: Math.floor(slot.ini / 1000) }] }])
         if (CRM_MAP.etapaAgendado.id) await avancar(port, 'agendado')

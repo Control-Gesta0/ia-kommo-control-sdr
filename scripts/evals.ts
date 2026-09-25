@@ -83,6 +83,7 @@ async function main() {
       async removeTags(t) { t.forEach(x => w.tags.delete(x.toLowerCase())); w.log.push(`removeTags ${t.join(',')}`) },
       async addNote(n) { w.notes.push(n) },
       async buscarOcupados() { return [...w.ocupados, ...w.reunioes] },
+      async agendarLembretes() { /* sem efeito no exame */ },
       async criarReuniao(r) { w.reunioes.push(r); w.log.push(`reuniao ${new Date(r.ini).toISOString()}`); return `t${w.reunioes.length}` },
       async getState() { return structuredClone(w.state) },
       async patchState(p) { Object.assign(w.state, p); return structuredClone(w.state) },

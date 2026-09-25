@@ -28,6 +28,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return brain.generateFollowup(ctx, { nomeContato: nome, primeiroContatoDaPorta: false }, history, instrucao)
   }
 
+  // Sem o Salesbot de envio nada pode sair: não consome a fila (os itens esperam o bot existir)
+  if (!CONFIG.kommoBotId) return res.status(200).json({ ok: true, aguardando: 'KOMMO_BOT_ID ausente: fila preservada, nada enviado', fila: (await filaResumo()).length })
+
   const t0 = Date.now()
   const feitos: string[] = []
   let novosNeg = 0
