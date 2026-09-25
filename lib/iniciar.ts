@@ -4,7 +4,7 @@ import { CONFIG } from './config'
 import { CRM_MAP, portaById } from './crm-map'
 import { logExec } from './execlog'
 import { appendMessage } from './history'
-import { acharComentario, extrairContexto, marcaDeInvalido, type Classificacao, type ContextoIndicacao } from './indicacao'
+import { acharComentario, extrairContexto, foraDoIdioma, marcaDeInvalido, type Classificacao, type ContextoIndicacao } from './indicacao'
 import { classificarIntencao } from './intencao'
 import {
   addLeadNote, addLeadTags, contactPhones, getContact, getLead, getLeadNotes, kommoGet, leadTags, textoDasNotas, textoDoLead, updateLeadFields, type KommoLead,
@@ -31,6 +31,7 @@ export type DecisaoInicio =
   | { acao: 'iniciar' }
   | { acao: 'teste'; classificacao: Classificacao }
   | { acao: 'invalido'; motivo: string }
+  | { acao: 'outro-idioma'; motivo: string }
   | { acao: 'sem-comentario' | 'sem-telefone' | 'fora-da-entrada' | 'humano' | 'rampagem'; motivo: string }
 
 export interface FatosInicio {
@@ -41,6 +42,8 @@ export interface FatosInicio {
   comentario: string | null
   /** a Kommo marcou o aceite como inválido ("no longer available" / "already accepted") */
   invalido?: 'cedo' | 'outros' | null
+  /** só atendemos em português: motivo se a indicação é de outro país/idioma */
+  foraDoIdioma?: string | null
   /** resultado do filtro de teste (regra + IA de intenção nos ambíguos) */
   classificacao: Classificacao | null
   telefones: string[]
@@ -52,6 +55,7 @@ export function decidirInicio(f: FatosInicio, cfg = {
   modoInicio: modoInicio(), testLeadIds: CONFIG.testLeadIds, entrada: CRM_MAP.entrada,
 }): DecisaoInicio {
   if (f.tags.map(t => t.toLowerCase()).includes(cfg.humanTag)) return { acao: 'humano', motivo: `tag "${cfg.humanTag}"` }
+  if (f.foraDoIdioma) return { acao: 'outro-idioma', motivo: f.foraDoIdioma }
   if (f.invalido) return { acao: 'invalido', motivo: f.invalido === 'cedo' ? 'aceito antes da liberação (The leads is no longer available)' : 'outros parceiros já tinham aceitado (already accepted by other partners)' }
   if (f.statusId !== cfg.entrada.statusId || (cfg.entrada.pipelineId && f.pipelineId !== cfg.entrada.pipelineId)) {
     return { acao: 'fora-da-entrada', motivo: `lead em ${f.pipelineId}/${f.statusId}, entrada é ${cfg.entrada.pipelineId || '*'}/${cfg.entrada.statusId}` }
@@ -74,7 +78,7 @@ export async function guardarComentarioIncoming(leadId: number, comentario: stri
   await redis.set(k('incoming', leadId), comentario, { ex: 7 * 86400 })
 }
 
-interface Leitura { comentario: string | null; contexto: ContextoIndicacao; invalido: 'cedo' | 'outros' | null }
+interface Leitura { comentario: string | null; contexto: ContextoIndicacao; invalido: 'cedo' | 'outros' | null; textoIndicacao: string }
 
 /**
  * Tudo que a indicação carrega. Formato real da conta (25/09/2026): nota "common"
@@ -88,7 +92,7 @@ async function lerIndicacao(lead: KommoLead, informado?: string | null): Promise
   const notaIndicacao = notas.find(n => acharComentario([n]) !== null) || ''
   const cache = await redis.get<string>(k('incoming', lead.id))
   const comentario = (informado && informado.trim() ? informado.trim().slice(0, 2000) : null) ?? cache ?? acharComentario([textoDoLead(lead), ...notas])
-  return { comentario, contexto: extrairContexto(notaIndicacao), invalido: marcaDeInvalido([...notas, eventos].join('\n')) }
+  return { comentario, contexto: extrairContexto(notaIndicacao), invalido: marcaDeInvalido([...notas, eventos].join('\n')), textoIndicacao: notaIndicacao }
 }
 
 export interface ResultadoInicio { ok: boolean; acao: string; detalhe: string }
@@ -107,10 +111,17 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
     // Nome da PESSOA (o nome do lead costuma ser a empresa ou "Lead №85304")
     nome = contato?.name || lead.name || ''
     const telefones = contato ? contactPhones(contato) : []
-    const { comentario, contexto, invalido } = await lerIndicacao(lead, comentarioInformado)
+    const { comentario, contexto, invalido, textoIndicacao } = await lerIndicacao(lead, comentarioInformado)
+    const idioma = foraDoIdioma(textoIndicacao, comentario || '')
     const classificacao = comentario && !invalido ? await classificarIntencao(comentario) : null
-    const d = decidirInicio({ leadId, statusId: lead.status_id, pipelineId: lead.pipeline_id, tags: leadTags(lead), comentario, classificacao, telefones, invalido })
+    const d = decidirInicio({ leadId, statusId: lead.status_id, pipelineId: lead.pipeline_id, tags: leadTags(lead), comentario, classificacao, telefones, invalido, foraDoIdioma: idioma.fora ? idioma.motivo : null })
 
+    if (d.acao === 'outro-idioma') {
+      await addLeadTags(leadId, [CRM_MAP.tags.outroIdioma])
+      await addLeadNote(leadId, `🌎 Lara NÃO iniciou conversa: ${d.motivo}. A Control Gestão só atende em português.`)
+      await logExec({ tipo: 'pulou', leadId, nome, detalhe: `outro idioma: ${d.motivo} · via ${origem}` })
+      return { ok: true, acao: d.acao, detalhe: d.motivo }
+    }
     if (d.acao === 'invalido') {
       await addLeadTags(leadId, [CRM_MAP.tags.invalida])
       await addLeadNote(leadId, `⛔ Lara NÃO iniciou conversa: ${d.motivo}.`)

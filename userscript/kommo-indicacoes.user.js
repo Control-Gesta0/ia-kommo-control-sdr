@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kommo · Indicações de parceiro (Control Gestão)
 // @namespace    https://controlgestao.com.br/
-// @version      3.3.0
+// @version      3.4.0
 // @description  Filtra indicações de TESTE pelo "Comment:", aceita no tempo certo (ou avisa, no modo assistido) e aciona o agente de IA SDR.
 // @match        https://*.kommo.com/*
 // @run-at       document-idle
@@ -104,7 +104,44 @@ var FiltroIndicacao = (function () {
     return { teste: true, ambiguo: modo !== 'estrito', nivel: 'palavra', motivo: 'palavra de teste: "' + m[1] + '"' }
   }
 
-  return { normalizar: normalizar, extrairComentario: extrairComentario, classificarTeste: classificarTeste }
+  /** "Country: Brazil" da nota da indicação. null = não veio. */
+  function extrairPais(texto) {
+    var t = String(texto == null ? '' : texto).replace(/\\n/g, '\n')
+    var m = /(?:^|[\n|"{,;>]|\s)Country\s*"?\s*:\s*"?([^\n|",}<]+)/i.exec(t)
+    return m ? m[1].trim() : null
+  }
+
+  var PAISES_ATENDIDOS = ['brazil', 'brasil', 'portugal']
+
+  /** Idioma do texto do Comment pelas palavras mais comuns: 'pt' | 'es' | 'en' | '?' */
+  function idiomaComentario(comentario) {
+    var n = ' ' + normalizar(comentario) + ' '
+    function conta(ws) { var c = 0; for (var i = 0; i < ws.length; i++) if (n.indexOf(' ' + ws[i] + ' ') >= 0) c++; return c }
+    var pt = conta(['nao', 'atendimento', 'funil', 'vendas', 'preciso', 'precisamos', 'quero', 'nosso', 'nossa', 'meu', 'minha', 'o', 'e', 'com', 'uma', 'para', 'voces', 'ajuda', 'empresa'])
+    var es = conta(['necesitamos', 'necesito', 'embudo', 'ventas', 'nuestro', 'nuestra', 'el', 'y', 'los', 'mi', 'quiero', 'consultoria', 'por', 'favor', 'ayuda', 'empresa', 'para', 'con', 'una'])
+    var en = conta(['we', 'need', 'help', 'our', 'the', 'and', 'sales', 'team', 'with', 'want', 'my', 'company', 'to', 'for'])
+    if (es > pt && es >= 2) return 'es'
+    if (en > pt && en > es && en >= 2) return 'en'
+    if (pt >= 1) return 'pt'
+    return '?'
+  }
+
+  /**
+   * A Control Gestão só atende em português. País da nota manda (Brasil/Portugal
+   * aceita; outro não). Sem país: decide pelo idioma do Comment (espanhol/inglês = não).
+   */
+  function foraDoIdioma(texto, comentario) {
+    var pais = extrairPais(texto)
+    if (pais) {
+      var ok = PAISES_ATENDIDOS.indexOf(normalizar(pais)) >= 0
+      return { fora: !ok, motivo: ok ? 'país atendido: ' + pais : 'país não atendido: ' + pais }
+    }
+    var lang = idiomaComentario(comentario)
+    if (lang === 'es' || lang === 'en') return { fora: true, motivo: 'Comment em ' + (lang === 'es' ? 'espanhol' : 'inglês') }
+    return { fora: false, motivo: 'sem país; Comment em português ou neutro' }
+  }
+
+  return { normalizar: normalizar, extrairComentario: extrairComentario, classificarTeste: classificarTeste, extrairPais: extrairPais, idiomaComentario: idiomaComentario, foraDoIdioma: foraDoIdioma }
 })();
 
 /* global FiltroIndicacao, GM_xmlhttpRequest, GM_notification, unsafeWindow */
@@ -195,7 +232,7 @@ var FiltroIndicacao = (function () {
   var pageFetch = W.fetch.bind(W)
   var STORE_KEY = 'cg-indicacoes-v3'
   var DIAG_KEY = 'cg-indicacoes-v3-diag'
-  var VERSAO = '3.3.0'
+  var VERSAO = '3.4.0'
 
   if (W.__INDICACOES__ && W.__INDICACOES__.stop) {
     console.warn('[INDICAÇÕES] já ativo, reiniciando...')
@@ -236,7 +273,7 @@ var FiltroIndicacao = (function () {
     salvar()
     desenharSelo(id)
   }
-  var FINAIS = { aceito: 1, aceito_invalido: 1, teste: 1, nao_existe: 1, perdido: 1, pulado: 1, liberado: 1, expirado: 1 }
+  var FINAIS = { aceito: 1, aceito_invalido: 1, teste: 1, outro_idioma: 1, nao_existe: 1, perdido: 1, pulado: 1, liberado: 1, expirado: 1 }
 
   // ---------------- DIAGNÓSTICO ----------------
   function registrarDiag(id, tipo, dado) {
@@ -297,7 +334,7 @@ var FiltroIndicacao = (function () {
   }
 
   // ---------------- SELO NO CARD ----------------
-  var CORES = { teste: '#c62828', aceito: '#2e7d32', aceito_invalido: '#ad1457', conferindo: '#2e7d32', liberado: '#1565c0', aguardando: '#6d4c41', aceitando: '#0d47a1', nao_existe: '#757575', perdido: '#ef6c00', pulado: '#757575', avaliando: '#6d4c41', expirado: '#9e9e9e' }
+  var CORES = { outro_idioma: '#6a1b9a', teste: '#c62828', aceito: '#2e7d32', aceito_invalido: '#ad1457', conferindo: '#2e7d32', liberado: '#1565c0', aguardando: '#6d4c41', aceitando: '#0d47a1', nao_existe: '#757575', perdido: '#ef6c00', pulado: '#757575', avaliando: '#6d4c41', expirado: '#9e9e9e' }
   function cardDe(id) { return document.getElementById('pipeline_item_' + id) || document.querySelector('.pipeline-unsorted__item[data-id="' + id + '"]') }
   function desenharSelo(id) {
     var el = cardDe(id)
@@ -313,6 +350,7 @@ var FiltroIndicacao = (function () {
     var textos = {
       avaliando: 'Lendo o Comment...',
       teste: 'TESTE: não aceito',
+      outro_idioma: 'Fora do Brasil/português: não aceito',
       aceito: 'Aceito e válido ' + hora(m.atualizado),
       conferindo: 'Aceito, conferindo se ficou válido...',
       aceito_invalido: 'Aceito, mas INVÁLIDO: ' + (m.motivo || ''),
@@ -433,6 +471,15 @@ var FiltroIndicacao = (function () {
       }, function (e) { dbg('fonte ' + f[0] + ' falhou: ' + e.message); return proxima() })
     }
     return proxima()
+  }
+
+  /** Todo o texto da indicação (card + Incoming + notas): é onde vem o "Country:". */
+  function lerTextoIndicacao(id) {
+    var partes = [textoDoCard(id), incoming[id] ? incoming[id].texto : '']
+    return apiGet('/api/v4/leads/' + id + '/notes?limit=50').then(function (j) {
+      ((j && j._embedded && j._embedded.notes) || []).forEach(function (n) { partes.push((n.params && n.params.text) || JSON.stringify(n.params || {})) })
+      return partes.join('\n')
+    }, function () { return partes.join('\n') })
   }
 
   // ---------------- AGENTE DE IA (classificar intenção / avisar aceite) ----------------
@@ -663,7 +710,19 @@ var FiltroIndicacao = (function () {
         return seguir(id)
       }
       marcar(id, { comentario: comentario })
-      return decidirTeste(id, comentario).then(function (cls) {
+      return lerTextoIndicacao(id).then(function (texto) {
+        // Só atendemos em português: país de fora (ou Comment em espanhol/inglês) não é aceito
+        var idioma = FiltroIndicacao.foraDoIdioma(texto, comentario)
+        registrarDiag(id, 'idioma', idioma)
+        if (idioma.fora) {
+          log('🌎', id + ' NÃO será aceito: ' + idioma.motivo + '. Comment: "' + comentario.slice(0, 100) + '"')
+          marcar(id, { estado: 'outro_idioma', motivo: idioma.motivo })
+          delete emAndamento[id]
+          return null
+        }
+        return decidirTeste(id, comentario)
+      }).then(function (cls) {
+        if (!cls) return
         registrarDiag(id, 'filtro', cls)
         if (cls.teste) {
           log('🧪', id + ' é TESTE (' + cls.motivo + '), NÃO será aceito. Comment: "' + comentario.slice(0, 120) + '"')

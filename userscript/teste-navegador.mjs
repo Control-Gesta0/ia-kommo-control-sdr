@@ -15,6 +15,7 @@
 //   108 via API, real → aceita DEPOIS da liberação no relógio do servidor → válido
 //   109 via API, real, outros parceiros levaram → aceito mas inválido → Lara NÃO é avisada
 //   110 via API, indicação de ontem → ignorada, zero tentativas
+//   112 via API, Country: Venezuela → NÃO aceita (só atendemos em português)
 //   111 via API E na tela 300 ms depois de criada → dispara pela tela (antes do limite do created_at) e é válido
 //   reload → nada é reaceito
 import http from 'node:http'
@@ -26,7 +27,7 @@ const { chromium } = require('playwright')
 const SKEW = -2500 // servidor = PC - 2,5s
 const agoraServidor = () => Date.now() + SKEW
 const LIBERA = 3000
-const criado = { 103: agoraServidor(), 108: agoraServidor(), 109: agoraServidor(), 110: agoraServidor() - 86400000 }
+const criado = { 103: agoraServidor(), 108: agoraServidor(), 109: agoraServidor(), 110: agoraServidor() - 86400000, 112: agoraServidor() }
 const inicioTeste = Date.now()
 const aceites = []
 const invalido = {}
@@ -50,7 +51,7 @@ const srv = http.createServer((req, res) => {
     const notas = req.url.match(/^\/api\/v4\/leads\/(\d+)\/notes/)
     if (notas) {
       const id = notas[1]
-      const base = { 103: 'Comment: lead de teste', 108: 'Comment: Quero organizar o funil de vendas', 109: 'Comment: Preciso automatizar o atendimento' }[id]
+      const base = { 103: 'Comment: lead de teste', 108: 'Country: Brazil\nComment: Quero organizar o funil de vendas', 109: 'Comment: Preciso automatizar o atendimento', 112: 'Country: Venezuela\nLanguages: Arabic, English, Portuguese\nComment: Consultoría por favor' }[id]
       const lista = [base && { params: { text: `Name: X\n${base}\nPhone: 1` } }, invalido[id] && { note_type: 'service_message', params: { text: invalido[id] } }].filter(Boolean)
       return lista.length ? json({ _embedded: { notes: lista } }) : (res.statusCode = 204, res.end())
     }
@@ -103,6 +104,7 @@ const selos = await p.$$eval('.cg-indicacao-selo', els => els.map(e => e.parentE
 console.log('--- selos:\n' + selos.join('\n'))
 const est = await p.evaluate(() => Object.fromEntries(Object.entries(window.__INDICACOES__.leads).map(([id, m]) => [id, m.estado])))
 console.log('--- estados:', JSON.stringify(est))
+console.log('--- 112 (Venezuela):', JSON.stringify(est['112']), 'tentativas:', aceites.filter(a => a[0] === '112').length)
 console.log('--- aceites [lead, liberado no servidor?, ms depois da liberação real]:', JSON.stringify(aceites.map(([id, t, l]) => [id, l, criado[id] ? Math.round(t + SKEW - criado[id] - LIBERA) : null])))
 console.log('--- avisos à Lara:', JSON.stringify((await p.evaluate(() => window.__agente)).filter(x => x.url === '/api/novo-lead').map(x => x.lead)))
 console.log('--- relógio estimado:', JSON.stringify(await p.evaluate(() => window.__INDICACOES__.relogio())), '(real: ' + SKEW + ')')

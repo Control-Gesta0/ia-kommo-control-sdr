@@ -8,12 +8,14 @@ const F = require('../userscript/filtro-indicacao.js') as {
   normalizar(s: unknown): string
   extrairComentario(texto: unknown): string | null
   classificarTeste(comentario: unknown, modo?: 'inteligente' | 'estrito'): Classificacao
+  foraDoIdioma(texto: unknown, comentario: unknown): { fora: boolean; motivo: string }
 }
 
 export interface Classificacao { teste: boolean; ambiguo: boolean; nivel: 'frase' | 'so-lixo' | 'palavra' | 'nenhum'; motivo: string; fonte?: 'regra' | 'ia' }
 
 export const normalizar = F.normalizar
 export const extrairComentario = F.extrairComentario
+export const foraDoIdioma = F.foraDoIdioma
 export const classificarTeste = (comentario: string, modo: 'inteligente' | 'estrito' = 'inteligente') => F.classificarTeste(comentario, modo)
 
 /** Procura o "Comment:" em vários textos, na ordem. Primeiro que achar vence. */

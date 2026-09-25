@@ -216,12 +216,17 @@ function primeiroNome(nome: string): string {
 }
 
 /** Texto do lembrete (fixo, sem IA: data e hora não podem sair erradas). Sempre em português. */
-export function textoLembrete(horas: number, ini: number, agora: number, nome: string): string {
+export function textoLembrete(horas: number, ini: number, agora: number, nome: string, link = ''): string {
   const l = local(ini)
   const hora = l.min ? `${l.h}h${String(l.min).padStart(2, '0')}` : `${l.h}h`
   const n = nome ? `, ${nome}` : ''
-  return horas >= 12
-    ? `Oi${n}! Passando pra lembrar da nossa reunião ${rotulo(ini, agora)} com o especialista da Control Gestão. Tudo certo pra você?`
+  if (horas >= 12) {
+    return link
+      ? `Oi${n}! Passando pra lembrar da nossa reunião ${rotulo(ini, agora)} com o especialista da Control Gestão. O link é este: ${link}\nConfere se abre certinho aí pra você?`
+      : `Oi${n}! Passando pra lembrar da nossa reunião ${rotulo(ini, agora)} com o especialista da Control Gestão. Tudo certo pra você?`
+  }
+  return link
+    ? `Oi${n}! Daqui a pouco, às ${hora}, é a nossa reunião com o especialista da Control Gestão. O link: ${link}\nAté já!`
     : `Oi${n}! Daqui a pouco, às ${hora}, é a nossa reunião com o especialista da Control Gestão. Até já!`
 }
 
@@ -239,7 +244,8 @@ async function processarLembrete(horas: number, leadId: number, agora: number): 
   if (lead.status_id === 143) return 'lead perdido: sem lembrete'
   const contatoId = (lead._embedded?.contacts || []).find(c => c.is_main)?.id
   const nome = primeiroNome(contatoId ? (await getContact(contatoId)).name || '' : '')
-  const texto = textoLembrete(horas, lem.ini, agora, nome)
+  const linkCampo = CRM_MAP.linkReuniaoFieldId ? (lead.custom_fields_values || []).find(f => f.field_id === CRM_MAP.linkReuniaoFieldId)?.values?.[0]?.value : ''
+  const texto = textoLembrete(horas, lem.ini, agora, nome, String(linkCampo || CONFIG.linkReuniao || '').trim())
   await enviarFollowup(leadId, texto, `lembrete-${horas}h`, 0)
   return `lembrete ${horas}h enviado`
 }

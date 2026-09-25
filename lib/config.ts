@@ -43,6 +43,9 @@ export const CONFIG = {
   /** true = sem "Comment:" a IA NÃO inicia (fail-closed: pode não ser indicação de parceiro) */
   exigirComentario: process.env.EXIGIR_COMENTARIO !== '0',
 
+  /** link fixo das reuniões do closer (ex.: sala do Google Meet). Vazio = só o do campo do lead */
+  linkReuniao: process.env.LINK_REUNIAO || '',
+
   // ---- Google Agenda (opcional, só leitura de livre/ocupado) ----
   googleServiceAccount: process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '',
   googleCalendarId: process.env.GOOGLE_CALENDAR_ID || '',

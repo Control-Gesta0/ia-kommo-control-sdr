@@ -126,6 +126,10 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   const reuniao = Date.parse('2026-10-01T09:30:00-03:00') // quinta 9h30
   eq('lembrete 24h', textoLembrete(24, reuniao, reuniao - 24 * 3600000, 'Ana'), 'Oi, Ana! Passando pra lembrar da nossa reunião amanhã, quinta 01/10 às 9h30 com o especialista da Control Gestão. Tudo certo pra você?')
   eq('lembrete 1h', textoLembrete(1, reuniao, reuniao - 3600000, 'Ana'), 'Oi, Ana! Daqui a pouco, às 9h30, é a nossa reunião com o especialista da Control Gestão. Até já!')
+  eq('lembrete com link pede para conferir', textoLembrete(24, reuniao, reuniao - 86400000, 'Ana', 'https://meet.google.com/abc-defg-hij').includes('https://meet.google.com/abc-defg-hij\nConfere se abre certinho aí pra você?'), true)
+  const { foraDoIdioma } = await import('../lib/indicacao')
+  eq('só português: Brasil/Portugal sim, Venezuela e Comment em espanhol não', [foraDoIdioma('Country: Brazil\nComment: x', 'x').fora, foraDoIdioma('Country: Portugal', 'y').fora, foraDoIdioma('Country: Venezuela\nLanguages: Portuguese', 'Consultoría').fora, foraDoIdioma('', 'Necesitamos configurar el embudo').fora, foraDoIdioma('', 'Indicações').fora], [false, false, true, true, false])
+  eq('início: outro país NÃO inicia', decidirInicio({ ...base, foraDoIdioma: 'país não atendido: Venezuela' }, cfg).acao, 'outro-idioma')
   eq('lembretes passam nas travas', [regras(textoLembrete(24, reuniao, reuniao - 86400000, 'Ana')), regras(textoLembrete(1, reuniao, reuniao - 3600000, ''))], [[], []])
 
   // ---------------- Roteador: porta única, sem menu ----------------

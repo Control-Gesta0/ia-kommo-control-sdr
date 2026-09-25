@@ -87,7 +87,44 @@ var FiltroIndicacao = (function () {
     return { teste: true, ambiguo: modo !== 'estrito', nivel: 'palavra', motivo: 'palavra de teste: "' + m[1] + '"' }
   }
 
-  return { normalizar: normalizar, extrairComentario: extrairComentario, classificarTeste: classificarTeste }
+  /** "Country: Brazil" da nota da indicação. null = não veio. */
+  function extrairPais(texto) {
+    var t = String(texto == null ? '' : texto).replace(/\\n/g, '\n')
+    var m = /(?:^|[\n|"{,;>]|\s)Country\s*"?\s*:\s*"?([^\n|",}<]+)/i.exec(t)
+    return m ? m[1].trim() : null
+  }
+
+  var PAISES_ATENDIDOS = ['brazil', 'brasil', 'portugal']
+
+  /** Idioma do texto do Comment pelas palavras mais comuns: 'pt' | 'es' | 'en' | '?' */
+  function idiomaComentario(comentario) {
+    var n = ' ' + normalizar(comentario) + ' '
+    function conta(ws) { var c = 0; for (var i = 0; i < ws.length; i++) if (n.indexOf(' ' + ws[i] + ' ') >= 0) c++; return c }
+    var pt = conta(['nao', 'atendimento', 'funil', 'vendas', 'preciso', 'precisamos', 'quero', 'nosso', 'nossa', 'meu', 'minha', 'o', 'e', 'com', 'uma', 'para', 'voces', 'ajuda', 'empresa'])
+    var es = conta(['necesitamos', 'necesito', 'embudo', 'ventas', 'nuestro', 'nuestra', 'el', 'y', 'los', 'mi', 'quiero', 'consultoria', 'por', 'favor', 'ayuda', 'empresa', 'para', 'con', 'una'])
+    var en = conta(['we', 'need', 'help', 'our', 'the', 'and', 'sales', 'team', 'with', 'want', 'my', 'company', 'to', 'for'])
+    if (es > pt && es >= 2) return 'es'
+    if (en > pt && en > es && en >= 2) return 'en'
+    if (pt >= 1) return 'pt'
+    return '?'
+  }
+
+  /**
+   * A Control Gestão só atende em português. País da nota manda (Brasil/Portugal
+   * aceita; outro não). Sem país: decide pelo idioma do Comment (espanhol/inglês = não).
+   */
+  function foraDoIdioma(texto, comentario) {
+    var pais = extrairPais(texto)
+    if (pais) {
+      var ok = PAISES_ATENDIDOS.indexOf(normalizar(pais)) >= 0
+      return { fora: !ok, motivo: ok ? 'país atendido: ' + pais : 'país não atendido: ' + pais }
+    }
+    var lang = idiomaComentario(comentario)
+    if (lang === 'es' || lang === 'en') return { fora: true, motivo: 'Comment em ' + (lang === 'es' ? 'espanhol' : 'inglês') }
+    return { fora: false, motivo: 'sem país; Comment em português ou neutro' }
+  }
+
+  return { normalizar: normalizar, extrairComentario: extrairComentario, classificarTeste: classificarTeste, extrairPais: extrairPais, idiomaComentario: idiomaComentario, foraDoIdioma: foraDoIdioma }
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = FiltroIndicacao

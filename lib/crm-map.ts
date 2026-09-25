@@ -106,6 +106,12 @@ export const CRM_MAP = {
     tarefa: { taskTypeId: 1, responsavelId: 12725576, texto: 'Proposta sem resposta depois de 5 follow-ups: ligar ou marcar como Perdido' },
   },
 
+  /**
+   * Link da reunião: o fixo do Rodrigo (env LINK_REUNIAO) ou o que estiver no campo
+   * "Link da Reunião" do lead (o do lead vence). Vai na confirmação e nos lembretes.
+   */
+  linkReuniaoFieldId: 1046627,
+
   /** Lembretes da reunião PARA O CLIENTE, no WhatsApp: horas antes do horário marcado */
   lembretes: { ativo: true, horasAntes: [24, 1] },
 
@@ -121,6 +127,7 @@ export const CRM_MAP = {
     teste: 'indicacao-teste',
     semTelefone: 'indicacao-sem-telefone',
     invalida: 'indicacao-invalida',
+    outroIdioma: 'indicacao-outro-pais',
     suporte: 'indicacao-suporte',
     licenca: 'venda-licenca',
   },

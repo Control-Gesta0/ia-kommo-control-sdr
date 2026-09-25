@@ -425,12 +425,15 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
         const texto = `Reunião (indicação Kommo) · ${convidado ? `Decisor convidado: ${convidado} · ` : ''}${resumoCampos}${state.comentario ? ` · Comment: ${state.comentario.slice(0, 300)}` : ''}`.slice(0, 1000)
         const taskId = await port.criarReuniao({ ini: slot.ini, fim: slot.fim, texto })
         await port.patchState({ reuniao: { ...slot, taskId, em: new Date(agora).toISOString() }, oferta: [] })
+        const linkCampo = CRM_MAP.linkReuniaoFieldId ? (await port.getLead()).fields[CRM_MAP.linkReuniaoFieldId]?.value : undefined
+        const link = String(linkCampo || process.env.LINK_REUNIAO || '').trim()
+        if (link && !linkCampo && CRM_MAP.linkReuniaoFieldId) await port.writeFields([{ field_id: CRM_MAP.linkReuniaoFieldId, values: [{ value: link }] }])
         await port.agendarLembretes({ ini: slot.ini, taskId }).catch(e => console.warn('[lembretes]', e))
         // Efeitos que só acontecem DEPOIS da reunião existir
         if (CRM_MAP.dataReuniaoFieldId) await port.writeFields([{ field_id: CRM_MAP.dataReuniaoFieldId, values: [{ value: Math.floor(slot.ini / 1000) }] }])
         if (CRM_MAP.etapaAgendado.id) await avancar(port, 'agendado')
         await aplicarFinalizacao(ctx, 'agendado', `Reunião marcada para ${slot.label}.${convidado ? ` Decisor convidado: ${convidado}.` : ''} ${resumoCampos}`)
-        return ok(`Reunião marcada: ${slot.label} (${cfg.duracaoMin} min). Confirme ao lead o dia e a hora com essas palavras${convidado ? `, reforce que ${convidado} participa junto` : ''}, diga que o especialista chama no horário e NÃO faça pergunta.`, { handoff: true })
+        return ok(`Reunião marcada: ${slot.label} (30 a 45 min). Confirme ao lead o dia e a hora com essas palavras${link ? `, mande o link da reunião ${link} pedindo que ele confira se abre certinho` : ', diga que o especialista manda o link'}${convidado ? `, reforce que ${convidado} participa junto` : ''} e NÃO faça pergunta.`, { handoff: true })
       }
 
       case 'mover_etapa': {
