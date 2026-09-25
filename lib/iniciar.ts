@@ -14,7 +14,7 @@ import { avancar } from './etapas'
 import { agendarFollowup } from './followup'
 import { kommoPort } from './port'
 import { k, redis } from './redis'
-import { idiomaDe, saudacao } from './saudacao'
+import { saudacao } from './saudacao'
 import { getState, patchState } from './state'
 import { sendReply } from './transport'
 

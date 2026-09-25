@@ -45,11 +45,11 @@ export const CENARIOS: Cenario[] = [
     criterios: ['Não pergunta quantos vendedores/corretores são, porque o Comment já disse 12', 'Cita a dor de perder lead no WhatsApp'],
   },
   {
-    id: 'abertura-espanhol',
+    id: 'abertura-comment-espanhol-responde-em-portugues',
     porta: 'indicacao', nomeContato: 'Carlos', comentario: 'Necesitamos configurar el embudo y conectar WhatsApp para 8 vendedores', abertura: true, agora: '2026-09-28T16:00:00Z',
     msgs: [],
     checks: [umaPergunta, semFallback],
-    criterios: ['A mensagem está em espanhol (pode começar com a saudação do horário)', 'Se apresenta como Lara', 'Não pergunta quantos vendedores são, porque o Comment já disse 8'],
+    criterios: ['A mensagem está inteira em PORTUGUÊS (a Control Gestão só atende em português), mesmo com o Comment em espanhol', 'Se apresenta como Lara', 'Não pergunta quantos vendedores são, porque o Comment já disse 8'],
   },
   {
     id: 'responde-antes-de-perguntar',

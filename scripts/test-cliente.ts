@@ -126,7 +126,6 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   const reuniao = Date.parse('2026-10-01T09:30:00-03:00') // quinta 9h30
   eq('lembrete 24h', textoLembrete(24, reuniao, reuniao - 24 * 3600000, 'Ana'), 'Oi, Ana! Passando pra lembrar da nossa reunião amanhã, quinta 01/10 às 9h30 com o especialista da Control Gestão. Tudo certo pra você?')
   eq('lembrete 1h', textoLembrete(1, reuniao, reuniao - 3600000, 'Ana'), 'Oi, Ana! Daqui a pouco, às 9h30, é a nossa reunião com o especialista da Control Gestão. Até já!')
-  eq('lembrete em espanhol', textoLembrete(24, reuniao, reuniao - 24 * 3600000, 'Carlos', 'es').includes('mañana, jueves 01/10 a las 9h30'), true)
   eq('lembretes passam nas travas', [regras(textoLembrete(24, reuniao, reuniao - 86400000, 'Ana')), regras(textoLembrete(1, reuniao, reuniao - 3600000, ''))], [[], []])
 
   // ---------------- Roteador: porta única, sem menu ----------------

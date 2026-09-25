@@ -215,19 +215,13 @@ function primeiroNome(nome: string): string {
   return /^[A-Za-zÀ-ú]{2,20}$/.test(p) && !/^(lead|contato|cliente|empresa)$/i.test(p) ? p[0].toUpperCase() + p.slice(1).toLowerCase() : ''
 }
 
-/** Texto do lembrete (fixo, sem IA: data e hora não podem sair erradas). */
-export function textoLembrete(horas: number, ini: number, agora: number, nome: string, idioma: 'pt' | 'es' | 'en' = 'pt'): string {
+/** Texto do lembrete (fixo, sem IA: data e hora não podem sair erradas). Sempre em português. */
+export function textoLembrete(horas: number, ini: number, agora: number, nome: string): string {
   const l = local(ini)
   const hora = l.min ? `${l.h}h${String(l.min).padStart(2, '0')}` : `${l.h}h`
-  const quando = rotulo(ini, agora)
   const n = nome ? `, ${nome}` : ''
-  const traduzir = (t: string, mapa: Record<string, string>) => Object.entries(mapa).reduce((acc, [pt, x]) => acc.replace(new RegExp(`(?<!\\p{L})${pt}(?!\\p{L})`, 'u'), x), t)
-  const ES = { amanhã: 'mañana', hoje: 'hoy', segunda: 'lunes', terça: 'martes', quarta: 'miércoles', quinta: 'jueves', sexta: 'viernes', sábado: 'sábado', domingo: 'domingo', 'às': 'a las' }
-  const EN = { amanhã: 'tomorrow', hoje: 'today', segunda: 'Monday', terça: 'Tuesday', quarta: 'Wednesday', quinta: 'Thursday', sexta: 'Friday', sábado: 'Saturday', domingo: 'Sunday', 'às': 'at' }
-  if (idioma === 'es') return horas >= 12 ? `¡Hola${n}! Te recuerdo nuestra reunión con el especialista de Control Gestão ${traduzir(quando, ES)}. ¿Todo bien para ti?` : `¡Hola${n}! En un rato, a las ${hora}, es nuestra reunión con el especialista de Control Gestão. ¡Nos vemos!`
-  if (idioma === 'en') return horas >= 12 ? `Hi${n}! Just a reminder of our meeting with the Control Gestão specialist ${traduzir(quando, EN)}. Does it still work for you?` : `Hi${n}! Our meeting with the Control Gestão specialist is in about an hour, at ${hora}. See you soon!`
   return horas >= 12
-    ? `Oi${n}! Passando pra lembrar da nossa reunião ${quando} com o especialista da Control Gestão. Tudo certo pra você?`
+    ? `Oi${n}! Passando pra lembrar da nossa reunião ${rotulo(ini, agora)} com o especialista da Control Gestão. Tudo certo pra você?`
     : `Oi${n}! Daqui a pouco, às ${hora}, é a nossa reunião com o especialista da Control Gestão. Até já!`
 }
 
@@ -245,9 +239,7 @@ async function processarLembrete(horas: number, leadId: number, agora: number): 
   if (lead.status_id === 143) return 'lead perdido: sem lembrete'
   const contatoId = (lead._embedded?.contacts || []).find(c => c.is_main)?.id
   const nome = primeiroNome(contatoId ? (await getContact(contatoId)).name || '' : '')
-  const st = await getState(leadId)
-  const { idiomaDe } = await import('./saudacao')
-  const texto = textoLembrete(horas, lem.ini, agora, nome, idiomaDe(st.comentario, st.contexto?.idiomas))
+  const texto = textoLembrete(horas, lem.ini, agora, nome)
   await enviarFollowup(leadId, texto, `lembrete-${horas}h`, 0)
   return `lembrete ${horas}h enviado`
 }
