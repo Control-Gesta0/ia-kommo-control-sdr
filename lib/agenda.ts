@@ -34,6 +34,8 @@ export interface AgendaConfig {
   /** não oferece horário que começa antes de agora + N horas */
   antecedenciaMinHoras: number
   expediente: { dias: number[]; inicio: string; fim: string; pausas?: Array<[string, string]> }
+  /** horários de início preferidos do closer ("10:00"...). Definido = só esses são oferecidos */
+  horarios?: string[]
   /** quantas opções a IA oferece por vez */
   maxOpcoes: number
   /** folga entre reuniões (min) aplicada em volta do ocupado */
@@ -87,6 +89,7 @@ export function gerarLivres(agora: number, cfg: AgendaConfig, ocupados: Interval
     diasUteis++
     for (let t = hm(cfg.expediente.inicio); t + cfg.duracaoMin <= hm(cfg.expediente.fim); t += cfg.passoMin) {
       if ((cfg.expediente.pausas || []).some(([a, b]) => t < hm(b) && t + cfg.duracaoMin > hm(a))) continue
+      if (cfg.horarios?.length && !cfg.horarios.some(h => hm(h) === t)) continue
       const ini = fromLocal(dia.y, dia.m, dia.d, Math.floor(t / 60), t % 60)
       const fim = ini + dur
       if (ini < minIni) continue

@@ -5,6 +5,7 @@ import { logExec } from './execlog'
 import { appendMessage, humanSpokeRecently } from './history'
 import { addLeadNote, addLeadTags, createTask, getContact, getLead, getTask, kommoGet, leadTags, patchLead, removeLeadTags, updateLeadFields } from './kommo'
 import { lerEventoGoogle } from './google'
+import { despertar } from './qstash'
 import { k, redis } from './redis'
 import { getState, patchState } from './state'
 import { sendReply } from './transport'
@@ -58,6 +59,21 @@ const chaveEstado = (tipo: string, leadId: number) => k('fu', tipo, leadId)
 
 async function enfileirar(membro: string, quando: number): Promise<void> {
   await redis.zadd(FILA(), { score: quando, member: membro })
+  await despertar(membro, quando).catch(e => console.warn('[qstash]', e instanceof Error ? e.message : e))
+}
+
+/**
+ * Despertador do QStash chegou para um item: só processa se ele ainda está na fila
+ * e já venceu (claim atômico com ZREM). Remarcado para depois = chama de novo mais tarde.
+ */
+export async function pegarItem(membro: string, agora = Date.now()): Promise<'processar' | 'adiado' | 'nada'> {
+  const score = await redis.zscore(FILA(), membro)
+  if (score === null || score === undefined) return 'nada'
+  if (Number(score) > agora + MIN) {
+    await despertar(membro, Number(score), agora).catch(e => console.warn('[qstash]', e instanceof Error ? e.message : e))
+    return 'adiado'
+  }
+  return (await redis.zrem(FILA(), membro)) === 1 ? 'processar' : 'nada'
 }
 
 /** SDR: (re)começa a cadência a partir da última mensagem da Lara. */

@@ -5,6 +5,7 @@ import { modoInicio } from '../lib/iniciar'
 import { kommoGet } from '../lib/kommo'
 import { loadPromptFile } from '../lib/llm'
 import { googleLeitura, googleOAuth, googleOcupados } from '../lib/google'
+import { qstashAtivo } from '../lib/qstash'
 
 /**
  * CRM_MAP × Kommo VIVO + coerência interna. Rodar depois de QUALQUER mexida no
@@ -47,6 +48,7 @@ export function problemasOffline(): { problems: string[]; avisos: string[] } {
     if (!CRM_MAP.agenda.responsavelId) problems.push('agenda.responsavelId = 0 (user_id do closer)')
     if (!CRM_MAP.etapaAgendado.id) avisos.push('etapaAgendado.id = 0: a reunião é criada mas o lead não muda de etapa')
     if (!CRM_MAP.dataReuniaoFieldId) avisos.push('dataReuniaoFieldId = 0: a data da reunião fica só na tarefa e na nota')
+    if (!qstashAtivo()) avisos.push('QStash desligado: follow-ups e lembretes saem pelo cron de 15 min (até 15 min de atraso)')
     if (!googleLeitura()) avisos.push('Google Agenda desligada: compromisso criado direto no Google (fora do Kommo) não bloqueia a agenda')
     else if (!googleOAuth()) avisos.push('Google só leitura (conta de serviço): a reunião vira tarefa do Kommo, sem link do Meet automático')
   }

@@ -61,9 +61,10 @@ const AGENDA: AgendaConfig = {
   passoMin: 30,
   diasUteisJanela: 5,
   antecedenciaMinHoras: 3,
-  expediente: { dias: [1, 2, 3, 4, 5], inicio: '09:00', fim: '18:00', pausas: [['12:00', '13:30']] }, // [CONFIRMAR]
+  expediente: { dias: [1, 2, 3, 4, 5], inicio: '09:00', fim: '18:00', pausas: [['12:00', '13:30']] }, // seg a sex (Rodrigo, 25/09)
+  horarios: ['10:00', '11:00', '14:00', '15:00', '16:00', '17:00'], // preferência do Rodrigo (25/09)
   maxOpcoes: 2,
-  folgaMin: 15,
+  folgaMin: 0,               // horários de 1h em sequência (10h e 11h) precisam caber um depois do outro
 }
 
 export const CRM_MAP = {

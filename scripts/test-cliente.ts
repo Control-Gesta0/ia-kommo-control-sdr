@@ -140,11 +140,13 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   // ---------------- Agenda (relógio fixo: segunda 28/09/2026 10h de Brasília) ----------------
   const A = await import('../lib/agenda')
   const agora = Date.parse('2026-09-28T13:00:00Z')
-  const cfgA = { ativa: true, responsavelId: 99, taskTypeId: 2, duracaoMin: 30, passoMin: 30, diasUteisJanela: 5, antecedenciaMinHoras: 3, expediente: { dias: [1, 2, 3, 4, 5], inicio: '09:00', fim: '18:00', pausas: [['12:00', '13:30']] as Array<[string, string]> }, maxOpcoes: 2, folgaMin: 15 }
+  const cfgA = { ativa: true, responsavelId: 99, taskTypeId: 2, duracaoMin: 30, passoMin: 30, diasUteisJanela: 5, antecedenciaMinHoras: 3, expediente: { dias: [1, 2, 3, 4, 5], inicio: '09:00', fim: '18:00', pausas: [['12:00', '13:30']] as Array<[string, string]> }, maxOpcoes: 2, folgaMin: 15, horarios: undefined as string[] | undefined }
   const iso = (s: string) => Date.parse(s)
   const livres = A.gerarLivres(agora, cfgA, [{ ini: iso('2026-09-28T17:00:00Z'), fim: iso('2026-09-28T18:00:00Z') }])
   eq('1º livre respeita antecedência, pausa e folga do ocupado', livres[0].label, 'hoje, segunda 28/09 às 15h30')
   eq('ocupado 14h a 15h + folga 15min tira 13h30 a 15h', livres.filter(s => s.label.startsWith('hoje')).map(s => s.label.split(' às ')[1]), ['15h30', '16h', '16h30', '17h', '17h30'])
+  const soPreferidos = A.gerarLivres(agora, { ...cfgA, duracaoMin: 60, folgaMin: 0, horarios: ['10:00', '11:00', '14:00', '15:00', '16:00', '17:00'] }, [{ ini: iso('2026-09-29T13:00:00Z'), fim: iso('2026-09-29T14:00:00Z') }])
+  eq('horários preferidos: só 10h/11h/14h-17h, 11h livre logo após reunião das 10h', soPreferidos.filter(s => s.label.includes('29/09')).map(s => s.label.replace(/.* às /, '')), ['11h', '14h', '15h', '16h', '17h'])
   eq('sem ocupado, 1º livre é 13h30 (fim da pausa)', A.gerarLivres(agora, cfgA, [])[0].label, 'hoje, segunda 28/09 às 13h30')
   eq('nada no fim de semana', livres.some(s => /sábado|domingo/.test(s.label)), false)
   eq('janela de 5 dias úteis', A.local(livres[livres.length - 1].ini).d, 2)
@@ -243,5 +245,18 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   w.state = {}; w.tags = new Set(['gate'])
   out = await runTool(ctx('meu whatsapp caiu e a mensagem não está enviando'), 'finalizar_atendimento', { motivo: 'suporte', evidencia: 'meu whatsapp caiu', resumo: 'suporte técnico' })
   eq('suporte técnico finaliza com a tag indicacao-suporte', [out.isError, w.tags.has('indicacao-suporte')], [false, true])
+
+  // QStash: só aceita o despertador assinado com a chave certa e para o mesmo item
+  process.env.QSTASH_CURRENT_SIGNING_KEY = 'sig_teste_atual'; process.env.QSTASH_NEXT_SIGNING_KEY = 'sig_teste_prox'
+  const { assinaturaValida } = await import('../lib/qstash')
+  const crypto = await import('crypto')
+  const jwt = (chave: string, sub: string) => {
+    const b = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url')
+    const hp = `${b({ alg: 'HS256', typ: 'JWT' })}.${b({ iss: 'Upstash', sub, exp: Math.floor(Date.now() / 1000) + 300, nbf: Math.floor(Date.now() / 1000) })}`
+    return `${hp}.${crypto.createHmac('sha256', chave).update(hp).digest('base64url')}`
+  }
+  const sub = 'https://x.vercel.app/api/cron?item=sdr%3A123'
+  eq('QStash: assinatura válida (chave atual e próxima)', [assinaturaValida(jwt('sig_teste_atual', sub), '/api/cron?item=sdr%3A123'), assinaturaValida(jwt('sig_teste_prox', sub), '/api/cron?item=sdr:123')], [true, true])
+  eq('QStash: chave errada ou outro item = recusado', [assinaturaValida(jwt('outra', sub), '/api/cron?item=sdr%3A123'), assinaturaValida(jwt('sig_teste_atual', sub), '/api/cron?item=sdr%3A999')], [false, false])
   return 0
 }
