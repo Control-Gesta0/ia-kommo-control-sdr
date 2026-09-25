@@ -62,7 +62,7 @@ export async function processLead(leadId: number, webhookId: string): Promise<vo
     if (await humanSpokeRecently(leadId)) {
       // Nota uma vez por ciclo (não a cada mensagem)
       if ((await redis.set(k('nota-humano', leadId), 1, { nx: true, ex: 6 * 3600 })) === 'OK') {
-        await addLeadNote(leadId, nota('Pausada: uma pessoa do time respondeu', ['👤 A Lara não atropela quem está atendendo', '▶️ Volta sozinha 6h depois da última mensagem do time (se a tag ia-sdr continuar)'])).catch(() => undefined)
+        await addLeadNote(leadId, nota('Pausada: uma pessoa do time respondeu', ['☺️ A Lara não atropela quem está atendendo', '▶️ Volta sozinha 6h depois da última mensagem do time (se a tag ia-sdr continuar)'])).catch(() => undefined)
       }
       return pular('humano falou pelo Kommo nas últimas 6h — a IA não atropela')
     }

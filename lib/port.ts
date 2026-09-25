@@ -48,7 +48,7 @@ export function kommoPort(leadId: number): LeadPort {
       const lead = await getLead(leadId).catch(() => null)
       const contatoId = (lead?._embedded?.contacts || []).find(c => c.is_main)?.id
       const nome = (contatoId ? (await getContact(contatoId).catch(() => null))?.name : '') || lead?.name
-      await sendReply(alvo, nome ? texto.replace('*Nova reunião marcada pela Lara*', `*Nova reunião marcada pela Lara*\nCliente: ${nome}`) : texto)
+      await sendReply(alvo, texto.replace('{{CLIENTE}}', nome || `Lead #${leadId}`))
     },
     async criarReuniao(r) {
       const cfg = CRM_MAP.agenda

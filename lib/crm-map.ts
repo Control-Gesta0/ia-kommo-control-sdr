@@ -21,6 +21,10 @@ export type { AgendaConfig, Alerta, Campo, CampoTipo, Etapa, Porta } from './crm
 // CHAMP: Challenges (organização + dor + vendedores) · Authority (decisor) ·
 // Money (faturamento ou nº de usuários) · Prioritization (quando começar)
 const CAMPOS = {
+  segmento: {
+    key: 'segmento', curto: 'Segmento', id: 0, name: 'Nicho/segmento da empresa', type: 'text',
+    pergunta: 'Me conta rapidinho, vocês atuam em qual ramo?',
+  },
   organizacao: {
     key: 'organizacao', curto: 'Organização', id: 1046001, kommoName: 'Situação', name: 'Onde organizam os leads hoje', type: 'text',
     sinal: /planilha|excel|sheets|caderno|papel|whats|kommo|amo|crm|sistema|agenda|cabe[cç]a|mem[oó]ria|google|trello|notion|pipedrive|\brd\b|hubspot|bitrix|ploomes|anot|nada|nenhum|lugar nenhum|n[aã]o (organiz|temos|tenho|usamos)/i,
@@ -142,7 +146,7 @@ export const CRM_MAP = {
       ativa: true,
       promptFile: 'indicacao.md',
       sinais: /$^/,
-      roteiro: ['organizacao', 'vendedores', 'dor', 'decisor', 'faturamento', 'prioridade'],
+      roteiro: ['segmento', 'organizacao', 'vendedores', 'dor', 'decisor', 'faturamento', 'prioridade'],
       obrigatorios: ['organizacao', 'vendedores'],
     },
     {
@@ -153,7 +157,7 @@ export const CRM_MAP = {
       ativa: true,
       promptFile: 'direto.md',
       sinais: /$^/,
-      roteiro: ['organizacao', 'vendedores', 'dor', 'decisor', 'faturamento', 'prioridade'],
+      roteiro: ['segmento', 'organizacao', 'vendedores', 'dor', 'decisor', 'faturamento', 'prioridade'],
       obrigatorios: ['organizacao', 'vendedores'],
     },
   ] as Porta[],

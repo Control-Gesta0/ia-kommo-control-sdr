@@ -176,7 +176,7 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
       const fim = noExpediente(agora + CRM_MAP.followup.esgotar.depoisDeHoras * HORA)
       await enfileirar(`esg:${leadId}`, fim)
       await campoProximo(leadId, null)
-      linhaProx = `🏁 Último follow-up. Sem resposta até ${quando(fim, agora)}, o lead vai para ${CRM_MAP.followup.esgotar.nome}.`
+      linhaProx = `⛳ Último follow-up. Sem resposta até ${quando(fim, agora)}, o lead vai para ${CRM_MAP.followup.esgotar.nome}.`
     }
     await addLeadNote(leadId, nota(`Follow-up ${passo} de ${total} enviado`, [linhaProx])).catch(() => undefined)
     return `sdr ${passo}/${total} enviado`
@@ -189,10 +189,10 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
     if (CONFIG.gateTag) await removeLeadTags(leadId, [CONFIG.gateTag]).catch(() => undefined)
     await addLeadTags(leadId, [e.tag])
     await addLeadNote(leadId, nota('Follow-ups esgotados, lead sem resposta', [
-      `🔁 Cadência: ${CRM_MAP.followup.horas.map(h => (h < 24 ? `${h}h` : `${h / 24}d`)).join(', ')}`,
-      `📍 Movido para ${e.nome} (Remarketing e Retornos futuros)`,
+      `♻️ Cadência: ${CRM_MAP.followup.horas.map(h => (h < 24 ? `${h}h` : `${h / 24}d`)).join(', ')}`,
+      `➡️ Movido para ${e.nome} (Remarketing e Retornos futuros)`,
       '❌ Motivo de perda: Sem resposta',
-      '👤 Responsável: Rodrigo',
+      '☺️ Responsável: Rodrigo',
     ]))
     await patchState(leadId, { finalizado: { motivo: 'sem_resposta', resumo: 'cadência de follow-up esgotada', em: new Date(agora).toISOString() } })
     await logExec({ tipo: 'finalizou', leadId, detalhe: `follow-up esgotado → ${e.nome}` })
@@ -221,7 +221,7 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
     } else {
       await enfileirar(`negfim:${leadId}`, noExpediente(agora + DIA))
       await campoProximo(leadId, null)
-      linhaProx = '🏁 Último follow-up da negociação. Sem resposta, o vendedor recebe uma tarefa.'
+      linhaProx = '⛳ Último follow-up da negociação. Sem resposta, o vendedor recebe uma tarefa.'
     }
     await addLeadNote(leadId, nota(`Follow-up de negociação ${passo} de ${n.dias.length} enviado`, [linhaProx])).catch(() => undefined)
     return `neg ${passo}/${n.dias.length} enviado`
@@ -235,7 +235,7 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
     const est = await redis.get<Cadencia>(chaveEstado('neg', leadId))
     if (!est || est.passo < 0) return 'respondeu: sem tarefa'
     await createTask({ leadId, responsibleUserId: t.responsavelId, taskTypeId: t.taskTypeId, text: t.texto, completeTill: Math.floor(noExpediente(agora) / 1000) + 3600, duration: 0 })
-    await addLeadNote(leadId, nota('Negociação sem resposta após todos os follow-ups', ['📋 Tarefa criada para o vendedor retomar o contato'])).catch(() => undefined)
+    await addLeadNote(leadId, nota('Negociação sem resposta após todos os follow-ups', ['✍️ Tarefa criada para o vendedor retomar o contato'])).catch(() => undefined)
     await logExec({ tipo: 'followup', leadId, detalhe: 'negociação sem resposta: tarefa criada para o Rodrigo' })
     return 'tarefa criada'
   }

@@ -2,13 +2,13 @@ import { rotulo } from './agenda'
 
 /**
  * Notas visuais das ações da Lara no card (para acompanhar e para demonstração).
- * Todas começam com "🤖 LARA ·" e usam o mesmo desenho:
- *   🤖 LARA · Primeira mensagem enviada
+ * Todas começam com "⚡ LARA ·" e usam o mesmo desenho:
+ *   ⚡ LARA · Primeira mensagem enviada
  *   ⏭️ Próximo follow-up: segunda 28/09 às 9h
  */
 export function nota(titulo: string, linhas: Array<string | false | null | undefined | 0> = []): string {
   const corpo = linhas.filter(Boolean).join('\n')
-  return `🤖 LARA · ${titulo}${corpo ? `\n${corpo}` : ''}`
+  return `⚡ LARA · ${titulo}${corpo ? `\n${corpo}` : ''}`
 }
 
 /** "amanhã, terça 29/09 às 10h" no fuso de São Paulo */

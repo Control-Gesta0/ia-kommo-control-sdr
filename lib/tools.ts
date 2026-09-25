@@ -233,17 +233,19 @@ export function snapshot(porta: Porta, state: LeadState): Snapshot {
   return { preenchidos, abertos }
 }
 
-export function describeOpen(porta: Porta, s: Snapshot, prioridade: string[] = []): string {
+export function describeOpen(porta: Porta, snap0: Snapshot, prioridade: string[] = []): string {
   if (!porta.roteiro.length) return ''
-  if (!s.abertos.length) return 'Roteiro COMPLETO: agora VENDA a reunião (ligue a dor dele ao que fazemos e ofereça a análise gratuita com o especialista, perguntando se ele quer marcar). Só chame consultar_horarios depois que ele topar ou se ele já pediu horário.'
+  const nicho = snap0.abertos.some(c => c.key === 'segmento') ? ' Ramo da empresa ainda não identificado: se ele já contou (ex.: "sou advogado"), grave em segmento agora; senão, pergunte de leve junto da próxima pergunta ("e vocês atuam em qual ramo?").' : ''
+  const s = { ...snap0, abertos: snap0.abertos.filter(c => c.key !== 'segmento') }
   const aberto = (k: string) => s.abertos.some(c => c.key === k)
+  if (!s.abertos.length) return 'Roteiro COMPLETO: agora VENDA a reunião (ligue a dor dele e o problema comum do nicho ao que fazemos e ofereça a análise gratuita com o especialista, perguntando se ele quer marcar). Só chame consultar_horarios depois que ele topar ou se ele já pediu horário.'
   // Onde organizam + quantos vendedores vão juntos numa mensagem só (menos mensagens de qualificação)
   if (!prioridade.length && aberto('organizacao') && aberto('vendedores')) {
-    return `Faltam: ${s.abertos.map(c => c.name).join(' · ')}. Próximo → as DUAS perguntas juntas, numa mensagem só: "Hoje vocês organizam os leads onde: WhatsApp, planilha ou outro CRM? E quantos vendedores usariam o sistema?" (adapte ao que ele já contou; se ele já respondeu uma, pergunte só a outra). Se o Comment ou as mensagens já respondem algum item, grave com salvar_respostas ANTES e pule.`
+    return `Faltam: ${s.abertos.map(c => c.name).join(' · ')}. Próximo → as DUAS perguntas juntas, numa mensagem só: "Hoje vocês organizam os leads onde: WhatsApp, planilha ou outro CRM? E quantos vendedores usariam o sistema?" (adapte ao que ele já contou; se ele já respondeu uma, pergunte só a outra). Se o Comment ou as mensagens já respondem algum item, grave com salvar_respostas ANTES e pule.${nicho}`
   }
   const prox = s.abertos.find(c => prioridade.includes(c.key)) || s.abertos[0]
   const opc = prox.options ? ` (grave com uma destas opções EXATAS: ${prox.options.map(o => o.value).join(' | ')})` : ''
-  return `Faltam: ${s.abertos.map(c => c.name).join(' · ')}. Próximo que falta → ${prox.name}${prox.pergunta ? ` (use esta pergunta, com o mínimo de ajuste: "${prox.pergunta}")` : ''}${opc}. Se o Comment ou as mensagens já respondem algum desses, grave com salvar_respostas ANTES e pule. Pode seguir outra ordem se ficar mais natural.`
+  return `Faltam: ${s.abertos.map(c => c.name).join(' · ')}. Próximo que falta → ${prox.name}${prox.pergunta ? ` (use esta pergunta, com o mínimo de ajuste: "${prox.pergunta}")` : ''}${opc}. Se o Comment ou as mensagens já respondem algum desses, grave com salvar_respostas ANTES e pule. Pode seguir outra ordem se ficar mais natural.${nicho}`
 }
 
 // ---------- Execução ----------
@@ -271,9 +273,9 @@ function coerce(campo: Campo, raw: string, atual?: number[]): { values: KommoFie
 }
 
 const MOTIVO_TXT: Record<string, string> = {
-  agendado: '📅 Reunião agendada', qualificado_sem_reuniao: '✅ Qualificado (reunião a combinar)', venda_licenca: '🛒 Venda de licença',
-  suporte: '🛠️ Pedido de suporte técnico', ja_tem_parceiro: '🤝 Já tem parceiro', fora_do_escopo: '🚫 Fora do escopo',
-  pediu_humano: '🙋 Pediu para falar com uma pessoa', desistiu: '👋 Desistiu', sem_resposta: '🔕 Sem resposta',
+  agendado: '⏰ Reunião agendada', qualificado_sem_reuniao: '✅ Qualificado (reunião a combinar)', venda_licenca: '✅ Venda de licença',
+  suporte: '⚙️ Pedido de suporte técnico', ja_tem_parceiro: '☑️ Já tem parceiro', fora_do_escopo: '⛔ Fora do escopo',
+  pediu_humano: '✋ Pediu para falar com uma pessoa', desistiu: '✌️ Desistiu', sem_resposta: '⌛ Sem resposta',
 }
 
 /** Efeitos no CRM ao finalizar. Ordem importa: primeiro desliga (tag), depois marca o estado. */
@@ -289,14 +291,14 @@ export async function aplicarFinalizacao(ctx: ToolCtx, motivo: string, resumoRaw
     const linhas = snapshot(porta, state).preenchidos.map(p => `• ${p.campo.curto || p.campo.name}: ${p.valor}`)
     const titulo = motivo === 'agendado'
       ? `${moveuParaAgendado ? `Etapa: ${NOMES.agendado} · ` : ''}Atendimento finalizado, transferido para humano`
-      : `Atendimento finalizado, transferido para humano · ${MOTIVO_TXT[motivo] || motivo}${urgente ? ' · 🚨 URGENTE' : ''}`
+      : `Atendimento finalizado, transferido para humano · ${MOTIVO_TXT[motivo] || motivo}${urgente ? ' · ❗ URGENTE' : ''}`
     await port.addNote(nota(titulo, [
       ...linhasExtras,
-      resumo && motivo !== 'agendado' && `🧾 ${resumo}`,
-      state.respondenteNome && `👤 Quem conversou: ${state.respondenteNome} (${state.respondenteRelacao || '—'})`,
-      state.outroAssunto && `💡 Outro assunto citado: ${state.outroAssunto}`,
-      linhas.length > 0 && `\n📋 Resumo da qualificação:\n${linhas.join('\n')}`,
-      state.comentario && `\n📝 Pedido da indicação: "${state.comentario}"`,
+      resumo && motivo !== 'agendado' && `✍️ ${resumo}`,
+      state.respondenteNome && `☺️ Quem conversou: ${state.respondenteNome} (${state.respondenteRelacao || '—'})`,
+      state.outroAssunto && `✨ Outro assunto citado: ${state.outroAssunto}`,
+      linhas.length > 0 && `\n✍️ Resumo da qualificação:\n${linhas.join('\n')}`,
+      state.comentario && `\n✉️ Pedido da indicação: "${state.comentario}"`,
       '\n✋ Lara saiu da conversa (tag ia-sdr removida). Daqui pra frente é com o time.',
     ]))
   }
@@ -411,6 +413,12 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
         if (!livres.length) return err('Sem horário livre na janela. Diga que o time vai propor um horário por aqui e chame finalizar_atendimento(qualificado_sem_reuniao).')
         const pref = parsePreferencia(`${String(input.preferencia || '')}\n${ctx.lastLeadText}`, agora)
         const { opcoes, respeitouPreferencia } = escolherOpcoes(livres, pref, cfg.maxOpcoes)
+        // O lead já pediu um horário exato e ele está livre: marca direto, sem perguntar de novo
+        const pedido = resolverEscolha(ctx.lastLeadText, livres, agora)
+        if (pedido && respeitouPreferencia) {
+          await port.patchState({ oferta: [pedido], ofertaEm: agora })
+          return ok(`O horário que o lead pediu está LIVRE: ${pedido.label}. Chame agendar_reuniao AGORA com horario="${pedido.label}" (não pergunte de novo, ele já escolheu).`)
+        }
         await port.patchState({ oferta: opcoes, ofertaEm: agora })
         const lista = opcoes.map((o, i) => `${i + 1}) ${o.label}`).join(' · ')
         return ok(`${respeitouPreferencia ? '' : 'Não há horário livre na preferência do lead; diga isso e ofereça estes. '}Horários livres (ofereça exatamente estes, sem inventar outros): ${lista}. Reunião de ${cfg.duracaoMin} minutos. Pergunte qual fica melhor.`)
@@ -433,7 +441,15 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
           const citados = slotsCitados(ctx.lastAgentText, oferta)
           if (citados.length === 1) slot = citados[0]
         }
-        if (!slot) return err('O lead ainda não escolheu um dos horários oferecidos de forma clara. Pergunte qual das opções ele prefere (repita as opções). Não marque por conta própria.')
+        if (!slot) {
+          // Pediu outro dia/horário (fora das opções): consulta de novo com o que ele disse, em vez de repetir as mesmas opções
+          const pref = parsePreferencia(ctx.lastLeadText, agora)
+          if (pref.dias?.length || pref.datas?.length || pref.turno || pref.aPartirDeMin !== undefined || pref.ateMin !== undefined) {
+            await port.patchState({ oferta: [] })
+            return err(`O lead pediu outro dia/horário ("${ctx.lastLeadText.slice(0, 80)}"), fora das opções oferecidas. Chame consultar_horarios com preferencia="${ctx.lastLeadText.slice(0, 80)}" e ofereça o que vier (se o que ele pediu estiver livre, vem nas opções). Não repita as opções antigas.`)
+          }
+          return err('O lead ainda não escolheu um dos horários oferecidos de forma clara. Pergunte qual das opções ele prefere (repita as opções). Não marque por conta própria.')
+        }
         const pedido = resolverEscolha(String(input.horario || ''), oferta, agora)
         if (pedido && pedido.ini !== slot.ini) return err(`O lead escolheu "${slot.label}", não "${pedido.label}". Chame de novo com o horário que ele escolheu.`)
         if (slot.ini < agora + cfg.antecedenciaMinHoras * 3600000) return err('Esse horário ficou em cima da hora. Chame consultar_horarios e ofereça novas opções.')
@@ -464,24 +480,38 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
         if (CRM_MAP.dataReuniaoFieldId) await port.writeFields([{ field_id: CRM_MAP.dataReuniaoFieldId, values: [{ value: Math.floor(slot.ini / 1000) }] }])
         await port.addTags([CRM_MAP.tags.reuniao]).catch(() => undefined)
         const reuniaoLinhas = [
-          `📅 ${slot.label.replace(/^./, c => c.toUpperCase())} (reserva de 1h, reunião de 30 a 45 min)`,
-          '👨‍💼 Especialista: Rodrigo Campeoti',
-          convidado && `👥 Decisor convidado: ${convidado}`,
-          link ? `🔗 ${link}` : '⚠️ Sem link ainda: tarefa criada para preencher o campo "Link da Reunião"',
-          `⏰ Lembretes para o cliente: ${CRM_MAP.lembretes.horasAntes.map(h => `${h}h antes`).join(' e ')}`,
+          `⏰ ${slot.label.replace(/^./, c => c.toUpperCase())} (reserva de 1h, reunião de 30 a 45 min)`,
+          '⭐ Especialista: Rodrigo Campeoti',
+          convidado && `☑️ Decisor convidado: ${convidado}`,
+          link ? `➡️ ${link}` : '⚠️ Sem link ainda: tarefa criada para preencher o campo "Link da Reunião"',
+          `⏳ Lembretes para o cliente: ${CRM_MAP.lembretes.horasAntes.map(h => `${h}h antes`).join(' e ')}`,
         ]
         const moveu = CRM_MAP.etapaAgendado.id ? await avancar(port, 'agendado', [], true) : false
         if (port.avisarCloser) {
           const lead = await port.getLead()
-          // Texto simples (o campo da Kommo apaga emoji) e um link só: o do card (o Meet está na agenda)
+          const r = { ...(state.respostas || {}) }
+          // Blocos com emoji que o campo da Kommo aceita (✅⏰⭐✍️✉️➡️; os mais novos, como ⏰, a Kommo apaga)
+          const quali = snapshot(porta, state).preenchidos.filter(p => p.campo.key !== 'segmento').map(p => `• ${p.campo.curto || p.campo.name}: ${p.valor}`)
           await port.avisarCloser([
-            '*Nova reunião marcada pela Lara*',
-            `Quando: ${slot.label.replace(/^./, c => c.toUpperCase())}`,
-            convidado && `Decisor convidado: ${convidado}`,
-            resumoCampos && `\n${resumoCampos.split(' · ').join('\n')}\n`,
-            state.comentario && `Pedido: "${state.comentario.slice(0, 200)}"`,
-            `Card: https://controlgestao.kommo.com/leads/detail/${lead.id}`,
-          ].filter(Boolean).join('\n'), `${lead.id}-${slot.ini}`).catch(e => console.warn('[aviso closer]', e))
+            '✅ *NOVA REUNIÃO MARCADA PELA LARA*',
+            '',
+            '⭐ *Cliente*',
+            '{{CLIENTE}}',
+            r.segmento && `Nicho: ${r.segmento}`,
+            '',
+            '⏰ *Reunião*',
+            slot.label.replace(/^./, c => c.toUpperCase()),
+            convidado ? `Decisor junto: ${convidado}` : 'Decisor: o próprio lead',
+            quali.length > 0 && '',
+            quali.length > 0 && '✍️ *Qualificação*',
+            ...quali,
+            state.comentario && '',
+            state.comentario && '✉️ *Pedido*',
+            state.comentario && `"${state.comentario.slice(0, 200)}"`,
+            '',
+            '➡️ *Card*',
+            `https://controlgestao.kommo.com/leads/detail/${lead.id}`,
+          ].filter(x => x !== false && x !== null && x !== undefined).join('\n'), `${lead.id}-${slot.ini}`).catch(e => console.warn('[aviso closer]', e))
         }
         await aplicarFinalizacao(ctx, 'agendado', `Reunião marcada para ${slot.label}.`, false, reuniaoLinhas, moveu)
         return ok(`Reunião marcada: ${slot.label} (30 a 45 min). Confirme ao lead o dia e a hora com essas palavras${link ? `, mande o link da reunião ${link} pedindo que ele confira se abre certinho` : ', diga que o especialista manda o link da reunião por aqui'}${convidado ? `, reforce que ${convidado} participa junto` : ''} e NÃO faça pergunta.`, { handoff: true })

@@ -28,6 +28,33 @@ export function acharComentario(textos: Array<string | null | undefined>): strin
   return null
 }
 
+/** Industry da Kommo (inglês) → nicho em português */
+const INDUSTRIAS: Array<[RegExp, string]> = [
+  [/health|wellness|medic|clinic|dental|beauty|aesthetic|spa/i, 'Saúde, estética e bem-estar'],
+  [/real estate|property/i, 'Imobiliário'],
+  [/educat|school|course|training|e-?learning/i, 'Educação e cursos'],
+  [/legal|law/i, 'Jurídico / advocacia'],
+  [/e-?commerce|online store/i, 'E-commerce'],
+  [/retail|store|shop/i, 'Varejo / loja'],
+  [/auto|car|vehicle|motor/i, 'Automotivo'],
+  [/financ|insurance|bank|credit|accounting/i, 'Finanças, seguros e contabilidade'],
+  [/marketing|advertis|agency|media/i, 'Marketing / agência'],
+  [/software|\bit\b|tech|saas|telecom/i, 'Tecnologia / software'],
+  [/construct|architect|engineering/i, 'Construção e engenharia'],
+  [/travel|touris|hotel|hospitality/i, 'Turismo e hotelaria'],
+  [/food|restaurant|beverage/i, 'Alimentação'],
+  [/manufactur|industr|wholesale|distribut/i, 'Indústria / distribuição'],
+  [/consult|professional services|services/i, 'Serviços / consultoria'],
+  [/fitness|gym|sport/i, 'Academia e esportes'],
+  [/logistic|transport/i, 'Logística e transporte'],
+  [/solar|energy/i, 'Energia solar'],
+]
+export function segmentoPt(industry?: string): string | undefined {
+  if (!industry) return undefined
+  const txt = industry.replace(/&amp;/g, '&')
+  return INDUSTRIAS.find(([re]) => re.test(txt))?.[1] || txt
+}
+
 export interface ContextoIndicacao { pais?: string; idiomas?: string; segmento?: string }
 
 /**

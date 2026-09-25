@@ -96,7 +96,9 @@ export async function removeLeadTags(leadId: number, names: string[]): Promise<v
 }
 
 export async function addLeadNote(leadId: number, text: string): Promise<void> {
-  await kommo('POST', `/api/v4/leads/${leadId}/notes`, [{ note_type: 'common', params: { text } }])
+  // A Kommo apaga emoji fora do BMP (📅, 🤖...): tira aqui para a nota não ficar com buracos
+  const limpo = text.replace(/[\u{10000}-\u{10FFFF}]\uFE0F?\s?/gu, '')
+  await kommo('POST', `/api/v4/leads/${leadId}/notes`, [{ note_type: 'common', params: { text: limpo } }])
 }
 
 /**

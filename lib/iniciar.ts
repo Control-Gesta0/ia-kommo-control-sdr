@@ -4,7 +4,7 @@ import { CONFIG } from './config'
 import { CRM_MAP, portaById } from './crm-map'
 import { logExec } from './execlog'
 import { appendMessage } from './history'
-import { acharComentario, extrairContexto, foraDoIdioma, marcaDeInvalido, type Classificacao, type ContextoIndicacao } from './indicacao'
+import { acharComentario, extrairContexto, foraDoIdioma, marcaDeInvalido, segmentoPt, type Classificacao, type ContextoIndicacao } from './indicacao'
 import { classificarIntencao } from './intencao'
 import {
   addLeadNote, addLeadTags, contactPhones, getContact, getLead, getLeadNotes, kommoGet, leadTags, textoDasNotas, textoDoLead, updateLeadFields, type KommoLead,
@@ -123,7 +123,7 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
 
     if (d.acao === 'outro-idioma') {
       await addLeadTags(leadId, [CRM_MAP.tags.outroIdioma])
-      await addLeadNote(leadId, `🌎 Lara NÃO iniciou conversa: ${d.motivo}. A Control Gestão só atende em português.`)
+      await addLeadNote(leadId, `✈️ Lara NÃO iniciou conversa: ${d.motivo}. A Control Gestão só atende em português.`)
       await logExec({ tipo: 'pulou', leadId, nome, detalhe: `outro idioma: ${d.motivo} · via ${origem}` })
       return { ok: true, acao: d.acao, detalhe: d.motivo }
     }
@@ -136,13 +136,13 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
 
     if (d.acao === 'teste') {
       await addLeadTags(leadId, [CRM_MAP.tags.teste])
-      await addLeadNote(leadId, `🧪 IA NÃO iniciou conversa: indicação de TESTE (${d.classificacao.motivo}).\nComment: ${comentario}`)
+      await addLeadNote(leadId, `⚗️ IA NÃO iniciou conversa: indicação de TESTE (${d.classificacao.motivo}).\nComment: ${comentario}`)
       await logExec({ tipo: 'pulou', leadId, nome, detalhe: `teste: ${d.classificacao.motivo} · via ${origem}` })
       return { ok: true, acao: 'teste', detalhe: d.classificacao.motivo }
     }
     if (d.acao === 'sem-telefone') {
       await addLeadTags(leadId, [CRM_MAP.tags.semTelefone])
-      await addLeadNote(leadId, `📵 IA não iniciou: o contato não tem telefone. Comment: ${comentario ?? '(não achado)'}`)
+      await addLeadNote(leadId, `☎️ IA não iniciou: o contato não tem telefone. Comment: ${comentario ?? '(não achado)'}`)
       await logExec({ tipo: 'pulou', leadId, nome, detalhe: `sem telefone · via ${origem}` })
       return { ok: true, acao: d.acao, detalhe: d.motivo }
     }
@@ -155,7 +155,8 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
     }
 
     const porta = portaById(CRM_MAP.menu.portaUnica)!
-    await patchState(leadId, { comentario: comentario || undefined, contexto, porta: porta.id, portaEm: t0 - 1, iniciadoEm: new Date().toISOString(), iniciadoPor: origem })
+    const segmento = segmentoPt(contexto.segmento)
+    await patchState(leadId, { comentario: comentario || undefined, contexto: { ...contexto, segmento }, porta: porta.id, portaEm: t0 - 1, iniciadoEm: new Date().toISOString(), iniciadoPor: origem, ...(segmento ? { respostas: { ...(await getState(leadId)).respostas, segmento } } : {}) })
     if (CRM_MAP.comentarioFieldId && comentario) await updateLeadFields(leadId, [{ field_id: CRM_MAP.comentarioFieldId, values: [{ value: comentario }] }])
     await addLeadTags(leadId, [CRM_MAP.tags.indicacao, ...(CONFIG.gateTag ? [CONFIG.gateTag] : [])])
 
@@ -174,7 +175,7 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
     await appendMessage(leadId, { id: crypto.randomUUID(), dir: 'out', text: texto, ts: Date.now() })
     const prox = await agendarFollowup(leadId, Date.now())
     const linhas = [
-      '💬 Lara enviou a primeira mensagem',
+      '✉️ Lara enviou a primeira mensagem',
       prox && `⏭️ Próximo follow-up: ${quando(prox)} (se não responder)`,
       liberado && '⚠️ Kommo marcou como aceito por outro parceiro; atendido por decisão do Rodrigo',
     ]

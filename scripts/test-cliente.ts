@@ -217,6 +217,9 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   eq('agendar sem oferta é recusado', [out.isError, /consultar_horarios/.test(out.content)], [true, true])
   out = await runTool(ctx('pode ser quinta de manhã'), 'consultar_horarios', { preferencia: 'quinta de manhã' })
   eq('consultar grava a oferta', [out.isError, w.state.oferta.map((s: any) => s.label)], [false, ['quinta 01/10 às 9h', 'quinta 01/10 às 9h30']])
+  out = await runTool(ctx('pode ser na sexta às 10h?'), 'agendar_reuniao', { horario: 'sexta 02/10 às 10h' })
+  eq('pediu outro dia fora da oferta: manda consultar de novo', [out.isError, /consultar_horarios com preferencia/.test(out.content), w.reunioes.length], [true, true, 0])
+  await runTool(ctx('pode ser quinta de manhã'), 'consultar_horarios', { preferencia: 'quinta de manhã' })
   out = await runTool(ctx('beleza'), 'agendar_reuniao', { horario: 'quinta 01/10 às 9h' })
   eq('"beleza" sem escolher entre 2 opções é recusado', out.isError, true)
   w.ocupados.push({ ini: iso('2026-10-01T12:00:00Z'), fim: iso('2026-10-01T12:30:00Z') })
@@ -245,7 +248,7 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   out = await runTool(ctxG('9h fica ótimo'), 'agendar_reuniao', { horario: 'quinta 01/10 às 9h' })
   eq('Meet do Google: link no campo e na confirmação, sem tarefa de link', [out.isError, escritos.some(v => v.field_id === CRM_MAP.linkReuniaoFieldId && v.values[0].value === w.meet), out.content.includes(w.meet), (w.tarefas || []).length],
     [false, true, true, 0])
-  eq('aviso ao Rodrigo: data, um link só (card), sem emoji', [/Nova reunião marcada/.test(w.avisos?.at(-1) || ''), (w.avisos?.at(-1) || '').includes('01/10 às 9h'), !(w.avisos?.at(-1) || '').includes(w.meet), /leads\/detail\/1$/.test(w.avisos?.at(-1) || ''), /[\u{1F300}-\u{1FAFF}]/u.test(w.avisos?.at(-1) || '')], [true, true, true, true, false])
+  eq('aviso ao Rodrigo: blocos, data, um link só (card), só emoji que a Kommo aceita', [/NOVA REUNIÃO MARCADA/.test(w.avisos?.at(-1) || ''), (w.avisos?.at(-1) || '').includes('01/10 às 9h'), !(w.avisos?.at(-1) || '').includes(w.meet), /leads\/detail\/1$/.test(w.avisos?.at(-1) || ''), /[\u{10000}-\u{10FFFF}]/u.test(w.avisos?.at(-1) || '')], [true, true, true, true, false])
   eq('reunião: tag reuniao-agendada e nota visual com data e link', [w.tags.has('reuniao-agendada'), w.notes.some((n: string) => n.includes('Atendimento finalizado, transferido para humano') && n.includes('01/10 às 9h') && n.includes(w.meet) && n.includes('Resumo da qualificação'))], [true, true])
   w.meet = ''
 
