@@ -88,6 +88,15 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   eq('início: humano assumiu', decidirInicio({ ...base, tags: ['Atendimento-Humano'] }, cfg).acao, 'humano')
   eq('início: rampagem só TEST_LEAD_IDS', [decidirInicio(base, { ...cfg, modoInicio: 'teste' }).acao, decidirInicio({ ...base, leadId: 7 }, { ...cfg, modoInicio: 'teste' }).acao], ['rampagem', 'iniciar'])
   eq('nome de gente', [primeiroNome('ana souza'), primeiroNome('Lead #123'), primeiroNome('Empresa XPTO'), primeiroNome(''), primeiroNome('Dr. Darci Duarte'), primeiroNome('dra maria')], ['Ana', '', '', '', 'Dr. Darci', 'Dra. Maria'])
+  eq('nome de empresa não vira nome de pessoa', [primeiroNome('Control Gestão - CRM'), primeiroNome('MOTOS TD'), primeiroNome('CAROLINE AZEVEDO'), primeiroNome('rodrigo campeoti'), primeiroNome('Loja do Zé')], ['', '', 'Caroline', 'Rodrigo', ''])
+  const { tirarSaudacao } = await import('../lib/saudacao')
+  const { naturalizar } = await import('../lib/saudacao')
+  eq('nome de vez em quando e reação variada', [
+    naturalizar('Entendi, Rodrigo. Com 7 pessoas dá pra organizar.', 'Rodrigo', ['Boa, Rodrigo. Dá pra sair do Trello.']),
+    naturalizar('Perfeito, então o Kleber participa.', 'Rodrigo', ['Perfeito, anotado.', 'Show.']),
+    naturalizar('Show, Rodrigo. Pelo que você contou...', 'Rodrigo', ['Entendi. Com 7 pessoas.']),
+  ], ['Entendi. Com 7 pessoas dá pra organizar.', 'Ahh, legal, então o Kleber participa.', 'Show, Rodrigo. Pelo que você contou...'])
+  eq('só a 1ª mensagem cumprimenta', [tirarSaudacao('Boa tarde! Perfeito, já consigo te passar os horários.'), tirarSaudacao('Oi, bom dia, Ana! Show.'), tirarSaudacao('Ótimo! Boa tarde pra você também.')], ['Perfeito, já consigo te passar os horários.', 'Show.', 'Ótimo! Boa tarde pra você também.'])
   const manha = Date.parse('2026-09-28T13:00:00Z') // 10h em Brasília
   eq('abertura fixa: saudação do horário + Lara + passa nas travas', [regras(aberturaFixa('Ana Souza', manha)), aberturaFixa('Ana', manha).startsWith('Bom dia, Ana! Aqui é a Lara'), aberturaFixa('Lead #9', manha).startsWith('Bom dia! Aqui é a Lara')], [[], true, true])
 
@@ -191,7 +200,7 @@ export default async function testesCliente(eq: Eq): Promise<number> {
     criarReuniao: async (x: any) => { w.reunioes.push(x); return { id: `t${w.reunioes.length}`, link: w.meet || '' } },
     agendarLembretes: async (x: any) => { w.lembretes = x },
     criarTarefaCloser: async (t: string) => { w.tarefas = [...(w.tarefas || []), t] },
-    avisarCloser: async (t: string) => { w.avisos = [...(w.avisos || []), t] },
+    avisarCloser: async (t: string, _c: string) => { w.avisos = [...(w.avisos || []), t] },
     getState: async () => structuredClone(w.state),
     patchState: async (p: Record<string, unknown>) => Object.assign(w.state, p),
   }
@@ -236,8 +245,8 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   out = await runTool(ctxG('9h fica ótimo'), 'agendar_reuniao', { horario: 'quinta 01/10 às 9h' })
   eq('Meet do Google: link no campo e na confirmação, sem tarefa de link', [out.isError, escritos.some(v => v.field_id === CRM_MAP.linkReuniaoFieldId && v.values[0].value === w.meet), out.content.includes(w.meet), (w.tarefas || []).length],
     [false, true, true, 0])
-  eq('reunião avisa o Rodrigo no WhatsApp pessoal com data, link e card', [/Nova reunião marcada/.test(w.avisos?.at(-1) || ''), (w.avisos?.at(-1) || '').includes('01/10 às 9h'), (w.avisos?.at(-1) || '').includes(w.meet), /leads\/detail\/1$/.test(w.avisos?.at(-1) || '')], [true, true, true, true])
-  eq('reunião: tag reuniao-agendada e nota visual com data e link', [w.tags.has('reuniao-agendada'), w.notes.some((n: string) => n.startsWith('🤖 LARA · Reunião agendada') && n.includes('01/10 às 9h') && n.includes(w.meet))], [true, true])
+  eq('aviso ao Rodrigo: data, um link só (card), sem emoji', [/Nova reunião marcada/.test(w.avisos?.at(-1) || ''), (w.avisos?.at(-1) || '').includes('01/10 às 9h'), !(w.avisos?.at(-1) || '').includes(w.meet), /leads\/detail\/1$/.test(w.avisos?.at(-1) || ''), /[\u{1F300}-\u{1FAFF}]/u.test(w.avisos?.at(-1) || '')], [true, true, true, true, false])
+  eq('reunião: tag reuniao-agendada e nota visual com data e link', [w.tags.has('reuniao-agendada'), w.notes.some((n: string) => n.includes('Atendimento finalizado, transferido para humano') && n.includes('01/10 às 9h') && n.includes(w.meet) && n.includes('Resumo da qualificação'))], [true, true])
   w.meet = ''
 
   // Equipe pequena NÃO bloqueia reunião: o contexto decide (ex.: uma pessoa só que precisa de implantação)

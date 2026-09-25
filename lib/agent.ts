@@ -5,7 +5,8 @@ import { logExec } from './execlog'
 import {
   alreadyAnswered, appendMessage, getHistory, humanSpokeRecently, lastInbound, markAnswered, type ChatMsg,
 } from './history'
-import { getLead, leadTags } from './kommo'
+import { getContact, getLead, leadTags } from './kommo'
+import { garantirSaudacao, naturalizar, primeiroNomeDe, saudacao, tirarSaudacao } from './saudacao'
 import { createBrain } from './llm'
 import { kommoPort } from './port'
 import { rotear } from './router'
@@ -13,7 +14,7 @@ import { clearState, getState, patchState } from './state'
 import { aplicarFinalizacao, type ToolCtx } from './tools'
 import { agendarFollowup, cancelarFollowup } from './followup'
 import { addLeadNote } from './kommo'
-import { nota, quando, trecho } from './notas'
+import { nota } from './notas'
 import { k, redis } from './redis'
 import { sendReply } from './transport'
 
@@ -24,10 +25,6 @@ import { sendReply } from './transport'
 
 const MAX_ROUNDS = 3
 
-const ACOES: Record<string, string> = {
-  salvar_respostas: 'anotou respostas', consultar_horarios: 'consultou a agenda', agendar_reuniao: 'marcou a reunião',
-  finalizar_atendimento: 'concluiu o atendimento', 'trava:finalizou-suporte': 'identificou suporte técnico',
-}
 
 const brain = createBrain({ apiKey: CONFIG.openaiApiKey, model: CONFIG.llmModel })
 
@@ -56,6 +53,8 @@ export async function processLead(leadId: number, webhookId: string): Promise<vo
   try {
     const lead = await getLead(leadId)
     nome = lead.name || ''
+    const contatoId = (lead._embedded?.contacts || []).find(c => c.is_main)?.id || lead._embedded?.contacts?.[0]?.id
+    const nomePessoa = contatoId ? (await getContact(contatoId).catch(() => null))?.name || '' : ''
     const tags = leadTags(lead).map(t => t.toLowerCase())
     if (tags.includes(CONFIG.humanTag)) return pular(`tag "${CONFIG.humanTag}"`, false)
     // Gate: sem a tag, silêncio (e sem poluir o diário — a conta inteira manda add_message)
@@ -130,7 +129,7 @@ export async function processLead(leadId: number, webhookId: string): Promise<vo
 
       // 3. Cérebro
       const primeiroContatoDaPorta = !conversa.some(m => m.dir === 'out')
-      const reply = await brain.generateReply(ctx, { nomeContato: nome, primeiroContatoDaPorta }, conversa)
+      const reply = await brain.generateReply(ctx, { nomeContato: nomePessoa, primeiroContatoDaPorta }, conversa)
       if (!reply?.text) {
         await logExec({ tipo: 'erro', leadId, nome, porta: porta.id, detalhe: 'modelo não gerou resposta' })
         return
@@ -145,18 +144,14 @@ export async function processLead(leadId: number, webhookId: string): Promise<vo
         continue
       }
 
+      // Só a primeira mensagem cumprimenta; nela, saudação certa do horário + primeiro nome de pessoa
+      const anteriores = conversa.filter(m => m.dir === 'out').map(m => m.text)
+      reply.text = primeiroContatoDaPorta ? garantirSaudacao(reply.text, saudacao(Date.now()), primeiroNomeDe(nomePessoa)) : naturalizar(tirarSaudacao(reply.text), primeiroNomeDe(nomePessoa), anteriores)
       const detail = await enviar(leadId, reply.text)
       await markAnswered(leadId, target.id)
       // Follow-up: finalizou (reunião, suporte, licença...) = para; senão recomeça a contar desta mensagem
-      let prox: number | null = null
       if (reply.handoff) await cancelarFollowup(leadId, ['sdr'])
-      else prox = await agendarFollowup(leadId, Date.now())
-      const acoes = [...new Set(reply.toolsUsed.map(t => ACOES[t]).filter(Boolean))]
-      await addLeadNote(leadId, nota(`Respondeu o lead${reply.urgente ? ' · 🚨 URGENTE' : ''}`, [
-        `💬 "${trecho(reply.text, 220)}"`,
-        acoes.length > 0 && `🛠️ ${acoes.join(' · ')}`,
-        prox && `⏭️ Próximo follow-up: ${quando(prox)} (se não responder)`,
-      ])).catch(() => undefined)
+      else await agendarFollowup(leadId, Date.now())
       await logExec({
         tipo: reply.handoff ? 'finalizou' : 'resposta', leadId, nome, porta: porta.id, ms: Date.now() - t0,
         tools: reply.toolsUsed, guard: reply.guard, usage: reply.usage, urgente: reply.urgente || undefined, detalhe: detail,

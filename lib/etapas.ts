@@ -31,14 +31,14 @@ export function podeAvancar(pipelineAtual: number, statusAtual: number, alvo: Et
   return iAlvo > iAtual
 }
 
-const NOMES: Record<EtapaSdr, string> = { entrada: 'INICIAL - ENRIQUECIMENTO', emContato: 'EM CONTATO', qualificado: 'QUALIFICAÇÃO', agendado: 'APRESENTAÇÃO AGENDADA' }
+export const NOMES: Record<EtapaSdr, string> = { entrada: 'INICIAL - ENRIQUECIMENTO', emContato: 'EM CONTATO', qualificado: 'QUALIFICAÇÃO', agendado: 'APRESENTAÇÃO AGENDADA' }
 
-export async function avancar(port: LeadPort, alvo: EtapaSdr, motivo = ''): Promise<boolean> {
+export async function avancar(port: LeadPort, alvo: EtapaSdr, linhas: Array<string | false | null | undefined | 0> = [], semNota = false): Promise<boolean> {
   const lead = await port.getLead()
   if (!podeAvancar(lead.pipelineId, lead.statusId, alvo)) return false
   const destino = ordemSdr().find(e => e.nome === alvo)!
   await port.moveStage(destino.id, CRM_MAP.entrada.pipelineId)
-  await port.addNote(nota(`Etapa: ${NOMES[alvo]}`, [motivo && `📍 ${motivo}`])).catch(() => undefined)
+  if (!semNota) await port.addNote(nota(`Etapa: ${NOMES[alvo]}`, linhas)).catch(() => undefined)
   return true
 }
 

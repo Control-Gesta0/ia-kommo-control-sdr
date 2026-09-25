@@ -5,7 +5,7 @@ import { logExec } from './execlog'
 import { appendMessage, humanSpokeRecently } from './history'
 import { addLeadNote, addLeadTags, createTask, getContact, getLead, getTask, kommoGet, leadTags, patchLead, removeLeadTags, updateLeadFields } from './kommo'
 import { lerEventoGoogle } from './google'
-import { nota, quando, trecho } from './notas'
+import { nota, quando } from './notas'
 import { despertar } from './qstash'
 import { primeiroNomeDe } from './saudacao'
 import { k, redis } from './redis'
@@ -178,7 +178,7 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
       await campoProximo(leadId, null)
       linhaProx = `🏁 Último follow-up. Sem resposta até ${quando(fim, agora)}, o lead vai para ${CRM_MAP.followup.esgotar.nome}.`
     }
-    await addLeadNote(leadId, nota(`Follow-up ${passo} de ${total} enviado`, [`💬 "${trecho(texto)}"`, linhaProx])).catch(() => undefined)
+    await addLeadNote(leadId, nota(`Follow-up ${passo} de ${total} enviado`, [linhaProx])).catch(() => undefined)
     return `sdr ${passo}/${total} enviado`
   }
 
@@ -223,7 +223,7 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
       await campoProximo(leadId, null)
       linhaProx = '🏁 Último follow-up da negociação. Sem resposta, o vendedor recebe uma tarefa.'
     }
-    await addLeadNote(leadId, nota(`Follow-up de negociação ${passo} de ${n.dias.length} enviado`, [`💬 "${trecho(texto)}"`, linhaProx])).catch(() => undefined)
+    await addLeadNote(leadId, nota(`Follow-up de negociação ${passo} de ${n.dias.length} enviado`, [linhaProx])).catch(() => undefined)
     return `neg ${passo}/${n.dias.length} enviado`
   }
 
@@ -308,7 +308,6 @@ async function processarLembrete(horas: number, leadId: number, agora: number): 
     await createTask({ leadId, responsibleUserId: CRM_MAP.agenda.responsavelId, taskTypeId: 1, text: `URGENTE: o lembrete de ${horas}h saiu SEM link. Mande o link da reunião para o cliente e preencha o campo "Link da Reunião" (o lembrete de 1h usa ele).`, completeTill: Math.floor(agora / 1000) + 3600, duration: 0 }).catch(() => undefined)
   }
   await enviarFollowup(leadId, texto, `lembrete-${horas}h`, 0)
-  await addLeadNote(leadId, nota(`Lembrete de ${horas}h enviado ao cliente`, [`📅 Reunião: ${quando(lem.ini, agora)}`, link ? `🔗 Link: ${link}` : '⚠️ Sem link da reunião'])).catch(() => undefined)
   return `lembrete ${horas}h enviado`
 }
 

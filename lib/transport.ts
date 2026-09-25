@@ -19,7 +19,9 @@ export async function getOutbox(leadId: number): Promise<string | null> {
 }
 
 export async function sendReply(leadId: number, text: string): Promise<string> {
-  const body = text.trim()
+  // A Kommo encurta todo link com https:// (vira kommo.cc/...) e apaga emoji fora do BMP no campo:
+  // manda o link sem o protocolo (o WhatsApp deixa clicável igual) e tira esses emojis
+  const body = text.replace(/https?:\/\//g, '').replace(/[\u{10000}-\u{10FFFF}]\uFE0F?/gu, '').replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n').trim()
   if (!body) throw new Error('resposta vazia — nada enviado')
   if (!CRM_MAP.respostaFieldId) throw new Error('crm-map: respostaFieldId não preenchido')
   await updateLeadFields(leadId, [{ field_id: CRM_MAP.respostaFieldId, values: [{ value: body }] }])

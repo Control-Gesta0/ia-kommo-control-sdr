@@ -8,6 +8,8 @@ export interface Campo {
   id: number
   /** nome que o MODELO vê */
   name: string
+  /** rótulo curto para notas e avisos ("Dor", "Decisor") */
+  curto?: string
   /** nome real no Kommo (o validate compara) */
   kommoName?: string
   type: CampoTipo

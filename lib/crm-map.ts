@@ -22,34 +22,34 @@ export type { AgendaConfig, Alerta, Campo, CampoTipo, Etapa, Porta } from './crm
 // Money (faturamento ou nº de usuários) · Prioritization (quando começar)
 const CAMPOS = {
   organizacao: {
-    key: 'organizacao', id: 1046001, kommoName: 'Situação', name: 'Onde organizam os leads hoje', type: 'text',
+    key: 'organizacao', curto: 'Organização', id: 1046001, kommoName: 'Situação', name: 'Onde organizam os leads hoje', type: 'text',
     sinal: /planilha|excel|sheets|caderno|papel|whats|kommo|amo|crm|sistema|agenda|cabe[cç]a|mem[oó]ria|google|trello|notion|pipedrive|\brd\b|hubspot|bitrix|ploomes|anot|nada|nenhum|lugar nenhum|n[aã]o (organiz|temos|tenho|usamos)/i,
-    pergunta: 'Hoje vocês organizam os leads onde, em planilha, no próprio WhatsApp ou em algum sistema?',
+    pergunta: 'Hoje vocês organizam os leads onde: WhatsApp, planilha ou outro CRM?',
   },
   vendedores: {
-    key: 'vendedores', id: 0, name: 'Quantos vendedores usariam o Kommo', type: 'text',
+    key: 'vendedores', curto: 'Vendedores', id: 0, name: 'Quantos vendedores usariam o Kommo', type: 'text',
     sinal: /\d|\b(um|uma|dois|duas|tr[eê]s|quatro|cinco|seis|sete|oito|nove|dez|vinte|trinta)\b|s[oó] eu|sozinh|vendedor|pessoa|usu[aá]rio|atendente|consultor|corretor|equipe|time/i,
-    pergunta: 'Quantos vendedores usariam o Kommo no dia a dia?',
+    pergunta: 'Quantos vendedores usariam o sistema?',
   },
   dor: {
-    key: 'dor', id: 1046003, kommoName: 'Problema', name: 'O que mais incomoda hoje (perder lead, não saber a etapa, falta de relatório)', type: 'textarea',
+    key: 'dor', curto: 'Dor', id: 1046003, kommoName: 'Problema', name: 'O que mais incomoda hoje (perder lead, não saber a etapa, falta de relatório)', type: 'textarea',
     sinal: /perd|esquec|some|sum|escap|etapa|fase|onde (est|par)|relat[oó]rio|n[uú]mero|m[eé]trica|indicador|controle|acompanh|organiz|bagun|demor|follow|retorno|respond|resposta|vis[aã]o|gest[aã]o|funil|atendimento|whats/i,
-    pergunta: 'O que mais incomoda hoje: perder lead no caminho, não saber em que etapa cada um está ou não ter relatório?',
+    pergunta: 'O que mais te incomoda hoje: perder lead, não saber em que etapa cada um está ou não ter relatório?',
   },
   decisor: {
-    key: 'decisor', id: 1046753, kommoName: 'Authorit', name: 'Quem decide a contratação', type: 'text',
+    key: 'decisor', curto: 'Decisor', id: 1046753, kommoName: 'Authorit', name: 'Quem decide a contratação', type: 'text',
     sinal: /\beu\b|mim|s[oó]ci[oa]|dono|dona|diretor|gerente|gestor|decid|chefe|marido|esposa|mulher|pai|m[aã]e|junto|conselho|ceo|financeiro|propriet|presidente|patr[aã]o|\bnós\b|\bnos dois\b/i,
-    pergunta: 'A decisão de contratar passa só por você ou tem mais alguém junto?',
+    pergunta: 'A escolha do CRM é sua ou passa por mais alguém?',
   },
   faturamento: {
-    key: 'faturamento', id: 1046017, kommoName: 'Faturamento', name: 'Faturamento mensal ou faixa de investimento', type: 'text',
+    key: 'faturamento', curto: 'Faturamento', id: 1046017, kommoName: 'Faturamento', name: 'Faturamento mensal ou faixa de investimento', type: 'text',
     sinal: /\d|\bmil\b|milh|\bk\b|fatur|investi|or[cç]amento|budget|verba|reais|r\$|n[aã]o (sei|posso|quero) (dizer|informar|falar)/i,
-    pergunta: 'Pra eu entender o tamanho da operação, qual é mais ou menos o faturamento mensal da empresa?',
+    pergunta: 'Pra eu entender o tamanho da operação: o faturamento mensal de vocês fica mais perto de até R$ 50 mil, de R$ 50 a 200 mil ou acima disso?',
   },
   prioridade: {
-    key: 'prioridade', id: 1046757, kommoName: 'Tempo', name: 'Quando quer começar (este mês ou mais pra frente)', type: 'text',
+    key: 'prioridade', curto: 'Prioridade', id: 1046757, kommoName: 'Tempo', name: 'Quando quer começar (este mês ou mais pra frente)', type: 'text',
     sinal: /m[eê]s|semana|\bj[aá]\b|agora|urgente|logo|hoje|amanh|\bano\b|trimestre|depois|pra frente|sem pressa|quanto antes|imediat|r[aá]pido|pressa|\d/i,
-    pergunta: 'Vocês querem começar ainda este mês ou mais pra frente?',
+    pergunta: 'Vocês querem começar a usar ainda este mês ou estão pesquisando pra mais pra frente?',
   },
 } satisfies Record<string, Campo>
 
