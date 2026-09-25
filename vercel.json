@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/inbound.ts": { "maxDuration": 300, "includeFiles": "{prompts/**,userscript/filtro-indicacao.js}" },
+    "api/novo-lead.ts": { "maxDuration": 120, "includeFiles": "{prompts/**,userscript/filtro-indicacao.js}" },
+    "api/validate.ts": { "maxDuration": 60, "includeFiles": "{prompts/**,userscript/filtro-indicacao.js}" },
+    "api/executions.ts": { "maxDuration": 30 },
+    "api/salesbot.ts": { "maxDuration": 30 }
+  }
+}

@@ -1,0 +1,16 @@
+// ==UserScript==
+// @name         Kommo · Indicações de parceiro (Control Gestão)
+// @namespace    https://controlgestao.com.br/
+// @version      3.0.0
+// @description  Filtra indicações de TESTE pelo "Comment:", aceita no tempo certo (ou avisa, no modo assistido) e aciona o agente de IA SDR.
+// @match        https://*.kommo.com/*
+// @run-at       document-idle
+// @grant        unsafeWindow
+// @grant        GM_xmlhttpRequest
+// @grant        GM_notification
+// @connect      vercel.app
+// @noframes
+// ==/UserScript==
+//
+// ARQUIVO GERADO por scripts/build-userscript.ts a partir de userscript/filtro-indicacao.js
+// + userscript/main.js. Edite as fontes e rode `npm run build:userscript`.

@@ -1,0 +1,7 @@
+node_modules/
+.vercel/
+.env*.local
+*.local
+*.local.json
+# dado real de lead (npm run discover)
+discovery/
