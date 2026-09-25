@@ -185,6 +185,7 @@ export default async function testesCliente(eq: Eq): Promise<number> {
     buscarOcupados: async () => [...w.ocupados, ...w.reunioes],
     criarReuniao: async (x: any) => { w.reunioes.push(x); return `t${w.reunioes.length}` },
     agendarLembretes: async (x: any) => { w.lembretes = x },
+    criarTarefaCloser: async (t: string) => { w.tarefas = [...(w.tarefas || []), t] },
     getState: async () => structuredClone(w.state),
     patchState: async (p: Record<string, unknown>) => Object.assign(w.state, p),
   }
@@ -212,6 +213,7 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   eq('modelo pediu horário diferente do lead: recusado', [out.isError, w.reunioes.length], [true, 0])
   out = await runTool(ctx('9h30 fica ótimo'), 'agendar_reuniao', { horario: 'quinta 01/10 às 9h30', decisor_convidado: 'Carlos (sócio)' })
   eq('reunião agenda os lembretes', w.lembretes?.taskId, 't1')
+  eq('sem link: tarefa para o Rodrigo preencher o Link da Reunião', /Link da Reunião/.test((w.tarefas || [])[0] || ''), true)
   eq('decisor convidado vai para a tarefa', /Decisor convidado: Carlos \(sócio\)/.test(w.reunioes[0]?.texto || ''), true)
   eq('agenda o horário do lead, finaliza e tira o gate', [out.isError, out.handoff, w.reunioes.length, new Date(w.reunioes[0]?.ini).toISOString(), w.state.finalizado?.motivo, w.tags.has('gate')],
     [false, true, 1, '2026-10-01T12:30:00.000Z', 'agendado', false])

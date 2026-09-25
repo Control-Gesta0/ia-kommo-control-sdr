@@ -245,7 +245,11 @@ async function processarLembrete(horas: number, leadId: number, agora: number): 
   const contatoId = (lead._embedded?.contacts || []).find(c => c.is_main)?.id
   const nome = primeiroNome(contatoId ? (await getContact(contatoId)).name || '' : '')
   const linkCampo = CRM_MAP.linkReuniaoFieldId ? (lead.custom_fields_values || []).find(f => f.field_id === CRM_MAP.linkReuniaoFieldId)?.values?.[0]?.value : ''
-  const texto = textoLembrete(horas, lem.ini, agora, nome, String(linkCampo || CONFIG.linkReuniao || '').trim())
+  const link = String(linkCampo || CONFIG.linkReuniao || '').trim()
+  const texto = textoLembrete(horas, lem.ini, agora, nome, link)
+  if (!link && horas >= 12) {
+    await createTask({ leadId, responsibleUserId: CRM_MAP.agenda.responsavelId, taskTypeId: 1, text: `URGENTE: o lembrete de ${horas}h saiu SEM link. Mande o link da reunião para o cliente e preencha o campo "Link da Reunião" (o lembrete de 1h usa ele).`, completeTill: Math.floor(agora / 1000) + 3600, duration: 0 }).catch(() => undefined)
+  }
   await enviarFollowup(leadId, texto, `lembrete-${horas}h`, 0)
   return `lembrete ${horas}h enviado`
 }

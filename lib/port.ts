@@ -35,6 +35,9 @@ export function kommoPort(leadId: number): LeadPort {
     async removeTags(tags) { await removeLeadTags(leadId, tags); cached = undefined },
     async addNote(text) { await addLeadNote(leadId, text) },
     buscarOcupados: ocupadosDoCloser,
+    async criarTarefaCloser(texto) {
+      await createTask({ leadId, responsibleUserId: CRM_MAP.agenda.responsavelId, taskTypeId: 1, text: texto, completeTill: Math.floor(Date.now() / 1000) + 2 * 3600, duration: 0 })
+    },
     agendarLembretes: r => agendarLembretes(leadId, r.ini, Number(r.taskId)),
     async criarReuniao(r) {
       const cfg = CRM_MAP.agenda
