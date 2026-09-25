@@ -131,6 +131,7 @@ export const CRM_MAP = {
     outroIdioma: 'indicacao-outro-pais',
     suporte: 'indicacao-suporte',
     licenca: 'venda-licenca',
+    reuniao: 'reuniao-agendada',
   },
 
   portas: [

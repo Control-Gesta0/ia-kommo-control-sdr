@@ -10,6 +10,7 @@ import {
   addLeadNote, addLeadTags, contactPhones, getContact, getLead, getLeadNotes, kommoGet, leadTags, textoDasNotas, textoDoLead, updateLeadFields, type KommoLead,
 } from './kommo'
 import { primeiroNomeDe } from './llm'
+import { nota, quando, trecho } from './notas'
 import { avancar } from './etapas'
 import { agendarFollowup } from './followup'
 import { kommoPort } from './port'
@@ -171,8 +172,14 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
 
     const detalhe = await sendReply(leadId, texto)
     await appendMessage(leadId, { id: crypto.randomUUID(), dir: 'out', text: texto, ts: Date.now() })
-    await avancar(ctx.port, 'emContato').catch(e => console.warn('[etapa] em contato:', e))
-    await agendarFollowup(leadId, Date.now())
+    const prox = await agendarFollowup(leadId, Date.now())
+    await addLeadNote(leadId, nota('Primeira mensagem enviada', [
+      state.comentario && `📝 Pedido do lead: "${trecho(state.comentario, 200)}"`,
+      `💬 "${trecho(texto, 220)}"`,
+      prox && `⏭️ Próximo follow-up: ${quando(prox)} (se não responder)`,
+      liberado && '⚠️ Kommo marcou como aceito por outro parceiro; atendido por decisão do Rodrigo',
+    ])).catch(() => undefined)
+    await avancar(ctx.port, 'emContato', 'Lara iniciou a conversa').catch(e => console.warn('[etapa] em contato:', e))
     await logExec({ tipo: 'inicio', leadId, nome, porta: porta.id, ms: Date.now() - t0, guard, usage, detalhe: `${detalhe} · via ${origem} · ${state.comentario ? 'com Comment' : 'sem Comment'}` })
     return { ok: true, acao: 'iniciou', detalhe }
   } catch (e) {

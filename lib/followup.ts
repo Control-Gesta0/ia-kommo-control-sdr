@@ -5,6 +5,7 @@ import { logExec } from './execlog'
 import { appendMessage, humanSpokeRecently } from './history'
 import { addLeadNote, addLeadTags, createTask, getContact, getLead, getTask, kommoGet, leadTags, patchLead, removeLeadTags, updateLeadFields } from './kommo'
 import { lerEventoGoogle } from './google'
+import { nota, quando, trecho } from './notas'
 import { despertar } from './qstash'
 import { primeiroNomeDe } from './saudacao'
 import { k, redis } from './redis'
@@ -77,23 +78,33 @@ export async function pegarItem(membro: string, agora = Date.now()): Promise<'pr
   return (await redis.zrem(FILA(), membro)) === 1 ? 'processar' : 'nada'
 }
 
-/** SDR: (re)começa a cadência a partir da última mensagem da Lara. */
-export async function agendarFollowup(leadId: number, desde: number): Promise<void> {
-  if (!CRM_MAP.followup.ativo) return
+/** Grava a data no campo "Próximo Follow-up" (null = limpa). Nunca derruba o fluxo. */
+async function campoProximo(leadId: number, ms: number | null): Promise<void> {
+  const id = CRM_MAP.negociacao.proximoFollowupFieldId
+  if (!id) return
+  await updateLeadFields(leadId, [{ field_id: id, values: ms === null ? null as never : [{ value: Math.floor(ms / 1000) }] }]).catch(() => undefined)
+}
+
+/** SDR: (re)começa a cadência a partir da última mensagem da Lara. Devolve quando sai o próximo follow-up. */
+export async function agendarFollowup(leadId: number, desde: number): Promise<number | null> {
+  if (!CRM_MAP.followup.ativo) return null
   await redis.zrem(FILA(), `esg:${leadId}`)
   await redis.set(chaveEstado('sdr', leadId), { passo: 0, desde, tipo: 'sdr' } satisfies Cadencia, { ex: 30 * 86400 })
-  await enfileirar(`sdr:${leadId}`, noExpediente(desde + CRM_MAP.followup.horas[0] * HORA))
+  const prox = noExpediente(desde + CRM_MAP.followup.horas[0] * HORA)
+  await enfileirar(`sdr:${leadId}`, prox)
+  await campoProximo(leadId, prox)
+  return prox
 }
 
 /** Cancela as cadências do lead (respondeu, humano assumiu, finalizou...). */
 export async function cancelarFollowup(leadId: number, tipos: Array<'sdr' | 'neg'> = ['sdr', 'neg']): Promise<void> {
   for (const t of tipos) {
     await redis.zrem(FILA(), `${t}:${leadId}`, ...(t === 'sdr' ? [`esg:${leadId}`] : [`negfim:${leadId}`]))
-    if (t === 'sdr') await redis.del(chaveEstado('sdr', leadId))
+    if (t === 'sdr' && (await redis.del(chaveEstado('sdr', leadId))) > 0) await campoProximo(leadId, null)
   }
   if (tipos.includes('neg') && await redis.get(chaveEstado('neg', leadId))) {
     await redis.set(chaveEstado('neg', leadId), { passo: -1, desde: Date.now(), tipo: 'neg' } satisfies Cadencia, { ex: 60 * 86400 }) // -1 = respondeu, não recomeça
-    if (CRM_MAP.negociacao.proximoFollowupFieldId) await updateLeadFields(leadId, [{ field_id: CRM_MAP.negociacao.proximoFollowupFieldId, values: null as never }]).catch(() => undefined)
+    await campoProximo(leadId, null)
   }
 }
 
@@ -153,13 +164,21 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
     const texto = (await gerar(leadId, instrucaoSdr(est.passo, total)).catch(() => null)) || FIXOS_SDR[Math.min(est.passo, FIXOS_SDR.length - 1)]
     await enviarFollowup(leadId, texto, 'sdr', est.passo)
     const passo = est.passo + 1
+    let linhaProx: string
     if (passo < total) {
       await redis.set(chaveEstado('sdr', leadId), { ...est, passo }, { ex: 30 * 86400 })
-      await enfileirar(`sdr:${leadId}`, noExpediente(est.desde + CRM_MAP.followup.horas[passo] * HORA))
+      const prox = noExpediente(est.desde + CRM_MAP.followup.horas[passo] * HORA)
+      await enfileirar(`sdr:${leadId}`, prox)
+      await campoProximo(leadId, prox)
+      linhaProx = `⏭️ Próximo follow-up: ${quando(prox, agora)}`
     } else {
       await redis.del(chaveEstado('sdr', leadId))
-      await enfileirar(`esg:${leadId}`, noExpediente(agora + CRM_MAP.followup.esgotar.depoisDeHoras * HORA))
+      const fim = noExpediente(agora + CRM_MAP.followup.esgotar.depoisDeHoras * HORA)
+      await enfileirar(`esg:${leadId}`, fim)
+      await campoProximo(leadId, null)
+      linhaProx = `🏁 Último follow-up. Sem resposta até ${quando(fim, agora)}, o lead vai para ${CRM_MAP.followup.esgotar.nome}.`
     }
+    await addLeadNote(leadId, nota(`Follow-up ${passo} de ${total} enviado`, [`💬 "${trecho(texto)}"`, linhaProx])).catch(() => undefined)
     return `sdr ${passo}/${total} enviado`
   }
 
@@ -169,7 +188,12 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
     try { await patchLead(leadId, { ...corpo, loss_reason_id: e.lossReasonId }) } catch { await patchLead(leadId, corpo) }
     if (CONFIG.gateTag) await removeLeadTags(leadId, [CONFIG.gateTag]).catch(() => undefined)
     await addLeadTags(leadId, [e.tag])
-    await addLeadNote(leadId, `🤖 Lara: cadência de follow-up esgotada (${CRM_MAP.followup.horas.map(h => (h < 24 ? `${h}h` : `${h / 24}d`)).join(', ')}) sem resposta. Motivo: Sem resposta. Movido para ${e.nome} (Remarketing e Retornos futuros).`)
+    await addLeadNote(leadId, nota('Follow-ups esgotados, lead sem resposta', [
+      `🔁 Cadência: ${CRM_MAP.followup.horas.map(h => (h < 24 ? `${h}h` : `${h / 24}d`)).join(', ')}`,
+      `📍 Movido para ${e.nome} (Remarketing e Retornos futuros)`,
+      '❌ Motivo de perda: Sem resposta',
+      '👤 Responsável: Rodrigo',
+    ]))
     await patchState(leadId, { finalizado: { motivo: 'sem_resposta', resumo: 'cadência de follow-up esgotada', em: new Date(agora).toISOString() } })
     await logExec({ tipo: 'finalizou', leadId, detalhe: `follow-up esgotado → ${e.nome}` })
     return 'esgotado → remarketing'
@@ -188,14 +212,18 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
     await enviarFollowup(leadId, texto, 'neg', est.passo)
     const passo = est.passo + 1
     await redis.set(chaveEstado('neg', leadId), { ...est, passo }, { ex: 60 * 86400 })
+    let linhaProx: string
     if (passo < n.dias.length) {
       const prox = noExpediente(est.desde + n.dias[passo] * DIA)
       await enfileirar(`neg:${leadId}`, prox)
-      if (n.proximoFollowupFieldId) await updateLeadFields(leadId, [{ field_id: n.proximoFollowupFieldId, values: [{ value: Math.floor(prox / 1000) }] }])
+      await campoProximo(leadId, prox)
+      linhaProx = `⏭️ Próximo follow-up: ${quando(prox, agora)}`
     } else {
       await enfileirar(`negfim:${leadId}`, noExpediente(agora + DIA))
-      if (n.proximoFollowupFieldId) await updateLeadFields(leadId, [{ field_id: n.proximoFollowupFieldId, values: null as never }]).catch(() => undefined)
+      await campoProximo(leadId, null)
+      linhaProx = '🏁 Último follow-up da negociação. Sem resposta, o vendedor recebe uma tarefa.'
     }
+    await addLeadNote(leadId, nota(`Follow-up de negociação ${passo} de ${n.dias.length} enviado`, [`💬 "${trecho(texto)}"`, linhaProx])).catch(() => undefined)
     return `neg ${passo}/${n.dias.length} enviado`
   }
 
@@ -207,6 +235,7 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
     const est = await redis.get<Cadencia>(chaveEstado('neg', leadId))
     if (!est || est.passo < 0) return 'respondeu: sem tarefa'
     await createTask({ leadId, responsibleUserId: t.responsavelId, taskTypeId: t.taskTypeId, text: t.texto, completeTill: Math.floor(noExpediente(agora) / 1000) + 3600, duration: 0 })
+    await addLeadNote(leadId, nota('Negociação sem resposta após todos os follow-ups', ['📋 Tarefa criada para o vendedor retomar o contato'])).catch(() => undefined)
     await logExec({ tipo: 'followup', leadId, detalhe: 'negociação sem resposta: tarefa criada para o Rodrigo' })
     return 'tarefa criada'
   }
@@ -279,6 +308,7 @@ async function processarLembrete(horas: number, leadId: number, agora: number): 
     await createTask({ leadId, responsibleUserId: CRM_MAP.agenda.responsavelId, taskTypeId: 1, text: `URGENTE: o lembrete de ${horas}h saiu SEM link. Mande o link da reunião para o cliente e preencha o campo "Link da Reunião" (o lembrete de 1h usa ele).`, completeTill: Math.floor(agora / 1000) + 3600, duration: 0 }).catch(() => undefined)
   }
   await enviarFollowup(leadId, texto, `lembrete-${horas}h`, 0)
+  await addLeadNote(leadId, nota(`Lembrete de ${horas}h enviado ao cliente`, [`📅 Reunião: ${quando(lem.ini, agora)}`, link ? `🔗 Link: ${link}` : '⚠️ Sem link da reunião'])).catch(() => undefined)
   return `lembrete ${horas}h enviado`
 }
 
@@ -295,7 +325,8 @@ export async function varrerNegociacao(agora = Date.now()): Promise<number> {
     if (ok !== 'OK') continue
     const prox = noExpediente(agora + n.dias[0] * DIA)
     await enfileirar(`neg:${l.id}`, prox)
-    if (n.proximoFollowupFieldId) await updateLeadFields(l.id, [{ field_id: n.proximoFollowupFieldId, values: [{ value: Math.floor(prox / 1000) }] }]).catch(() => undefined)
+    await campoProximo(l.id, prox)
+    await addLeadNote(l.id, nota(`Cadência de negociação iniciada (${n.dias.join(', ')} dias)`, [`⏭️ Primeiro follow-up: ${quando(prox, agora)}`, '✋ Para sozinha quando o cliente responder'])).catch(() => undefined)
     novos++
   }
   return novos

@@ -232,6 +232,7 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   out = await runTool(ctxG('9h fica ótimo'), 'agendar_reuniao', { horario: 'quinta 01/10 às 9h' })
   eq('Meet do Google: link no campo e na confirmação, sem tarefa de link', [out.isError, escritos.some(v => v.field_id === CRM_MAP.linkReuniaoFieldId && v.values[0].value === w.meet), out.content.includes(w.meet), (w.tarefas || []).length],
     [false, true, true, 0])
+  eq('reunião: tag reuniao-agendada e nota visual com data e link', [w.tags.has('reuniao-agendada'), w.notes.some((n: string) => n.startsWith('🤖 LARA · Reunião agendada') && n.includes('01/10 às 9h') && n.includes(w.meet))], [true, true])
   w.meet = ''
 
   // Equipe pequena NÃO bloqueia reunião: o contexto decide (ex.: uma pessoa só que precisa de implantação)

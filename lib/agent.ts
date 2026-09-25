@@ -12,6 +12,9 @@ import { rotear } from './router'
 import { clearState, getState, patchState } from './state'
 import { aplicarFinalizacao, type ToolCtx } from './tools'
 import { agendarFollowup, cancelarFollowup } from './followup'
+import { addLeadNote } from './kommo'
+import { nota, quando, trecho } from './notas'
+import { k, redis } from './redis'
 import { sendReply } from './transport'
 
 /**
@@ -20,6 +23,11 @@ import { sendReply } from './transport'
  */
 
 const MAX_ROUNDS = 3
+
+const ACOES: Record<string, string> = {
+  salvar_respostas: 'anotou respostas', consultar_horarios: 'consultou a agenda', agendar_reuniao: 'marcou a reunião',
+  finalizar_atendimento: 'concluiu o atendimento', 'trava:finalizou-suporte': 'identificou suporte técnico',
+}
 
 const brain = createBrain({ apiKey: CONFIG.openaiApiKey, model: CONFIG.llmModel })
 
@@ -52,7 +60,13 @@ export async function processLead(leadId: number, webhookId: string): Promise<vo
     if (tags.includes(CONFIG.humanTag)) return pular(`tag "${CONFIG.humanTag}"`, false)
     // Gate: sem a tag, silêncio (e sem poluir o diário — a conta inteira manda add_message)
     if (CONFIG.gateTag && !tags.includes(CONFIG.gateTag)) return pular(`sem a tag "${CONFIG.gateTag}"`, false)
-    if (await humanSpokeRecently(leadId)) return pular('humano falou pelo Kommo nas últimas 6h — a IA não atropela')
+    if (await humanSpokeRecently(leadId)) {
+      // Nota uma vez por ciclo (não a cada mensagem)
+      if ((await redis.set(k('nota-humano', leadId), 1, { nx: true, ex: 6 * 3600 })) === 'OK') {
+        await addLeadNote(leadId, nota('Pausada: uma pessoa do time respondeu', ['👤 A Lara não atropela quem está atendendo', '▶️ Volta sozinha 6h depois da última mensagem do time (se a tag ia-sdr continuar)'])).catch(() => undefined)
+      }
+      return pular('humano falou pelo Kommo nas últimas 6h — a IA não atropela')
+    }
 
     // Tag de gate de volta num lead já finalizado = novo ciclo (lead voltou a entrar)
     const st0 = await getState(leadId)
@@ -134,8 +148,15 @@ export async function processLead(leadId: number, webhookId: string): Promise<vo
       const detail = await enviar(leadId, reply.text)
       await markAnswered(leadId, target.id)
       // Follow-up: finalizou (reunião, suporte, licença...) = para; senão recomeça a contar desta mensagem
+      let prox: number | null = null
       if (reply.handoff) await cancelarFollowup(leadId, ['sdr'])
-      else await agendarFollowup(leadId, Date.now())
+      else prox = await agendarFollowup(leadId, Date.now())
+      const acoes = [...new Set(reply.toolsUsed.map(t => ACOES[t]).filter(Boolean))]
+      await addLeadNote(leadId, nota(`Respondeu o lead${reply.urgente ? ' · 🚨 URGENTE' : ''}`, [
+        `💬 "${trecho(reply.text, 220)}"`,
+        acoes.length > 0 && `🛠️ ${acoes.join(' · ')}`,
+        prox && `⏭️ Próximo follow-up: ${quando(prox)} (se não responder)`,
+      ])).catch(() => undefined)
       await logExec({
         tipo: reply.handoff ? 'finalizou' : 'resposta', leadId, nome, porta: porta.id, ms: Date.now() - t0,
         tools: reply.toolsUsed, guard: reply.guard, usage: reply.usage, urgente: reply.urgente || undefined, detalhe: detail,

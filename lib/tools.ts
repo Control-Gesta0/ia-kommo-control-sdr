@@ -2,6 +2,7 @@ import type OpenAI from 'openai'
 import { ehAfirmativo, escolherOpcoes, gerarLivres, parsePreferencia, resolverEscolha, slotsCitados, type Intervalo, type Slot } from './agenda'
 import { CRM_MAP, campoByKey, type Campo, type Porta } from './crm-map'
 import { avancar, champCompleto } from './etapas'
+import { nota } from './notas'
 import { DISSE_NAO_SEI, evidenceFound, matchOption, overlap, parseNumeroBR } from './guards'
 import type { KommoFieldValue } from './kommo'
 import { classificar } from './router'
@@ -262,6 +263,12 @@ function coerce(campo: Campo, raw: string, atual?: number[]): { values: KommoFie
   return t ? { values: [{ value: t }], texto: t } : { error: `valor vazio para "${campo.name}"` }
 }
 
+const MOTIVO_TXT: Record<string, string> = {
+  agendado: '📅 Reunião agendada', qualificado_sem_reuniao: '✅ Qualificado (reunião a combinar)', venda_licenca: '🛒 Venda de licença',
+  suporte: '🛠️ Pedido de suporte técnico', ja_tem_parceiro: '🤝 Já tem parceiro', fora_do_escopo: '🚫 Fora do escopo',
+  pediu_humano: '🙋 Pediu para falar com uma pessoa', desistiu: '👋 Desistiu', sem_resposta: '🔕 Sem resposta',
+}
+
 /** Efeitos no CRM ao finalizar. Ordem importa: primeiro desliga (tag), depois marca o estado. */
 export async function aplicarFinalizacao(ctx: ToolCtx, motivo: string, resumoRaw: string, urgente = false): Promise<void> {
   const { port, porta } = ctx
@@ -273,11 +280,14 @@ export async function aplicarFinalizacao(ctx: ToolCtx, motivo: string, resumoRaw
   if (extras.length) await port.addTags(extras)
   if (CRM_MAP.finalizar.nota) {
     const linhas = snapshot(porta, state).preenchidos.map(p => `• ${p.campo.name}: ${p.valor}`)
-    const quem = state.respondenteNome ? `\nQuem conversou: ${state.respondenteNome} (${state.respondenteRelacao || '—'})` : ''
-    const outro = state.outroAssunto ? `\nOutro assunto citado: ${state.outroAssunto}` : ''
-    const reuniao = state.reuniao ? `\nReunião: ${state.reuniao.label} (${state.reuniao.taskId.startsWith('g:') ? 'Google Agenda' : 'tarefa'} ${state.reuniao.taskId.replace(/^g:/, '')})` : ''
-    const comentario = state.comentario ? `\n\nComment da indicação: ${state.comentario}` : ''
-    await port.addNote(`🤖 IA finalizou: ${porta.label} · ${motivo}${urgente ? ' · URGENTE' : ''}\n\n${resumo}${quem}${outro}${reuniao}\n\n${linhas.join('\n')}${comentario}`)
+    await port.addNote(nota(`Atendimento concluído · ${MOTIVO_TXT[motivo] || motivo}${urgente ? ' · 🚨 URGENTE' : ''}`, [
+      `🧾 ${resumo}`,
+      state.respondenteNome && `👤 Quem conversou: ${state.respondenteNome} (${state.respondenteRelacao || '—'})`,
+      state.outroAssunto && `💡 Outro assunto citado: ${state.outroAssunto}`,
+      linhas.length > 0 && `\n📋 CHAMP:\n${linhas.join('\n')}`,
+      state.comentario && `\n📝 Pedido da indicação: "${state.comentario}"`,
+      '\n✋ Lara saiu da conversa (tag ia-sdr removida). Daqui pra frente é com o time.',
+    ]))
   }
   await port.patchState({ finalizado: { motivo, resumo, em: new Date().toISOString() } })
 }
@@ -325,8 +335,9 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
         }
         if (writes.length) await port.writeFields(writes)
         const next = await port.patchState({ respostas, semResposta: [...semResposta] })
+        if (salvos.length) await port.addNote(nota('Anotou respostas do lead', salvos.map(x => `✍️ ${x}`))).catch(() => undefined)
         // CHAMP fechado: o lead vai para QUALIFICAÇÃO (só para frente, só no funil de indicações)
-        if (salvos.length && champCompleto(next.respostas, next.semResposta)) await avancar(port, 'qualificado').catch(e => console.warn('[etapa] qualificado:', e))
+        if (salvos.length && champCompleto(next.respostas, next.semResposta)) await avancar(port, 'qualificado', 'CHAMP completo: dor, decisor, tamanho e prazo').catch(e => console.warn('[etapa] qualificado:', e))
         return {
           isError: erros.length > 0 && salvos.length === 0,
           content: [salvos.length ? `Salvo: ${salvos.join(' · ')}.` : '', erros.length ? `Não salvo: ${erros.join(' · ')}.` : '', describeOpen(porta, snapshot(porta, next))].filter(Boolean).join(' '),
@@ -438,7 +449,16 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
         await port.agendarLembretes({ ini: slot.ini, taskId }).catch(e => console.warn('[lembretes]', e))
         // Efeitos que só acontecem DEPOIS da reunião existir
         if (CRM_MAP.dataReuniaoFieldId) await port.writeFields([{ field_id: CRM_MAP.dataReuniaoFieldId, values: [{ value: Math.floor(slot.ini / 1000) }] }])
-        if (CRM_MAP.etapaAgendado.id) await avancar(port, 'agendado')
+        await port.addTags([CRM_MAP.tags.reuniao]).catch(() => undefined)
+        await port.addNote(nota('Reunião agendada', [
+          `📅 ${slot.label.replace(/^./, c => c.toUpperCase())} (reserva de 1h, reunião de 30 a 45 min)`,
+          `👨‍💼 Especialista: Rodrigo Campeoti`,
+          convidado && `👥 Decisor convidado: ${convidado}`,
+          link ? `🔗 Link: ${link}` : '⚠️ Sem link ainda: tarefa criada para preencher o campo "Link da Reunião"',
+          taskId.startsWith('g:') ? '🗓️ Evento criado no Google Agenda com Google Meet' : '🗓️ Tarefa de reunião criada no Kommo',
+          `⏰ Lembretes para o cliente: ${CRM_MAP.lembretes.horasAntes.map(h => `${h}h antes`).join(' e ')}`,
+        ])).catch(() => undefined)
+        if (CRM_MAP.etapaAgendado.id) await avancar(port, 'agendado', `Reunião marcada para ${slot.label}`)
         await aplicarFinalizacao(ctx, 'agendado', `Reunião marcada para ${slot.label}.${convidado ? ` Decisor convidado: ${convidado}.` : ''} ${resumoCampos}`)
         return ok(`Reunião marcada: ${slot.label} (30 a 45 min). Confirme ao lead o dia e a hora com essas palavras${link ? `, mande o link da reunião ${link} pedindo que ele confira se abre certinho` : ', diga que o especialista manda o link da reunião por aqui'}${convidado ? `, reforce que ${convidado} participa junto` : ''} e NÃO faça pergunta.`, { handoff: true })
       }

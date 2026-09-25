@@ -1,4 +1,5 @@
 import { CRM_MAP } from './crm-map'
+import { nota } from './notas'
 import type { LeadPort } from './tools'
 
 /**
@@ -30,11 +31,14 @@ export function podeAvancar(pipelineAtual: number, statusAtual: number, alvo: Et
   return iAlvo > iAtual
 }
 
-export async function avancar(port: LeadPort, alvo: EtapaSdr): Promise<boolean> {
+const NOMES: Record<EtapaSdr, string> = { entrada: 'INICIAL - ENRIQUECIMENTO', emContato: 'EM CONTATO', qualificado: 'QUALIFICAÇÃO', agendado: 'APRESENTAÇÃO AGENDADA' }
+
+export async function avancar(port: LeadPort, alvo: EtapaSdr, motivo = ''): Promise<boolean> {
   const lead = await port.getLead()
   if (!podeAvancar(lead.pipelineId, lead.statusId, alvo)) return false
   const destino = ordemSdr().find(e => e.nome === alvo)!
   await port.moveStage(destino.id, CRM_MAP.entrada.pipelineId)
+  await port.addNote(nota(`Etapa: ${NOMES[alvo]}`, [motivo && `📍 ${motivo}`])).catch(() => undefined)
   return true
 }
 
