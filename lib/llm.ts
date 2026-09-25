@@ -4,7 +4,7 @@ import OpenAI from 'openai'
 import { CRM_MAP, type Porta } from './crm-map'
 import { addUsage, emptyUsage, type Usage } from './execlog'
 import { checkReply, keepLastQuestion, semTravessao, type Violation } from './guards'
-import { abreComPergunta, garantirSaudacao, saudacao } from './saudacao'
+import { abreComPergunta, garantirSaudacao, primeiroNomeDe, saudacao } from './saudacao'
 import type { ChatMsg } from './history'
 import { aplicarFinalizacao, buildTools, describeOpen, runTool, snapshot, type ToolCtx } from './tools'
 
@@ -280,9 +280,4 @@ function precisaPerguntarTamanho(ctx: ToolCtx, state: { respostas?: Record<strin
 }
 
 /** Primeiro nome "de gente" (nome de empresa ou apelido estranho vira vazio). */
-export function primeiroNomeDe(nome: string): string {
-  const p = (nome || '').trim().split(/\s+/)[0] || ''
-  if (!/^[A-Za-zÀ-ú]{2,20}$/.test(p)) return ''
-  if (/^(lead|contato|cliente|empresa|ltda|me|eireli|sa|teste|novo|deal)$/i.test(p)) return ''
-  return p[0].toUpperCase() + p.slice(1).toLowerCase()
-}
+export { primeiroNomeDe }

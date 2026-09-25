@@ -111,7 +111,11 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
     // Nome da PESSOA (o nome do lead costuma ser a empresa ou "Lead №85304")
     nome = contato?.name || lead.name || ''
     const telefones = contato ? contactPhones(contato) : []
-    const { comentario, contexto, invalido, textoIndicacao } = await lerIndicacao(lead, comentarioInformado)
+    const leitura = await lerIndicacao(lead, comentarioInformado)
+    const { comentario, contexto, textoIndicacao } = leitura
+    // Liberado pelo Rodrigo (LIBERAR_INVALIDOS): atende mesmo com a marca de inválido da Kommo
+    const liberado = !!leitura.invalido && CONFIG.liberarInvalidos.includes(leadId)
+    const invalido = liberado ? null : leitura.invalido
     const idioma = foraDoIdioma(textoIndicacao, comentario || '')
     const classificacao = comentario && !invalido ? await classificarIntencao(comentario) : null
     const d = decidirInicio({ leadId, statusId: lead.status_id, pipelineId: lead.pipeline_id, tags: leadTags(lead), comentario, classificacao, telefones, invalido, foraDoIdioma: idioma.fora ? idioma.motivo : null })

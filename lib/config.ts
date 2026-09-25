@@ -34,6 +34,8 @@ export const CONFIG = {
   gateTag: (process.env.GATE_TAG || '').toLowerCase(),
   humanTag: (process.env.HUMAN_TAG || 'atendimento-humano').toLowerCase(),
   testLeadIds: list(process.env.TEST_LEAD_IDS).map(Number).filter(Boolean),
+  /** leads que a Kommo marcou como inválidos e o Rodrigo decidiu atender mesmo assim */
+  liberarInvalidos: list(process.env.LIBERAR_INVALIDOS).map(Number).filter(Boolean),
 
   // ---- Indicações de parceiro Kommo ----
   /** segredo do userscript (POST /api/novo-lead). Separado do WEBHOOK_SECRET: vaza menos se o navegador vazar */

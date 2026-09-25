@@ -87,7 +87,7 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   eq('início: aceite inválido NÃO inicia (vence tudo menos humano)', [decidirInicio({ ...base, invalido: 'cedo' }, cfg).acao, decidirInicio({ ...base, invalido: 'outros', telefones: [] }, cfg).acao], ['invalido', 'invalido'])
   eq('início: humano assumiu', decidirInicio({ ...base, tags: ['Atendimento-Humano'] }, cfg).acao, 'humano')
   eq('início: rampagem só TEST_LEAD_IDS', [decidirInicio(base, { ...cfg, modoInicio: 'teste' }).acao, decidirInicio({ ...base, leadId: 7 }, { ...cfg, modoInicio: 'teste' }).acao], ['rampagem', 'iniciar'])
-  eq('nome de gente', [primeiroNome('ana souza'), primeiroNome('Lead #123'), primeiroNome('Empresa XPTO'), primeiroNome('')], ['Ana', '', '', ''])
+  eq('nome de gente', [primeiroNome('ana souza'), primeiroNome('Lead #123'), primeiroNome('Empresa XPTO'), primeiroNome(''), primeiroNome('Dr. Darci Duarte'), primeiroNome('dra maria')], ['Ana', '', '', '', 'Dr. Darci', 'Dra. Maria'])
   const manha = Date.parse('2026-09-28T13:00:00Z') // 10h em Brasília
   eq('abertura fixa: saudação do horário + Lara + passa nas travas', [regras(aberturaFixa('Ana Souza', manha)), aberturaFixa('Ana', manha).startsWith('Bom dia, Ana! Aqui é a Lara'), aberturaFixa('Lead #9', manha).startsWith('Bom dia! Aqui é a Lara')], [[], true, true])
 

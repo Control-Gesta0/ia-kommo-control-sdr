@@ -6,6 +6,7 @@ import { appendMessage, humanSpokeRecently } from './history'
 import { addLeadNote, addLeadTags, createTask, getContact, getLead, getTask, kommoGet, leadTags, patchLead, removeLeadTags, updateLeadFields } from './kommo'
 import { lerEventoGoogle } from './google'
 import { despertar } from './qstash'
+import { primeiroNomeDe } from './saudacao'
 import { k, redis } from './redis'
 import { getState, patchState } from './state'
 import { sendReply } from './transport'
@@ -228,11 +229,6 @@ export async function agendarLembretes(leadId: number, ini: number, taskId: stri
   }
 }
 
-function primeiroNome(nome: string): string {
-  const p = (nome || '').trim().split(/\s+/)[0] || ''
-  return /^[A-Za-zÀ-ú]{2,20}$/.test(p) && !/^(lead|contato|cliente|empresa)$/i.test(p) ? p[0].toUpperCase() + p.slice(1).toLowerCase() : ''
-}
-
 /** Texto do lembrete (fixo, sem IA: data e hora não podem sair erradas). Sempre em português. */
 export function textoLembrete(horas: number, ini: number, agora: number, nome: string, link = ''): string {
   const l = local(ini)
@@ -274,7 +270,7 @@ async function processarLembrete(horas: number, leadId: number, agora: number): 
   const lead = await getLead(leadId)
   if (lead.status_id === 143) return 'lead perdido: sem lembrete'
   const contatoId = (lead._embedded?.contacts || []).find(c => c.is_main)?.id
-  const nome = primeiroNome(contatoId ? (await getContact(contatoId)).name || '' : '')
+  const nome = primeiroNomeDe(contatoId ? (await getContact(contatoId)).name || '' : '')
   const linkCampo = CRM_MAP.linkReuniaoFieldId ? (lead.custom_fields_values || []).find(f => f.field_id === CRM_MAP.linkReuniaoFieldId)?.values?.[0]?.value : ''
   // O campo vence (o Rodrigo pode ter trocado o link à mão); depois o Meet do evento
   const link = String(linkCampo || linkEvento || CONFIG.linkReuniao || '').trim()

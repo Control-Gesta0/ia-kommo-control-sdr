@@ -37,3 +37,16 @@ export function abreComPergunta(texto: string): boolean {
   const primeira = texto.trim().split(/(?<=[.!?])\s/)[0] || ''
   return primeira.trim().endsWith('?')
 }
+
+const TITULOS: Record<string, string> = { dr: 'Dr.', dra: 'Dra.', doutor: 'Dr.', doutora: 'Dra.' }
+
+/** Nome para chamar o lead: primeiro nome; "Dr. Darci Duarte" vira "Dr. Darci". Vazio se não parece nome de gente. */
+export function primeiroNomeDe(nome: string): string {
+  const partes = (nome || '').trim().split(/\s+/)
+  const titulo = TITULOS[(partes[0] || '').toLowerCase().replace(/\.$/, '')]
+  const p = (titulo ? partes[1] : partes[0]) || ''
+  if (!/^[A-Za-zÀ-ú]{2,20}$/.test(p)) return ''
+  if (/^(lead|contato|cliente|empresa|ltda|me|eireli|sa|teste|novo|deal)$/i.test(p)) return ''
+  const n = p[0].toUpperCase() + p.slice(1).toLowerCase()
+  return titulo ? `${titulo} ${n}` : n
+}
