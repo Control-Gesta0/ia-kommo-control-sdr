@@ -30,6 +30,9 @@ export function rotear(state: LeadState, textoTurno: string): Rota {
   if (travada) return { tipo: 'porta', porta: travada, travou: false }
 
   // Agente de uma porta só (ex.: SDR de indicação): sem menu, trava direto
+  // Sem indicação (ninguém iniciou pelo aceite, não há Comment) = tag colocada à mão: contato direto
+  const manual = portaById((CRM_MAP.menu as { portaManual?: string }).portaManual)
+  if (manual && !state.comentario && !state.iniciadoPor) return { tipo: 'porta', porta: manual, travou: true }
   const unica = portaById((CRM_MAP.menu as { portaUnica?: string }).portaUnica)
   if (unica) return { tipo: 'porta', porta: unica, travou: true }
 

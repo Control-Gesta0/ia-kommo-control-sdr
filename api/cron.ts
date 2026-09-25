@@ -6,6 +6,7 @@ import { filaResumo, pegarItem, processarItem, varrerNegociacao, vencidos } from
 import { getHistory } from '../lib/history'
 import { getContact, getLead } from '../lib/kommo'
 import { kommoPort } from '../lib/port'
+import { getState } from '../lib/state'
 import { assinaturaValida } from '../lib/qstash'
 
 /**
@@ -23,8 +24,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!okCron && !okManual && !okQstash) return res.status(401).json({ error: 'unauthorized' })
   if (okManual && req.query.ver) return res.status(200).json({ ok: true, fila: await filaResumo() })
 
-  const porta = portaById(CRM_MAP.menu.portaUnica)!
   const gerar = async (leadId: number, instrucao: string) => {
+    const porta = portaById((await getState(leadId)).porta) || portaById(CRM_MAP.menu.portaUnica)!
     const lead = await getLead(leadId)
     const contatoId = (lead._embedded?.contacts || []).find(c => c.is_main)?.id
     const nome = contatoId ? (await getContact(contatoId)).name || lead.name || '' : lead.name || ''

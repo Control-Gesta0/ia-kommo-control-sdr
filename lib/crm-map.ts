@@ -145,11 +145,24 @@ export const CRM_MAP = {
       roteiro: ['organizacao', 'vendedores', 'dor', 'decisor', 'faturamento', 'prioridade'],
       obrigatorios: ['organizacao', 'vendedores'],
     },
+    {
+      // Tag ia-sdr colocada à mão num lead qualquer (teste, demonstração): mesmo CHAMP, sem falar de indicação
+      id: 'direto',
+      label: 'Contato direto (tag ia-sdr colocada pelo time)',
+      menu: null,
+      ativa: true,
+      promptFile: 'direto.md',
+      sinais: /$^/,
+      roteiro: ['organizacao', 'vendedores', 'dor', 'decisor', 'faturamento', 'prioridade'],
+      obrigatorios: ['organizacao', 'vendedores'],
+    },
   ] as Porta[],
 
   menu: {
     /** sem menu: todo lead com o gate cai nesta porta */
     portaUnica: 'indicacao' as string,
+    /** lead com a tag e SEM indicação (a Lara não iniciou, não há Comment): atende como contato direto */
+    portaManual: 'direto' as string,
     outros: 9,
     portaPadraoOutros: 'indicacao',
     classificarTextoLivre: false,

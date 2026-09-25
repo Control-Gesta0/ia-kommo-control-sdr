@@ -134,8 +134,11 @@ export default async function testesCliente(eq: Eq): Promise<number> {
 
   // ---------------- Roteador: porta única, sem menu ----------------
   const { rotear } = await import('../lib/router')
-  const r = rotear({}, 'oi')
-  eq('porta única trava sem menu', r.tipo === 'porta' && r.porta.id, 'indicacao')
+  const r = rotear({ comentario: 'quero organizar o funil', iniciadoPor: 'userscript' }, 'oi')
+  eq('indicação (Lara iniciou com Comment) cai na porta de indicação', r.tipo === 'porta' && r.porta.id, 'indicacao')
+  const rManual = rotear({}, 'oi, queria entender o Kommo')
+  eq('tag ia-sdr colocada à mão (sem indicação) cai no contato direto', rManual.tipo === 'porta' && rManual.porta.id, 'direto')
+  eq('porta travada não muda', (() => { const x = rotear({ porta: 'indicacao' }, 'oi'); return x.tipo === 'porta' && x.porta.id })(), 'indicacao')
 
   // ---------------- Agenda (relógio fixo: segunda 28/09/2026 10h de Brasília) ----------------
   const A = await import('../lib/agenda')
