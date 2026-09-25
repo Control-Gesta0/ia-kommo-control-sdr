@@ -187,13 +187,11 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   out = await runTool(ctx('e se for sexta?'), 'consultar_horarios', { preferencia: 'sexta' })
   eq('não marca segunda reunião', out.isError, true)
 
-  // Equipe pequena: sem reunião (a não ser que peça), licença pelo WhatsApp
-  w.state = { respostas: { dor: 'perco lead', decisor: 'eu', vendedores: '2', prioridade: 'este mês' } }
+  // Equipe pequena NÃO bloqueia reunião: o contexto decide (ex.: uma pessoa só que precisa de implantação)
+  w.state = { respostas: { dor: 'perco lead', decisor: 'eu', vendedores: 'só eu', prioridade: 'este mês' } }
   w.tags = new Set(['gate'])
-  out = await runTool(ctx('somos 2'), 'consultar_horarios', { preferencia: '' })
-  eq('equipe de 2: não oferece reunião', [out.isError, /LICENÇA/.test(out.content)], [true, true])
-  out = await runTool(ctx('somos 2, mas quero uma reunião com o especialista'), 'consultar_horarios', { preferencia: '' })
-  eq('equipe de 2 que PEDE reunião: oferece', out.isError, false)
+  out = await runTool(ctx('sou só eu, atendo e faço os procedimentos'), 'consultar_horarios', { preferencia: '' })
+  eq('uma pessoa só: a reunião continua possível', out.isError, false)
   w.state = { respostas: { vendedores: '2' } }
   out = await runTool(ctx('fechado, quero o Advanced para 2 usuários'), 'finalizar_atendimento', { motivo: 'venda_licenca', resumo: 'Advanced, 2 usuários' })
   eq('venda de licença finaliza com a tag venda-licenca', [out.isError, w.state.finalizado?.motivo, w.tags.has('venda-licenca'), w.tags.has('gate')], [false, 'venda_licenca', true, false])

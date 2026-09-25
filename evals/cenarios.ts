@@ -2,7 +2,7 @@
  * CENÁRIOS DO CLIENTE (patch) — Control Gestão · SDR de indicações Kommo.
  * Relógio fixo: segunda 28/09/2026 10h de Brasília (scripts/evals.ts).
  *
- * ⚠️ Os prompts ainda têm [PREENCHER] (oferta, cases, tom real, duração). Rodar agora
+ * Rodar agora
  * mede o COMPORTAMENTO (ordem, tools, agenda, tom); o 10/10 que libera o deploy
  * só vale depois dos dados do negócio preenchidos.
  */
@@ -75,8 +75,16 @@ export const CENARIOS: Cenario[] = [
     porta: 'indicacao', nomeContato: 'Ana Souza', comentario: COMMENT,
     historico: [['out', ABERTURA]],
     msgs: ['quanto custa a licença do Kommo por usuário?'],
-    checks: [umaPergunta, semFallback, tomHumano],
-    criterios: ['Informa os preços dos planos da Kommo em dólar (Base, Advanced, Pro) ou o do plano indicado', 'Não cita preço de implantação ou serviço da Control Gestão'],
+    checks: [umaPergunta, semFallback, tomHumano, { nome: 'não fala preço em dólar', fn: (_w: any, t: any[]) => t.every(x => !/US\$|(?<!R)\$\s*\d|d[oó]lar/i.test(x.resposta)) }],
+    criterios: ['Informa o preço da licença EM REAIS (Básico R$ 104, Avançado R$ 156 ou Pro R$ 234 por usuário/mês, ou o do plano indicado), sem nenhum valor em dólar', 'Não cita preço de implantação ou serviço da Control Gestão'],
+  },
+  {
+    id: 'estetica-uma-pessoa-precisa-implantacao',
+    porta: 'indicacao', nomeContato: 'Juliana', comentario: 'Tenho uma clínica de estética e preciso organizar os agendamentos e o atendimento no WhatsApp',
+    historico: [['out', 'Bom dia, Juliana! Aqui é a Lara, da Control Gestão, parceira oficial da Kommo. A Kommo me passou seu pedido sobre organizar os agendamentos e o atendimento da clínica no WhatsApp. Hoje quantas pessoas atendem os clientes aí?']],
+    msgs: ['sou só eu, eu atendo, marco e faço os procedimentos. já comprei a licença mas não sei configurar nada'],
+    checks: [umaPergunta, semFallback, tomHumano, { nome: 'não finalizou como venda de licença', fn: (w: any) => w.state.finalizado?.motivo !== 'venda_licenca' }],
+    criterios: ['Não tenta vender licença (ela já comprou); trata como implantação e segue qualificando ou oferece a reunião', 'Acolhe a dificuldade de não saber configurar'],
   },
   {
     id: 'decisor-convidado',

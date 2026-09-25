@@ -75,8 +75,6 @@ export function numeroVendedores(texto: string | undefined): number | null {
   return w ? NUM_PALAVRA[w[1]] : null
 }
 
-const PEDIU_REUNIAO = /reuni|call|chamada|video|v[ií]deo|conversar com (o|um|a) (especialista|consultor|time)|apresenta[cç]|marcar|agendar/i
-
 export function buildTools(porta: Porta): OpenAI.Chat.ChatCompletionTool[] {
   const tools: OpenAI.Chat.ChatCompletionTool[] = []
   if (porta.roteiro.length) {
@@ -126,7 +124,7 @@ export function buildTools(porta: Porta): OpenAI.Chat.ChatCompletionTool[] {
       type: 'function',
       function: {
         name: 'finalizar_atendimento',
-        description: 'Encerra a participação da IA SEM reunião marcada (reunião marcada quem encerra é agendar_reuniao). Chame ANTES de escrever a mensagem de encerramento. Motivos: qualificado_sem_reuniao (qualificou mas a agenda falhou ou o lead não quer marcar agora); venda_licenca (equipe pequena quer comprar a licença: o time manda o link/proposta; ponha plano e nº de usuários no resumo); suporte (pedido de suporte técnico: WhatsApp caiu, mensagem não envia, conectar número); ja_tem_parceiro (já fechou com outro parceiro/consultoria); fora_do_escopo (não é implantação/uso do Kommo); pediu_humano; desistiu. Depois envie a mensagem de encerramento e NÃO faça perguntas.',
+        description: 'Encerra a participação da IA SEM reunião marcada (reunião marcada quem encerra é agendar_reuniao). Chame ANTES de escrever a mensagem de encerramento. Motivos: qualificado_sem_reuniao (qualificou mas a agenda falhou ou o lead não quer marcar agora); venda_licenca (o lead só precisa da LICENÇA, sem implantação, e quer comprar: o time manda o link/proposta; ponha plano e nº de usuários no resumo); suporte (pedido de suporte técnico: WhatsApp caiu, mensagem não envia, conectar número); ja_tem_parceiro (já fechou com outro parceiro/consultoria); fora_do_escopo (não é implantação/uso do Kommo); pediu_humano; desistiu. Depois envie a mensagem de encerramento e NÃO faça perguntas.',
         parameters: {
           type: 'object',
           properties: {
@@ -371,10 +369,6 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
         if (!cfg.ativa || !cfg.responsavelId) return err('Agenda não configurada. Diga que o time confirma o horário e chame finalizar_atendimento(qualificado_sem_reuniao).')
         const state = await port.getState()
         if (state.reuniao) return err(`A reunião já está marcada (${state.reuniao.label}). Não marque outra.`)
-        const nV = numeroVendedores(state.respostas?.vendedores)
-        if (nV !== null && nV <= CRM_MAP.licenca.maxVendedores && !PEDIU_REUNIAO.test(ctx.leadText)) {
-          return err(`Equipe pequena (${nV} vendedor(es)): não ofereça reunião. Siga a venda da LICENÇA pelo WhatsApp (seção "Equipe pequena" do prompt).`)
-        }
         const agora = ctx.agora ?? Date.now()
         const fimJanela = agora + (cfg.diasUteisJanela + 4) * 86400000
         let ocupados: Intervalo[]
@@ -398,10 +392,6 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
         const respondido = (key: string) => !!state.respostas?.[key] || (state.semResposta || []).includes(key)
         const faltando = CRM_MAP.exigirAntesDeAgendar.filter(grupo => !grupo.some(respondido))
         if (faltando.length) return err(`Antes de marcar, falta (CHAMP): ${faltando.map(g => g.map(key => campoByKey(key)?.name || key).join(' OU ')).join('; ')}. Pergunte o próximo item (uma pergunta) e grave com salvar_respostas.`)
-        const nVend = numeroVendedores(state.respostas?.vendedores)
-        if (nVend !== null && nVend <= CRM_MAP.licenca.maxVendedores && !PEDIU_REUNIAO.test(ctx.leadText)) {
-          return err(`Equipe pequena (${nVend} vendedor(es)): não marque reunião. Siga a venda da LICENÇA pelo WhatsApp (seção "Equipe pequena" do prompt). Só marque se o lead pedir reunião.`)
-        }
         const oferta: Slot[] = state.oferta || []
         const agora = ctx.agora ?? Date.now()
         if (!oferta.length) return err('Nenhum horário foi oferecido ainda. Chame consultar_horarios e ofereça as opções.')

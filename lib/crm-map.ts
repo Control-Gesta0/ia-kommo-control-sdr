@@ -55,7 +55,7 @@ const CAMPOS = {
 
 const AGENDA: AgendaConfig = {
   ativa: true,
-  responsavelId: 0,          // [PREENCHER] user_id do closer (discover → Usuários)
+  responsavelId: 12725576,   // Rodrigo Campeoti (closer)
   taskTypeId: 2238563,       // "Apresentação" (tipos da conta: 2=Meeting, 2238563=Apresentação)
   duracaoMin: 60,            // a reunião dura 30 a 45 min, mas a agenda reserva 1h
   passoMin: 30,
@@ -68,7 +68,7 @@ const AGENDA: AgendaConfig = {
 
 export const CRM_MAP = {
   /** textarea que o Salesbot envia (Desenho A) */
-  respostaFieldId: 0,
+  respostaFieldId: 1048615, // "Resposta IA (Lara)" (criado em 25/09/2026)
 
   /** a IA NUNCA escreve nestes campos */
   camposProibidos: [] as number[],
@@ -129,11 +129,22 @@ export const CRM_MAP = {
   dataReuniaoFieldId: 1040772,
 
   /**
-   * Equipe pequena: não marca reunião, tenta vender a LICENÇA pelo WhatsApp.
-   * Código: agendar_reuniao recusa quando vendedores ≤ maxVendedores (a menos que
-   * o lead peça a reunião); finalizar(venda_licenca) só com vendedores respondido.
+   * Licença da Kommo: a Lara PODE informar o preço (o que nunca informa é serviço).
+   * Valores em REAIS por usuário/mês. null = ainda não configurado: a Lara diz que
+   * manda a tabela atualizada em reais e segue. Equipe pequena NÃO é regra fixa:
+   * o contexto decide (quem já tem licença ou precisa de implantação vai para reunião).
    */
-  licenca: { maxVendedores: 3 },
+  licenca: {
+    contrato: 'contrato de 6 meses; em 9 meses, 1 ano ou 2 anos o valor mensal cai (o time passa o valor exato)',
+    // kommo.com/br/precos/compare-planos, moeda BRL, contrato de 6 meses, tabela regional do Brasil (25/09/2026):
+    // Básico 104 e Avançado 156 conferidos no print do mestre; Pro 234 lido na página (o Pro não tem preço regional).
+    planos: [
+      { nome: 'Básico', reaisPorUsuario: 104 as number | null, resumo: 'para quem está começando: caixa de entrada unificada, múltiplos funis, painel personalizável e IA básica' },
+      { nome: 'Avançado', reaisPorUsuario: 156 as number | null, resumo: 'tudo do Básico + Kommo IA, agente de IA, transmissão (disparos) e automações de chats e acompanhamentos' },
+      { nome: 'Pro', reaisPorUsuario: 234 as number | null, resumo: 'tudo do Avançado com mais recursos de IA, para escalar as vendas com automação e insights avançados' },
+      { nome: 'Empresarial', reaisPorUsuario: null as number | null, resumo: 'sob medida para grandes empresas: segurança, controle e suporte dedicado' },
+    ],
+  },
 
   finalizar: {
     removerGate: true,
@@ -146,7 +157,12 @@ export const CRM_MAP = {
     {
       nome: 'perguntou preço',
       re: /quanto custa|quanto fica|quanto [ée]|pre[cç]o|valor|investimento|or[cç]amento|mensalidade|cobram|custo/i,
-      aviso: 'O lead perguntou PREÇO. Se for da LICENÇA/plano da Kommo, pode responder com os planos. Se for da implantação/configuração/suporte/IA (nosso serviço), NÃO cite valor: "Depende do tamanho da operação, por isso quero te passar o valor certo." E a pergunta desta resposta é sobre o TAMANHO (quantos vendedores vão usar, ou o faturamento mensal).',
+      aviso: 'O lead perguntou PREÇO. Se for da LICENÇA/plano da Kommo, pode responder em REAIS com os planos do contexto. Se for da implantação/configuração/suporte/IA (nosso serviço), NÃO cite valor: "Depende do tamanho da operação, por isso quero te passar o valor certo." (ou do tamanho do projeto/escopo). E a pergunta desta resposta é sobre o TAMANHO (quantos vendedores vão usar, ou o faturamento mensal).',
+    },
+    {
+      nome: 'dificuldade',
+      re: /n[aã]o sei (configurar|mexer|usar)|n[aã]o consegui|tentei aprender|dif[ií]cil|perdid[oa]|complicado|n[aã]o entendo/i,
+      aviso: 'O lead contou uma DIFICULDADE. Comece a resposta acolhendo em meia frase (ex.: "normal, no começo o Kommo assusta mesmo, a gente deixa isso simples pra você") e só depois siga.',
     },
   ] as Alerta[],
 
