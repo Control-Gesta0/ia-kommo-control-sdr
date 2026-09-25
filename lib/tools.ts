@@ -24,7 +24,8 @@ export interface LeadPort {
   /** agenda: ocupado do closer entre ini e fim (ms). Erro = não consegue ver a agenda */
   buscarOcupados(ini: number, fim: number): Promise<Intervalo[]>
   /** agenda: cria a reunião (tarefa no Kommo). Devolve o id */
-  criarReuniao(r: { ini: number; fim: number; texto: string }): Promise<string>
+  /** Cria a reunião (Google com Meet, ou tarefa do Kommo). id 'g:…' = evento do Google; link vazio = sem Meet */
+  criarReuniao(r: { ini: number; fim: number; texto: string }): Promise<{ id: string; link: string }>
   /** tarefa simples para o closer (ex.: preencher o link da reunião) */
   criarTarefaCloser(texto: string): Promise<void>
   /** agenda os lembretes da reunião para o cliente (24h e 1h antes) */
@@ -274,7 +275,7 @@ export async function aplicarFinalizacao(ctx: ToolCtx, motivo: string, resumoRaw
     const linhas = snapshot(porta, state).preenchidos.map(p => `• ${p.campo.name}: ${p.valor}`)
     const quem = state.respondenteNome ? `\nQuem conversou: ${state.respondenteNome} (${state.respondenteRelacao || '—'})` : ''
     const outro = state.outroAssunto ? `\nOutro assunto citado: ${state.outroAssunto}` : ''
-    const reuniao = state.reuniao ? `\nReunião: ${state.reuniao.label} (tarefa ${state.reuniao.taskId})` : ''
+    const reuniao = state.reuniao ? `\nReunião: ${state.reuniao.label} (${state.reuniao.taskId.startsWith('g:') ? 'Google Agenda' : 'tarefa'} ${state.reuniao.taskId.replace(/^g:/, '')})` : ''
     const comentario = state.comentario ? `\n\nComment da indicação: ${state.comentario}` : ''
     await port.addNote(`🤖 IA finalizou: ${porta.label} · ${motivo}${urgente ? ' · URGENTE' : ''}\n\n${resumo}${quem}${outro}${reuniao}\n\n${linhas.join('\n')}${comentario}`)
   }
@@ -425,11 +426,13 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
         const resumoCampos = snapshot(porta, state).preenchidos.map(p => `${p.campo.name}: ${p.valor}`).join(' · ')
         const convidado = String(input.decisor_convidado || '').trim().slice(0, 120)
         const texto = `Reunião (indicação Kommo) · ${convidado ? `Decisor convidado: ${convidado} · ` : ''}${resumoCampos}${state.comentario ? ` · Comment: ${state.comentario.slice(0, 300)}` : ''}`.slice(0, 1000)
-        const taskId = await port.criarReuniao({ ini: slot.ini, fim: slot.fim, texto })
+        const criada = await port.criarReuniao({ ini: slot.ini, fim: slot.fim, texto })
+        const taskId = criada.id
         await port.patchState({ reuniao: { ...slot, taskId, em: new Date(agora).toISOString() }, oferta: [] })
         const linkCampo = CRM_MAP.linkReuniaoFieldId ? (await port.getLead()).fields[CRM_MAP.linkReuniaoFieldId]?.value : undefined
-        const link = String(linkCampo || process.env.LINK_REUNIAO || '').trim()
-        if (link && !linkCampo && CRM_MAP.linkReuniaoFieldId) await port.writeFields([{ field_id: CRM_MAP.linkReuniaoFieldId, values: [{ value: link }] }])
+        // Link novo da reunião (Meet) vence o campo antigo; sem Meet, vale o campo ou o link fixo
+        const link = String(criada.link || linkCampo || process.env.LINK_REUNIAO || '').trim()
+        if (link && link !== linkCampo && CRM_MAP.linkReuniaoFieldId) await port.writeFields([{ field_id: CRM_MAP.linkReuniaoFieldId, values: [{ value: link }] }])
         // Link é por reunião: sem link ainda, o closer recebe a tarefa de preencher o campo (os lembretes usam o campo)
         if (!link) await port.criarTarefaCloser(`Preencher o campo "Link da Reunião" do lead (reunião ${slot.label}). Os lembretes de 24h e 1h mandam esse link para o cliente.`).catch(e => console.warn('[tarefa link]', e))
         await port.agendarLembretes({ ini: slot.ini, taskId }).catch(e => console.warn('[lembretes]', e))

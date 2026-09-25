@@ -85,7 +85,7 @@ async function main() {
       async buscarOcupados() { return [...w.ocupados, ...w.reunioes] },
       async agendarLembretes() { /* sem efeito no exame */ },
       async criarTarefaCloser(t) { w.log.push(`tarefa closer: ${t.slice(0, 60)}`) },
-      async criarReuniao(r) { w.reunioes.push(r); w.log.push(`reuniao ${new Date(r.ini).toISOString()}`); return `t${w.reunioes.length}` },
+      async criarReuniao(r) { w.reunioes.push(r); w.log.push(`reuniao ${new Date(r.ini).toISOString()}`); return { id: `t${w.reunioes.length}`, link: '' } },
       async getState() { return structuredClone(w.state) },
       async patchState(p) { Object.assign(w.state, p); return structuredClone(w.state) },
     }

@@ -47,6 +47,4 @@ export const CONFIG = {
   linkReuniao: process.env.LINK_REUNIAO || '',
 
   // ---- Google Agenda (opcional, só leitura de livre/ocupado) ----
-  googleServiceAccount: process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '',
-  googleCalendarId: process.env.GOOGLE_CALENDAR_ID || '',
 }

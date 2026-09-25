@@ -1,9 +1,8 @@
 import type { Intervalo } from './agenda'
-import { CONFIG } from './config'
 import { CRM_MAP } from './crm-map'
 import { agendarLembretes } from './followup'
-import { googleOcupados } from './google'
-import { addLeadNote, addLeadTags, createTask, getLead, leadTags, listOpenTasks, removeLeadTags, updateLeadFields, updateLeadStatus, type KommoFieldValue } from './kommo'
+import { criarEventoGoogle, googleLeitura, googleOAuth, googleOcupados } from './google'
+import { addLeadNote, addLeadTags, contactEmails, createTask, getContact, getLead, leadTags, listOpenTasks, removeLeadTags, updateLeadFields, updateLeadStatus, type KommoFieldValue } from './kommo'
 import { getState, patchState } from './state'
 import type { LeadPort, LeadView } from './tools'
 
@@ -38,14 +37,28 @@ export function kommoPort(leadId: number): LeadPort {
     async criarTarefaCloser(texto) {
       await createTask({ leadId, responsibleUserId: CRM_MAP.agenda.responsavelId, taskTypeId: 1, text: texto, completeTill: Math.floor(Date.now() / 1000) + 2 * 3600, duration: 0 })
     },
-    agendarLembretes: r => agendarLembretes(leadId, r.ini, Number(r.taskId)),
+    agendarLembretes: r => agendarLembretes(leadId, r.ini, r.taskId),
     async criarReuniao(r) {
       const cfg = CRM_MAP.agenda
+      if (googleOAuth()) {
+        // Evento direto no Google do closer, com Meet próprio (um link por reunião).
+        // Não cria tarefa no Kommo: a integração Kommo ↔ Google duplicaria o evento.
+        const lead = await getLead(leadId)
+        const contatoId = (lead._embedded?.contacts || []).find(c => c.is_main)?.id
+        const contato = contatoId ? await getContact(contatoId).catch(() => null) : null
+        const nome = (contato?.name || lead.name || `Lead ${leadId}`).trim()
+        const email = contato ? contactEmails(contato).find(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) : undefined
+        const ev = await criarEventoGoogle({
+          ini: r.ini, fim: r.fim, titulo: `Reunião Control Gestão · ${nome}`.slice(0, 200),
+          descricao: `${r.texto}\n\nLead no Kommo: #${leadId}`, emailConvidado: email, chave: `lead-${leadId}-${r.ini}`,
+        })
+        return { id: `g:${ev.id}`, link: ev.link }
+      }
       const id = await createTask({
         leadId, responsibleUserId: cfg.responsavelId, taskTypeId: cfg.taskTypeId, text: r.texto,
         completeTill: Math.floor(r.ini / 1000), duration: Math.round((r.fim - r.ini) / 1000),
       })
-      return String(id)
+      return { id: String(id), link: '' }
     },
     getState: () => getState(leadId),
     patchState: p => patchState(leadId, p),
@@ -67,8 +80,6 @@ export async function ocupadosDoCloser(ini: number, fim: number): Promise<Interv
     if (!dur || a + dur < ini || a > fim) continue
     out.push({ ini: a, fim: a + dur })
   }
-  if (CONFIG.googleServiceAccount && CONFIG.googleCalendarId) {
-    out.push(...await googleOcupados(CONFIG.googleServiceAccount, CONFIG.googleCalendarId, ini, fim))
-  }
+  if (googleLeitura()) out.push(...await googleOcupados(ini, fim))
   return out
 }

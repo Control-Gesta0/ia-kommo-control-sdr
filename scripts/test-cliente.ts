@@ -183,7 +183,7 @@ export default async function testesCliente(eq: Eq): Promise<number> {
     addTags: async (t: string[]) => { t.forEach(x => w.tags.add(x)) },
     removeTags: async (t: string[]) => { t.forEach(x => w.tags.delete(x)) },
     buscarOcupados: async () => [...w.ocupados, ...w.reunioes],
-    criarReuniao: async (x: any) => { w.reunioes.push(x); return `t${w.reunioes.length}` },
+    criarReuniao: async (x: any) => { w.reunioes.push(x); return { id: `t${w.reunioes.length}`, link: w.meet || '' } },
     agendarLembretes: async (x: any) => { w.lembretes = x },
     criarTarefaCloser: async (t: string) => { w.tarefas = [...(w.tarefas || []), t] },
     getState: async () => structuredClone(w.state),
@@ -219,6 +219,18 @@ export default async function testesCliente(eq: Eq): Promise<number> {
     [false, true, 1, '2026-10-01T12:30:00.000Z', 'agendado', false])
   out = await runTool(ctx('e se for sexta?'), 'consultar_horarios', { preferencia: 'sexta' })
   eq('não marca segunda reunião', out.isError, true)
+
+  // Google Agenda: o evento volta com o Meet, que vai para o campo e para a confirmação (sem tarefa de link)
+  w.state = { respostas: { dor: 'perco lead', decisor: 'eu', vendedores: '5', prioridade: 'este mês' } }
+  w.tags = new Set(['gate']); w.reunioes = []; w.tarefas = []; w.meet = 'https://meet.google.com/abc-defg-hij'
+  const escritos: any[] = []
+  const portG = { ...port, writeFields: async (v: any[]) => { escritos.push(...v) } }
+  const ctxG = (lead: string) => ({ ...ctx(lead), port: portG }) as any
+  await runTool(ctxG('pode ser quinta de manhã'), 'consultar_horarios', { preferencia: 'quinta de manhã' })
+  out = await runTool(ctxG('9h fica ótimo'), 'agendar_reuniao', { horario: 'quinta 01/10 às 9h' })
+  eq('Meet do Google: link no campo e na confirmação, sem tarefa de link', [out.isError, escritos.some(v => v.field_id === CRM_MAP.linkReuniaoFieldId && v.values[0].value === w.meet), out.content.includes(w.meet), (w.tarefas || []).length],
+    [false, true, true, 0])
+  w.meet = ''
 
   // Equipe pequena NÃO bloqueia reunião: o contexto decide (ex.: uma pessoa só que precisa de implantação)
   w.state = { respostas: { dor: 'perco lead', decisor: 'eu', vendedores: 'só eu', prioridade: 'este mês' } }

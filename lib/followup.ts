@@ -4,6 +4,7 @@ import { CRM_MAP } from './crm-map'
 import { logExec } from './execlog'
 import { appendMessage, humanSpokeRecently } from './history'
 import { addLeadNote, addLeadTags, createTask, getContact, getLead, getTask, kommoGet, leadTags, patchLead, removeLeadTags, updateLeadFields } from './kommo'
+import { lerEventoGoogle } from './google'
 import { k, redis } from './redis'
 import { getState, patchState } from './state'
 import { sendReply } from './transport'
@@ -197,10 +198,11 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
 
 // ---------- lembretes da reunião (para o cliente) ----------
 
-interface Lembrete { ini: number; taskId: number }
+/** taskId: id da tarefa do Kommo, ou 'g:<id>' do evento no Google (antigos: número) */
+interface Lembrete { ini: number; taskId: string | number }
 
 /** Agenda 24h e 1h antes (só os que ainda estão no futuro). Não segue o expediente: é hora marcada. */
-export async function agendarLembretes(leadId: number, ini: number, taskId: number, agora = Date.now()): Promise<void> {
+export async function agendarLembretes(leadId: number, ini: number, taskId: string | number, agora = Date.now()): Promise<void> {
   const cfg = CRM_MAP.lembretes
   if (!cfg.ativo) return
   await redis.set(k('lem', leadId), { ini, taskId } satisfies Lembrete, { ex: 30 * 86400 })
@@ -233,19 +235,33 @@ export function textoLembrete(horas: number, ini: number, agora: number, nome: s
 async function processarLembrete(horas: number, leadId: number, agora: number): Promise<string> {
   const lem = await redis.get<Lembrete>(k('lem', leadId))
   if (!lem) return 'sem reunião registrada'
-  const task = lem.taskId ? await getTask(lem.taskId) : null
-  if (task && task.is_completed) return 'reunião concluída ou cancelada: sem lembrete'
-  // O Rodrigo remarcou no Kommo: reagenda os lembretes para o horário novo
-  if (task && task.complete_till * 1000 !== lem.ini) {
-    await agendarLembretes(leadId, task.complete_till * 1000, lem.taskId, agora)
-    return `remarcada para ${new Date(task.complete_till * 1000).toISOString()}: lembretes reagendados`
+  const ref = String(lem.taskId || '')
+  let linkEvento = ''
+  if (ref.startsWith('g:')) {
+    // Evento no Google: cancelado/apagado = sem lembrete; remarcado = reagenda
+    const ev = await lerEventoGoogle(ref.slice(2))
+    if (!ev || ev.status === 'cancelled') return 'reunião cancelada no Google: sem lembrete'
+    if (Number.isFinite(ev.ini) && ev.ini !== lem.ini) {
+      await agendarLembretes(leadId, ev.ini, ref, agora)
+      return `remarcada para ${new Date(ev.ini).toISOString()}: lembretes reagendados`
+    }
+    linkEvento = ev.link
+  } else {
+    const task = Number(ref) ? await getTask(Number(ref)) : null
+    if (task && task.is_completed) return 'reunião concluída ou cancelada: sem lembrete'
+    // O Rodrigo remarcou no Kommo: reagenda os lembretes para o horário novo
+    if (task && task.complete_till * 1000 !== lem.ini) {
+      await agendarLembretes(leadId, task.complete_till * 1000, ref, agora)
+      return `remarcada para ${new Date(task.complete_till * 1000).toISOString()}: lembretes reagendados`
+    }
   }
   const lead = await getLead(leadId)
   if (lead.status_id === 143) return 'lead perdido: sem lembrete'
   const contatoId = (lead._embedded?.contacts || []).find(c => c.is_main)?.id
   const nome = primeiroNome(contatoId ? (await getContact(contatoId)).name || '' : '')
   const linkCampo = CRM_MAP.linkReuniaoFieldId ? (lead.custom_fields_values || []).find(f => f.field_id === CRM_MAP.linkReuniaoFieldId)?.values?.[0]?.value : ''
-  const link = String(linkCampo || CONFIG.linkReuniao || '').trim()
+  // O campo vence (o Rodrigo pode ter trocado o link à mão); depois o Meet do evento
+  const link = String(linkCampo || linkEvento || CONFIG.linkReuniao || '').trim()
   const texto = textoLembrete(horas, lem.ini, agora, nome, link)
   if (!link && horas >= 12) {
     await createTask({ leadId, responsibleUserId: CRM_MAP.agenda.responsavelId, taskTypeId: 1, text: `URGENTE: o lembrete de ${horas}h saiu SEM link. Mande o link da reunião para o cliente e preencha o campo "Link da Reunião" (o lembrete de 1h usa ele).`, completeTill: Math.floor(agora / 1000) + 3600, duration: 0 }).catch(() => undefined)

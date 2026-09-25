@@ -3,7 +3,7 @@
 A Kommo indica para a Control Gestão empresas que pediram um parceiro. Cada indicação chega em **Incoming leads** com a necessidade do cliente no `Comment:`. Este projeto tem duas partes:
 
 1. **Userscript v3.1** (`userscript/kommo-indicacoes.user.js`, Tampermonkey): lê o `Comment:`, **não aceita teste** (decide pela intenção), **aceita no instante em que a Kommo libera** e avisa a Lara.
-2. **Lara, a IA SDR** (Vercel): recebe o aviso, manda a **primeira mensagem com rapport** a partir do `Comment:`, qualifica pelo **CHAMP**, convida o decisor e **marca a reunião** na agenda do closer (tarefa de Reunião no Kommo, que a integração leva para o Google Agenda).
+2. **Lara, a IA SDR** (Vercel): recebe o aviso, manda a **primeira mensagem com rapport** a partir do `Comment:`, qualifica pelo **CHAMP**, convida o decisor e **marca a reunião** direto no Google Agenda do closer, com **link do Meet próprio** (vai para o campo "Link da Reunião", para a confirmação e para os lembretes de 24h e 1h). Sem o Google configurado, vira tarefa de Reunião no Kommo.
 
 ## Quem faz o quê
 
@@ -83,3 +83,9 @@ Prova em navegador (Chromium + Kommo simulado): `npm i --no-save playwright && n
 ## Arquivos que são do cliente (patch)
 
 `lib/crm-map.ts` · `lib/regras.ts` · `prompts/**` · `evals/cenarios.ts` · `scripts/test-cliente.ts` · `userscript/main.js` (CFG). O resto é motor do template.
+
+## Google Agenda (reunião com Meet)
+
+Variáveis na Vercel: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` (escopo `https://www.googleapis.com/auth/calendar`) e, opcional, `GOOGLE_CALENDAR_ID` (padrão `primary`).
+Com elas: horários livres saem do Google (free/busy) + tarefas do Kommo; a reunião é criada só no Google (evita duplicar pela integração Kommo ↔ Google); o lembrete confere o evento (cancelado = não manda; remarcado = reagenda). `/api/validate` testa o acesso.
+Importante: publique a tela de consentimento OAuth ("Em produção"); em modo "Teste" o refresh token vence em 7 dias.

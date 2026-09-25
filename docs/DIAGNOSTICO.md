@@ -91,7 +91,7 @@ Relógio: Vercel Cron a cada 15 min (`/api/cron`, `CRON_SECRET`). Fila em `/api/
 | Tentativas antes da liberação serem vistas como abuso | aviso da Kommo ou bloqueio | limite de 6 req/s; sonda lenta ajustável em `SONDA_INTERVALO_MS` |
 | Aba do Kommo congelada pelo Chrome | nenhum aceite no relatório | fixar a aba e tirar kommo.com da Economia de memória |
 | `Comment:` em formato diferente do esperado | diário mostra `sem-comentario` | discover + 1 indicação real |
-| Integração Kommo ↔ Google não sincroniza tarefa criada pela API | reunião no card e não no calendário | E2E: tarefa criada pela IA aparece no Google do closer |
+| Refresh token do Google vence (app OAuth em modo Teste) | agenda falha, Lara não oferece horário (fail-closed) | publicar o app; `/api/validate` acusa |
 | API v4 recusar a sessão do navegador no userscript | log "API de Incoming leads indisponível" | o script segue pela tela do funil; só perde o `created_at` |
 
 ## Próximo gate

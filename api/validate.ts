@@ -4,6 +4,7 @@ import { CRM_MAP } from '../lib/crm-map'
 import { modoInicio } from '../lib/iniciar'
 import { kommoGet } from '../lib/kommo'
 import { loadPromptFile } from '../lib/llm'
+import { googleLeitura, googleOAuth, googleOcupados } from '../lib/google'
 
 /**
  * CRM_MAP × Kommo VIVO + coerência interna. Rodar depois de QUALQUER mexida no
@@ -46,7 +47,8 @@ export function problemasOffline(): { problems: string[]; avisos: string[] } {
     if (!CRM_MAP.agenda.responsavelId) problems.push('agenda.responsavelId = 0 (user_id do closer)')
     if (!CRM_MAP.etapaAgendado.id) avisos.push('etapaAgendado.id = 0: a reunião é criada mas o lead não muda de etapa')
     if (!CRM_MAP.dataReuniaoFieldId) avisos.push('dataReuniaoFieldId = 0: a data da reunião fica só na tarefa e na nota')
-    if (!CONFIG.googleServiceAccount || !CONFIG.googleCalendarId) avisos.push('Google free/busy desligado: compromisso criado direto no Google (fora do Kommo) não bloqueia a agenda')
+    if (!googleLeitura()) avisos.push('Google Agenda desligada: compromisso criado direto no Google (fora do Kommo) não bloqueia a agenda')
+    else if (!googleOAuth()) avisos.push('Google só leitura (conta de serviço): a reunião vira tarefa do Kommo, sem link do Meet automático')
   }
   return { problems, avisos }
 }
@@ -113,6 +115,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (tipos.length && !tipos.some(t => t.id === CRM_MAP.agenda.taskTypeId)) problems.push(`agenda.taskTypeId ${CRM_MAP.agenda.taskTypeId} não existe (tipos: ${tipos.map(t => `${t.id}=${t.name}`).join(', ')})`)
   } catch (e) {
     problems.push(`falha ao consultar o Kommo: ${e instanceof Error ? e.message : String(e)}`)
+  }
+
+  if (googleLeitura()) {
+    try { await googleOcupados(Date.now(), Date.now() + 86400000) } catch (e) {
+      problems.push(`Google Agenda: ${e instanceof Error ? e.message : String(e)}`)
+    }
   }
 
   return res.status(problems.length ? 500 : 200).json({ ok: problems.length === 0, cliente: CONFIG.clientName, modoInicio: modoInicio(), problems, avisos })
