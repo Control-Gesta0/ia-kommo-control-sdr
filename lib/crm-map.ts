@@ -77,6 +77,35 @@ export const CRM_MAP = {
 
   /** onde o lead aceito cai (o STATUS_ID do userscript) — a IA só inicia conversa com lead nesta etapa */
   entrada: { pipelineId: 4338500, statusId: 55438567, name: 'INICIAL - ENRIQUECIMENTO' },
+  /** etapas intermediárias do funil de indicações que a Lara move (só para frente) */
+  funilSdr: { emContato: 80884464, qualificado: 40438379 },
+
+  /**
+   * Follow-up da Lara quando o lead some no meio da conversa: retoma de onde parou.
+   * Horas contadas da última mensagem da Lara sem resposta; só no expediente da agenda.
+   * Esgotou: vai para o funil de remarketing com motivo de perda e o Rodrigo responsável.
+   */
+  followup: {
+    ativo: true,
+    horas: [4, 24, 72, 168],
+    esgotar: { depoisDeHoras: 24, pipelineId: 7975447, statusId: 64122543, nome: 'REMARKETING', lossReasonId: 8035796, responsavelId: 12725576, tag: 'follow-up-esgotado' },
+  },
+
+  /**
+   * Follow-up da NEGOCIAÇÃO (depois da reunião, etapa do Rodrigo): mensagens em
+   * 2, 3, 5, 7 e 10 dias depois de entrar na etapa, enquanto o cliente não responde.
+   * Respondeu: para. Sem resposta depois do último: tarefa para o Rodrigo.
+   */
+  negociacao: {
+    ativo: false, // liga depois de confirmar a etapa
+    pipelineId: 4338500,
+    statusId: 103456716, // "PROPOSTA ENVIADA" (confirmar se é esta a etapa de negociação)
+    nome: 'PROPOSTA ENVIADA',
+    dias: [2, 3, 5, 7, 10],
+    proximoFollowupFieldId: 1048617, // campo date_time "Próximo Follow-up" (criado em 25/09/2026)
+    tarefa: { taskTypeId: 1, responsavelId: 12725576, texto: 'Proposta sem resposta depois de 5 follow-ups: ligar ou marcar como Perdido' },
+  },
+
   /** quem recebe o lead aceito (o USER_ID do userscript) */
   responsavelEntradaId: 12725576,
 

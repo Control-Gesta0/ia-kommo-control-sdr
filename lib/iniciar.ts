@@ -10,6 +10,8 @@ import {
   addLeadNote, addLeadTags, contactPhones, getContact, getLead, getLeadNotes, kommoGet, leadTags, textoDasNotas, textoDoLead, updateLeadFields, type KommoLead,
 } from './kommo'
 import { primeiroNomeDe } from './llm'
+import { avancar } from './etapas'
+import { agendarFollowup } from './followup'
 import { kommoPort } from './port'
 import { k, redis } from './redis'
 import { idiomaDe, saudacao } from './saudacao'
@@ -154,6 +156,8 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
 
     const detalhe = await sendReply(leadId, texto)
     await appendMessage(leadId, { id: crypto.randomUUID(), dir: 'out', text: texto, ts: Date.now() })
+    await avancar(ctx.port, 'emContato').catch(e => console.warn('[etapa] em contato:', e))
+    await agendarFollowup(leadId, Date.now())
     await logExec({ tipo: 'inicio', leadId, nome, porta: porta.id, ms: Date.now() - t0, guard, usage, detalhe: `${detalhe} · via ${origem} · ${state.comentario ? 'com Comment' : 'sem Comment'}` })
     return { ok: true, acao: 'iniciou', detalhe }
   } catch (e) {

@@ -103,6 +103,24 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   const { numeroVendedores } = await import('../lib/tools')
   eq('nº de vendedores', [numeroVendedores('somos 6 vendedores'), numeroVendedores('só eu'), numeroVendedores('duas pessoas'), numeroVendedores('não sei')], [6, 1, 2, null])
 
+  // ---------------- Etapas (só para frente, só no funil de indicações) ----------------
+  const { podeAvancar, champCompleto } = await import('../lib/etapas')
+  eq('entrada → em contato', podeAvancar(4338500, 55438567, 'emContato'), true)
+  eq('em contato → qualificado', podeAvancar(4338500, 80884464, 'qualificado'), true)
+  eq('nunca volta (qualificado → em contato)', podeAvancar(4338500, 40438379, 'emContato'), false)
+  eq('não mexe depois da reunião (PROPOSTA ENVIADA)', podeAvancar(4338500, 103456716, 'agendado'), false)
+  eq('não mexe em outro funil', podeAvancar(7975447, 55438567, 'emContato'), false)
+  eq('CHAMP incompleto x completo', [champCompleto({ dor: 'x', decisor: 'eu', vendedores: '3' }), champCompleto({ dor: 'x', decisor: 'eu', vendedores: '3', prioridade: 'mês' }), champCompleto({ organizacao: 'planilha', decisor: 'eu', faturamento: '50 mil' }, ['prioridade'])], [false, true, true])
+
+  // ---------------- Follow-up só no expediente (seg a sex, 9h às 18h, Brasília) ----------------
+  const { noExpediente } = await import('../lib/followup')
+  const br = (s: string) => new Date(noExpediente(Date.parse(s))).toISOString()
+  eq('dentro do expediente fica igual', br('2026-09-28T14:00:00-03:00'), '2026-09-28T17:00:00.000Z')
+  eq('20h de segunda → terça 9h', br('2026-09-28T20:00:00-03:00'), '2026-09-29T12:00:00.000Z')
+  eq('6h de terça → terça 9h', br('2026-09-29T06:00:00-03:00'), '2026-09-29T12:00:00.000Z')
+  eq('sábado → segunda 9h', br('2026-10-03T11:00:00-03:00'), '2026-10-05T12:00:00.000Z')
+  eq('sexta 18h30 → segunda 9h', br('2026-10-02T18:30:00-03:00'), '2026-10-05T12:00:00.000Z')
+
   // ---------------- Roteador: porta única, sem menu ----------------
   const { rotear } = await import('../lib/router')
   const r = rotear({}, 'oi')

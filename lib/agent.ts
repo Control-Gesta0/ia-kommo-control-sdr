@@ -11,6 +11,7 @@ import { kommoPort } from './port'
 import { rotear } from './router'
 import { clearState, getState, patchState } from './state'
 import { aplicarFinalizacao, type ToolCtx } from './tools'
+import { agendarFollowup, cancelarFollowup } from './followup'
 import { sendReply } from './transport'
 
 /**
@@ -132,6 +133,9 @@ export async function processLead(leadId: number, webhookId: string): Promise<vo
 
       const detail = await enviar(leadId, reply.text)
       await markAnswered(leadId, target.id)
+      // Follow-up: finalizou (reunião, suporte, licença...) = para; senão recomeça a contar desta mensagem
+      if (reply.handoff) await cancelarFollowup(leadId, ['sdr'])
+      else await agendarFollowup(leadId, Date.now())
       await logExec({
         tipo: reply.handoff ? 'finalizou' : 'resposta', leadId, nome, porta: porta.id, ms: Date.now() - t0,
         tools: reply.toolsUsed, guard: reply.guard, usage: reply.usage, urgente: reply.urgente || undefined, detalhe: detail,

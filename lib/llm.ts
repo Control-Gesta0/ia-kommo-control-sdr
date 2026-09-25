@@ -257,7 +257,18 @@ export function createBrain(opts: LlmOptions) {
     return { text, guard, usage, toolsUsed }
   }
 
-  return { generateReply, generateOpening }
+  /** Follow-up: mensagem curta a partir do histórico, sem tools, com as mesmas travas. */
+  async function generateFollowup(ctx: ToolCtx, lead: LeadContext, history: ChatMsg[], instrucao: string): Promise<string | null> {
+    const usage = emptyUsage()
+    const messages: Msg[] = [...(await buildSystem(ctx, lead)), ...historyToMessages(history), { role: 'system', content: instrucao }]
+    const c = await call(messages, null, usage, 300)
+    const bruto = (c.message?.content || '').trim()
+    if (!bruto) return null
+    const safe = await enforce(messages, bruto, usage, true, '')
+    return safe.guard.includes('fallback') ? null : safe.text
+  }
+
+  return { generateReply, generateOpening, generateFollowup }
 }
 
 const PERGUNTA_TAMANHO = /vendedor|usu[aá]rio|pessoas|faturamento|fatura|equipe|time|tamanho/i

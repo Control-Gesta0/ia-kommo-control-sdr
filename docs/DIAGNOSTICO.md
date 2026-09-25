@@ -2,11 +2,28 @@
 
 **Estado do projeto (25/09/2026): `PROVANDO`.** Agente publicado em https://ia-kommo-control-sdr.vercel.app (Vercel, projeto `ia-kommo-control-sdr`). `/api/validate` confere a conta real e o único problema é o `KOMMO_BOT_ID` (Salesbot de envio ainda não criado). Webhook `add_message` 47492416 criado. `MODO_INICIO=teste`: a Lara só inicia conversa com leads em `TEST_LEAD_IDS`. Userscript v3.3 no Tampermonkey (aceite nunca antes dos 300s).
 
+## Funil e follow-up (25/09/2026)
+
+| Momento | O que a Lara faz |
+|---|---|
+| Manda a 1ª mensagem | move para **em contato** (80884464) |
+| CHAMP completo | move para **QUALIFICAÇÃO** (40438379) |
+| Reunião criada | move para **APRESENTAÇÃO agendada** (81193772). Daí para frente é o Rodrigo |
+| Lead some no meio da conversa | follow-up em 4h, 1d, 3d e 7d da última mensagem dela, só em dia útil das 9h às 18h, retomando de onde parou |
+| Cadência esgotada (+1 dia sem resposta) | funil Remarketing e Retornos futuros → REMARKETING, motivo "Sem resposta", Rodrigo responsável, tag `follow-up-esgotado` |
+| Lead responde | a cadência para na hora |
+
+Só move para frente e só no funil 4338500 (código em `lib/etapas.ts`, testado).
+
+**Negociação** (construído, DESLIGADO até confirmar a etapa): mensagens em 2, 3, 5, 7 e 10 dias depois de o lead entrar na etapa (hoje configurada como "PROPOSTA ENVIADA", 103456716), campo "Próximo Follow-up" (1048617) com a data do próximo toque, cliente respondeu = para, sem resposta depois do último = tarefa para o Rodrigo. Liga com `negociacao.ativo: true` em `lib/crm-map.ts`.
+
+Relógio: Vercel Cron a cada 15 min (`/api/cron`, `CRON_SECRET`). Fila em `/api/cron?secret=WEBHOOK_SECRET&ver=1`.
+
 ## Roteiro de virada (nesta ordem)
 
 1. **Salesbot de envio** (Kommo → Salesbot → novo bot): um único bloco "Enviar mensagem", canal WhatsApp Lite, para o contato principal, conteúdo = campo do lead **"Resposta IA (Lara)"** (id 1048615). Salvar, ativar e copiar o número do bot da URL → env `KOMMO_BOT_ID` na Vercel → redeploy.
 2. **E2E com o seu número:** criar um lead de teste na etapa "INICIAL - ENRIQUECIMENTO" com uma nota "Comment: ...", pôr o id em `TEST_LEAD_IDS`, rodar `npx tsx scripts/simulate-novo-lead.ts <id> "comment"` e conferir: mensagem no WhatsApp, tags, `/api/executions`. Responder pelo WhatsApp e ver a Lara seguir o CHAMP e marcar.
-3. **Desligar a cadência antiga no MESMO momento de ligar a Lara:** no Digital Pipeline do funil "Funil de vendas - SDR", etapa "INICIAL - ENRIQUECIMENTO", o gatilho que roda os bots "Lead inicial komo", "Lead inicial komo APÓS k1", "N- Lead inicial komo bom dia" e "Follow up - Campanha Lead Kommo". Os eventos mostram mensagens automáticas às indicações ~7 a 10 min depois do aceite, +4h, +24h e +5 dias. Sem desligar, o lead recebe as duas.
+3. ~~Desligar a cadência antiga~~ **feito pelo mestre em 25/09**, conferido nos eventos do lead 20751955 (nenhuma mensagem automática nem Jornada K1 depois do aceite). Referência do que era: no Digital Pipeline do funil "Funil de vendas - SDR", etapa "INICIAL - ENRIQUECIMENTO", o gatilho que roda os bots "Lead inicial komo", "Lead inicial komo APÓS k1", "N- Lead inicial komo bom dia" e "Follow up - Campanha Lead Kommo". Os eventos mostram mensagens automáticas às indicações ~7 a 10 min depois do aceite, +4h, +24h e +5 dias. Sem desligar, o lead recebe as duas.
 4. `MODO_INICIO=ligado` na Vercel → redeploy.
 5. Robôs que ouvem mensagens na conta (ByteGPT x2, n8n `control-n8n`): nenhum mandou mensagem às indicações no histórico analisado; ficam como estão e são revistos se aparecer resposta dupla.
 

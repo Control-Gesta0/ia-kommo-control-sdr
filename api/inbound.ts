@@ -7,6 +7,7 @@ import { logExec } from '../lib/execlog'
 import { appendMessage, isEchoOfSent, markHumanSpoke, seenMessage } from '../lib/history'
 import { mediaKind, mediaToText } from '../lib/media'
 import { isResetCommand, resetLead } from '../lib/reset'
+import { cancelarFollowup } from '../lib/followup'
 import { sendReply } from '../lib/transport'
 
 /**
@@ -98,6 +99,8 @@ async function ingest(msgs: InboundMsg[], webhookId: string): Promise<void> {
       }
 
       await appendMessage(m.leadId, { id: `kommo:${m.id}`, dir: 'in', text, ts: Date.now() })
+      // Lead respondeu: para o follow-up da Lara e o da negociação na mesma volta
+      await cancelarFollowup(m.leadId).catch(e => console.warn('[inbound] cancelar follow-up:', e))
       leads.add(m.leadId)
     } catch (e) {
       console.error(`[inbound] erro ingerindo msg ${m.id}:`, e)

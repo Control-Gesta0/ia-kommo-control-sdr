@@ -198,3 +198,8 @@ export async function createTask(t: { leadId: number; responsibleUserId: number;
   if (!id) throw new Error('Kommo não devolveu o id da tarefa criada')
   return id
 }
+
+/** PATCH genérico do lead (status, funil, responsável, motivo de perda...). */
+export async function patchLead(leadId: number, body: Record<string, unknown>): Promise<void> {
+  await kommo('PATCH', `/api/v4/leads/${leadId}`, body)
+}

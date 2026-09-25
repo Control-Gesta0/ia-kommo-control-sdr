@@ -1,6 +1,7 @@
 import type OpenAI from 'openai'
 import { ehAfirmativo, escolherOpcoes, gerarLivres, parsePreferencia, resolverEscolha, slotsCitados, type Intervalo, type Slot } from './agenda'
 import { CRM_MAP, campoByKey, type Campo, type Porta } from './crm-map'
+import { avancar, champCompleto } from './etapas'
 import { DISSE_NAO_SEI, evidenceFound, matchOption, overlap, parseNumeroBR } from './guards'
 import type { KommoFieldValue } from './kommo'
 import { classificar } from './router'
@@ -319,6 +320,8 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
         }
         if (writes.length) await port.writeFields(writes)
         const next = await port.patchState({ respostas, semResposta: [...semResposta] })
+        // CHAMP fechado: o lead vai para QUALIFICAÇÃO (só para frente, só no funil de indicações)
+        if (salvos.length && champCompleto(next.respostas, next.semResposta)) await avancar(port, 'qualificado').catch(e => console.warn('[etapa] qualificado:', e))
         return {
           isError: erros.length > 0 && salvos.length === 0,
           content: [salvos.length ? `Salvo: ${salvos.join(' · ')}.` : '', erros.length ? `Não salvo: ${erros.join(' · ')}.` : '', describeOpen(porta, snapshot(porta, next))].filter(Boolean).join(' '),
@@ -422,11 +425,7 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
         await port.patchState({ reuniao: { ...slot, taskId, em: new Date(agora).toISOString() }, oferta: [] })
         // Efeitos que só acontecem DEPOIS da reunião existir
         if (CRM_MAP.dataReuniaoFieldId) await port.writeFields([{ field_id: CRM_MAP.dataReuniaoFieldId, values: [{ value: Math.floor(slot.ini / 1000) }] }])
-        const et = CRM_MAP.etapaAgendado
-        if (et.id) {
-          const lead = await port.getLead()
-          if (lead.pipelineId === et.pipelineId && !CRM_MAP.etapasProtegidas.includes(lead.statusId) && lead.statusId !== et.id) await port.moveStage(et.id, et.pipelineId)
-        }
+        if (CRM_MAP.etapaAgendado.id) await avancar(port, 'agendado')
         await aplicarFinalizacao(ctx, 'agendado', `Reunião marcada para ${slot.label}.${convidado ? ` Decisor convidado: ${convidado}.` : ''} ${resumoCampos}`)
         return ok(`Reunião marcada: ${slot.label} (${cfg.duracaoMin} min). Confirme ao lead o dia e a hora com essas palavras${convidado ? `, reforce que ${convidado} participa junto` : ''}, diga que o especialista chama no horário e NÃO faça pergunta.`, { handoff: true })
       }
