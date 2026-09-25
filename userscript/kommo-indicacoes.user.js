@@ -184,7 +184,7 @@ var FiltroIndicacao = (function () {
     POLL_MS: 15000,              // consulta à API de Incoming leads (0 = desliga)
 
     // Lara (agente de IA). AGENTE_SECRET = INDICACAO_SECRET da Vercel.
-    AGENTE_URL: '',
+    AGENTE_URL: 'https://ia-kommo-control-sdr.vercel.app',
     AGENTE_SECRET: '',
 
     DIAGNOSTICO: true,

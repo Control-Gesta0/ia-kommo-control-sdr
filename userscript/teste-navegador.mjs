@@ -73,7 +73,7 @@ const us = fs.readFileSync(new URL('./kommo-indicacoes.user.js', import.meta.url
   .replace('LIBERACAO_MS: 5 * 60 * 1000', `LIBERACAO_MS: ${LIBERA}`)
   .replace('CONFERIR_APOS_MS: 6000', 'CONFERIR_APOS_MS: 500')
   .replace('POLL_MS: 15000', 'POLL_MS: 1000')
-  .replace("AGENTE_URL: ''", "AGENTE_URL: 'https://agente.test'")
+  .replace("AGENTE_URL: 'https://ia-kommo-control-sdr.vercel.app'", "AGENTE_URL: 'https://agente.test'")
 
 const b = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {})
 const p = await b.newPage()

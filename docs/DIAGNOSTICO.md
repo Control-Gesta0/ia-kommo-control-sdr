@@ -1,6 +1,14 @@
 # Diagnóstico · SDR das indicações Kommo
 
-**Estado do projeto (25/09/2026): `VALIDANDO` (local).** Código construído, `tsc` limpo, `npm test` 118/118, userscript v3.1 provado em Chromium contra Kommo simulado (liberação atrasada, "already accepted", lead expirado, Comment ambíguo decidido pela IA, limite de 6 req/s, reload). **Não está no ar**: faltam dados do negócio, IDs vivos da conta, evals e E2E em número real.
+**Estado do projeto (25/09/2026): `PROVANDO`.** Agente publicado em https://ia-kommo-control-sdr.vercel.app (Vercel, projeto `ia-kommo-control-sdr`). `/api/validate` confere a conta real e o único problema é o `KOMMO_BOT_ID` (Salesbot de envio ainda não criado). Webhook `add_message` 47492416 criado. `MODO_INICIO=teste`: a Lara só inicia conversa com leads em `TEST_LEAD_IDS`. Userscript v3.3 no Tampermonkey (aceite nunca antes dos 300s).
+
+## Roteiro de virada (nesta ordem)
+
+1. **Salesbot de envio** (Kommo → Salesbot → novo bot): um único bloco "Enviar mensagem", canal WhatsApp Lite, para o contato principal, conteúdo = campo do lead **"Resposta IA (Lara)"** (id 1048615). Salvar, ativar e copiar o número do bot da URL → env `KOMMO_BOT_ID` na Vercel → redeploy.
+2. **E2E com o seu número:** criar um lead de teste na etapa "INICIAL - ENRIQUECIMENTO" com uma nota "Comment: ...", pôr o id em `TEST_LEAD_IDS`, rodar `npx tsx scripts/simulate-novo-lead.ts <id> "comment"` e conferir: mensagem no WhatsApp, tags, `/api/executions`. Responder pelo WhatsApp e ver a Lara seguir o CHAMP e marcar.
+3. **Desligar a cadência antiga no MESMO momento de ligar a Lara:** no Digital Pipeline do funil "Funil de vendas - SDR", etapa "INICIAL - ENRIQUECIMENTO", o gatilho que roda os bots "Lead inicial komo", "Lead inicial komo APÓS k1", "N- Lead inicial komo bom dia" e "Follow up - Campanha Lead Kommo". Os eventos mostram mensagens automáticas às indicações ~7 a 10 min depois do aceite, +4h, +24h e +5 dias. Sem desligar, o lead recebe as duas.
+4. `MODO_INICIO=ligado` na Vercel → redeploy.
+5. Robôs que ouvem mensagens na conta (ByteGPT x2, n8n `control-n8n`): nenhum mandou mensagem às indicações no histórico analisado; ficam como estão e são revistos se aparecer resposta dupla.
 
 ## Fatos confirmados
 
@@ -12,6 +20,10 @@
 | Antes da liberação a Kommo responde "The leads is no longer available"; se outro parceiro já aceitou, "The leads has already been accepted by other partners" | Mestre, 25/09 |
 | Aceite por API/webhook invalida a indicação: o aceite é **só no navegador** (`/ajax/unsorted/accept`) | Mestre, operação atual |
 | Salesbot inicia conversa pelo WhatsApp Lite com lead sem chat | Mestre, 25/09 |
+| Liberação da indicação: **exatamente 300s** depois da chegada. Aceites aos 299s: 11 de 16 queimados; aos 300 a 301s: válidos, 8 perdidos para outros parceiros | Eventos de 62 indicações do funil 4338500, 25/09 |
+| O Comment fica numa nota "common" com Country / Cluster / Languages / Industry / Comment | Notas das indicações, 25/09 |
+| Closer: Rodrigo Campeoti (12725576). Reunião de 30 a 45 min, agenda reserva 1h, tarefa "Apresentação" | Mestre, 25/09 |
+| Licença da Kommo em reais (6 meses, tabela BR): Básico R$104, Avançado R$156, Pro R$234 por usuário/mês | kommo.com/br/precos/compare-planos + print do mestre, 25/09 |
 | IA se chama **Lara**; regras gerais (saudação por horário, responder antes, decisor na call, sem preço) e CHAMP | Mestre, 25/09 |
 | Aceite automático e filtro de teste pela intenção | Decisão do mestre, 25/09 |
 | `USER_ID` 12725576 · `STATUS_ID` de entrada 55438567 | userscript em uso (conferidos pelo `/api/validate` no deploy) |
