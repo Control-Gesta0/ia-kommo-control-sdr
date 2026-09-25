@@ -22,7 +22,7 @@ export type { AgendaConfig, Alerta, Campo, CampoTipo, Etapa, Porta } from './crm
 // Money (faturamento ou nº de usuários) · Prioritization (quando começar)
 const CAMPOS = {
   organizacao: {
-    key: 'organizacao', id: 0, name: 'Onde organizam os leads hoje', type: 'text',
+    key: 'organizacao', id: 1046001, kommoName: 'Situação', name: 'Onde organizam os leads hoje', type: 'text',
     sinal: /planilha|excel|sheets|caderno|papel|whats|kommo|amo|crm|sistema|agenda|cabe[cç]a|mem[oó]ria|google|trello|notion|pipedrive|\brd\b|hubspot|bitrix|ploomes|anot|nada|nenhum|lugar nenhum|n[aã]o (organiz|temos|tenho|usamos)/i,
     pergunta: 'Hoje vocês organizam os leads onde, em planilha, no próprio WhatsApp ou em algum sistema?',
   },
@@ -32,22 +32,22 @@ const CAMPOS = {
     pergunta: 'Quantos vendedores usariam o Kommo no dia a dia?',
   },
   dor: {
-    key: 'dor', id: 0, name: 'O que mais incomoda hoje (perder lead, não saber a etapa, falta de relatório)', type: 'textarea',
+    key: 'dor', id: 1046003, kommoName: 'Problema', name: 'O que mais incomoda hoje (perder lead, não saber a etapa, falta de relatório)', type: 'textarea',
     sinal: /perd|esquec|some|sum|escap|etapa|fase|onde (est|par)|relat[oó]rio|n[uú]mero|m[eé]trica|indicador|controle|acompanh|organiz|bagun|demor|follow|retorno|respond|resposta|vis[aã]o|gest[aã]o|funil|atendimento|whats/i,
     pergunta: 'O que mais incomoda hoje: perder lead no caminho, não saber em que etapa cada um está ou não ter relatório?',
   },
   decisor: {
-    key: 'decisor', id: 0, name: 'Quem decide a contratação', type: 'text',
+    key: 'decisor', id: 1046753, kommoName: 'Authorit', name: 'Quem decide a contratação', type: 'text',
     sinal: /\beu\b|mim|s[oó]ci[oa]|dono|dona|diretor|gerente|gestor|decid|chefe|marido|esposa|mulher|pai|m[aã]e|junto|conselho|ceo|financeiro|propriet|presidente|patr[aã]o|\bnós\b|\bnos dois\b/i,
     pergunta: 'A decisão de contratar passa só por você ou tem mais alguém junto?',
   },
   faturamento: {
-    key: 'faturamento', id: 0, name: 'Faturamento mensal ou faixa de investimento', type: 'text',
+    key: 'faturamento', id: 1046017, kommoName: 'Faturamento', name: 'Faturamento mensal ou faixa de investimento', type: 'text',
     sinal: /\d|\bmil\b|milh|\bk\b|fatur|investi|or[cç]amento|budget|verba|reais|r\$|n[aã]o (sei|posso|quero) (dizer|informar|falar)/i,
     pergunta: 'Pra eu entender o tamanho da operação, qual é mais ou menos o faturamento mensal da empresa?',
   },
   prioridade: {
-    key: 'prioridade', id: 0, name: 'Quando quer começar (este mês ou mais pra frente)', type: 'text',
+    key: 'prioridade', id: 1046757, kommoName: 'Tempo', name: 'Quando quer começar (este mês ou mais pra frente)', type: 'text',
     sinal: /m[eê]s|semana|\bj[aá]\b|agora|urgente|logo|hoje|amanh|\bano\b|trimestre|depois|pra frente|sem pressa|quanto antes|imediat|r[aá]pido|pressa|\d/i,
     pergunta: 'Vocês querem começar ainda este mês ou mais pra frente?',
   },
@@ -56,8 +56,8 @@ const CAMPOS = {
 const AGENDA: AgendaConfig = {
   ativa: true,
   responsavelId: 0,          // [PREENCHER] user_id do closer (discover → Usuários)
-  taskTypeId: 2,             // 2 = Reunião no Kommo (conferir no discover)
-  duracaoMin: 30,            // [CONFIRMAR]
+  taskTypeId: 2238563,       // "Apresentação" (tipos da conta: 2=Meeting, 2238563=Apresentação)
+  duracaoMin: 60,            // a reunião dura 30 a 45 min, mas a agenda reserva 1h
   passoMin: 30,
   diasUteisJanela: 5,
   antecedenciaMinHoras: 3,
@@ -76,18 +76,21 @@ export const CRM_MAP = {
   campos: CAMPOS as Record<string, Campo>,
 
   /** onde o lead aceito cai (o STATUS_ID do userscript) — a IA só inicia conversa com lead nesta etapa */
-  entrada: { pipelineId: 0, statusId: 55438567, name: '[PREENCHER: nome da etapa]' },
+  entrada: { pipelineId: 4338500, statusId: 55438567, name: 'INICIAL - ENRIQUECIMENTO' },
   /** quem recebe o lead aceito (o USER_ID do userscript) */
   responsavelEntradaId: 12725576,
 
   /** campo de texto onde o "Comment:" é copiado ao iniciar (0 = só nota no card) */
-  comentarioFieldId: 0,
+  comentarioFieldId: 1046007, // "Necessidade" (textarea)
 
   /** tags que a IA põe ao iniciar e ao descartar teste */
   tags: {
     indicacao: 'indicacao-kommo',
     teste: 'indicacao-teste',
     semTelefone: 'indicacao-sem-telefone',
+    invalida: 'indicacao-invalida',
+    suporte: 'indicacao-suporte',
+    licenca: 'venda-licenca',
   },
 
   portas: [
@@ -121,9 +124,16 @@ export const CRM_MAP = {
    */
   exigirAntesDeAgendar: [['dor', 'organizacao'], ['decisor'], ['faturamento', 'vendedores'], ['prioridade']] as string[][],
   /** etapa para onde `agendar_reuniao` move o lead DEPOIS da tarefa criada (id 0 = não move) */
-  etapaAgendado: { id: 0, pipelineId: 0, name: '[PREENCHER: etapa de reunião agendada]' } as Etapa,
-  /** campo date_time "Data da reunião" (epoch em SEGUNDOS). 0 = não grava */
-  dataReuniaoFieldId: 0,
+  etapaAgendado: { id: 81193772, pipelineId: 4338500, name: 'APRESENTAÇÃO agendada' } as Etapa,
+  /** campo date_time "Reunião" (epoch em SEGUNDOS). 0 = não grava */
+  dataReuniaoFieldId: 1040772,
+
+  /**
+   * Equipe pequena: não marca reunião, tenta vender a LICENÇA pelo WhatsApp.
+   * Código: agendar_reuniao recusa quando vendedores ≤ maxVendedores (a menos que
+   * o lead peça a reunião); finalizar(venda_licenca) só com vendedores respondido.
+   */
+  licenca: { maxVendedores: 3 },
 
   finalizar: {
     removerGate: true,
@@ -132,7 +142,13 @@ export const CRM_MAP = {
     nota: true,
   },
 
-  alertas: [] as Alerta[],
+  alertas: [
+    {
+      nome: 'perguntou preço',
+      re: /quanto custa|quanto fica|quanto [ée]|pre[cç]o|valor|investimento|or[cç]amento|mensalidade|cobram|custo/i,
+      aviso: 'O lead perguntou PREÇO. Se for da LICENÇA/plano da Kommo, pode responder com os planos. Se for da implantação/configuração/suporte/IA (nosso serviço), NÃO cite valor: "Depende do tamanho da operação, por isso quero te passar o valor certo." E a pergunta desta resposta é sobre o TAMANHO (quantos vendedores vão usar, ou o faturamento mensal).',
+    },
+  ] as Alerta[],
 
   /** a IA não move etapa por tool (só agendar_reuniao, com guard) */
   etapas: [] as Etapa[],

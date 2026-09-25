@@ -4,15 +4,15 @@ import { CONFIG } from './config'
 import { CRM_MAP, portaById } from './crm-map'
 import { logExec } from './execlog'
 import { appendMessage } from './history'
-import { acharComentario, type Classificacao } from './indicacao'
+import { acharComentario, extrairContexto, marcaDeInvalido, type Classificacao, type ContextoIndicacao } from './indicacao'
 import { classificarIntencao } from './intencao'
 import {
-  addLeadNote, addLeadTags, contactPhones, getContact, getLead, getLeadNotes, leadTags, textoDasNotas, textoDoLead, updateLeadFields, type KommoLead,
+  addLeadNote, addLeadTags, contactPhones, getContact, getLead, getLeadNotes, kommoGet, leadTags, textoDasNotas, textoDoLead, updateLeadFields, type KommoLead,
 } from './kommo'
 import { primeiroNomeDe } from './llm'
 import { kommoPort } from './port'
 import { k, redis } from './redis'
-import { saudacao } from './saudacao'
+import { idiomaDe, saudacao } from './saudacao'
 import { getState, patchState } from './state'
 import { sendReply } from './transport'
 
@@ -28,6 +28,7 @@ import { sendReply } from './transport'
 export type DecisaoInicio =
   | { acao: 'iniciar' }
   | { acao: 'teste'; classificacao: Classificacao }
+  | { acao: 'invalido'; motivo: string }
   | { acao: 'sem-comentario' | 'sem-telefone' | 'fora-da-entrada' | 'humano' | 'rampagem'; motivo: string }
 
 export interface FatosInicio {
@@ -36,6 +37,8 @@ export interface FatosInicio {
   pipelineId: number
   tags: string[]
   comentario: string | null
+  /** a Kommo marcou o aceite como inválido ("no longer available" / "already accepted") */
+  invalido?: 'cedo' | 'outros' | null
   /** resultado do filtro de teste (regra + IA de intenção nos ambíguos) */
   classificacao: Classificacao | null
   telefones: string[]
@@ -47,6 +50,7 @@ export function decidirInicio(f: FatosInicio, cfg = {
   modoInicio: modoInicio(), testLeadIds: CONFIG.testLeadIds, entrada: CRM_MAP.entrada,
 }): DecisaoInicio {
   if (f.tags.map(t => t.toLowerCase()).includes(cfg.humanTag)) return { acao: 'humano', motivo: `tag "${cfg.humanTag}"` }
+  if (f.invalido) return { acao: 'invalido', motivo: f.invalido === 'cedo' ? 'aceito antes da liberação (The leads is no longer available)' : 'outros parceiros já tinham aceitado (already accepted by other partners)' }
   if (f.statusId !== cfg.entrada.statusId || (cfg.entrada.pipelineId && f.pipelineId !== cfg.entrada.pipelineId)) {
     return { acao: 'fora-da-entrada', motivo: `lead em ${f.pipelineId}/${f.statusId}, entrada é ${cfg.entrada.pipelineId || '*'}/${cfg.entrada.statusId}` }
   }
@@ -68,13 +72,21 @@ export async function guardarComentarioIncoming(leadId: number, comentario: stri
   await redis.set(k('incoming', leadId), comentario, { ex: 7 * 86400 })
 }
 
-async function lerComentario(lead: KommoLead, informado?: string | null): Promise<string | null> {
-  if (informado && informado.trim()) return informado.trim().slice(0, 2000)
-  const cache = await redis.get<string>(k('incoming', lead.id))
-  if (cache) return cache
+interface Leitura { comentario: string | null; contexto: ContextoIndicacao; invalido: 'cedo' | 'outros' | null }
+
+/**
+ * Tudo que a indicação carrega. Formato real da conta (25/09/2026): nota "common"
+ * com "Country / Cluster / Languages / Industry / Comment:" (o Comment em várias linhas).
+ */
+async function lerIndicacao(lead: KommoLead, informado?: string | null): Promise<Leitura> {
   let notas: string[] = []
   try { notas = textoDasNotas(await getLeadNotes(lead.id)) } catch (e) { console.warn(`[iniciar] notas do lead ${lead.id}:`, e) }
-  return acharComentario([textoDoLead(lead), ...notas])
+  let eventos = ''
+  try { eventos = JSON.stringify(await kommoGet(`/api/v4/events?filter[entity]=lead&filter[entity_id]=${lead.id}&limit=50`)) } catch { /* sem eventos */ }
+  const notaIndicacao = notas.find(n => acharComentario([n]) !== null) || ''
+  const cache = await redis.get<string>(k('incoming', lead.id))
+  const comentario = (informado && informado.trim() ? informado.trim().slice(0, 2000) : null) ?? cache ?? acharComentario([textoDoLead(lead), ...notas])
+  return { comentario, contexto: extrairContexto(notaIndicacao), invalido: marcaDeInvalido([...notas, eventos].join('\n')) }
 }
 
 export interface ResultadoInicio { ok: boolean; acao: string; detalhe: string }
@@ -88,12 +100,21 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
   let nome = ''
   try {
     const lead = await getLead(leadId)
-    nome = lead.name || ''
     const contatoId = (lead._embedded?.contacts || []).find(c => c.is_main)?.id || lead._embedded?.contacts?.[0]?.id
-    const telefones = contatoId ? contactPhones(await getContact(contatoId)) : []
-    const comentario = await lerComentario(lead, comentarioInformado)
-    const classificacao = comentario ? await classificarIntencao(comentario) : null
-    const d = decidirInicio({ leadId, statusId: lead.status_id, pipelineId: lead.pipeline_id, tags: leadTags(lead), comentario, classificacao, telefones })
+    const contato = contatoId ? await getContact(contatoId) : null
+    // Nome da PESSOA (o nome do lead costuma ser a empresa ou "Lead №85304")
+    nome = contato?.name || lead.name || ''
+    const telefones = contato ? contactPhones(contato) : []
+    const { comentario, contexto, invalido } = await lerIndicacao(lead, comentarioInformado)
+    const classificacao = comentario && !invalido ? await classificarIntencao(comentario) : null
+    const d = decidirInicio({ leadId, statusId: lead.status_id, pipelineId: lead.pipeline_id, tags: leadTags(lead), comentario, classificacao, telefones, invalido })
+
+    if (d.acao === 'invalido') {
+      await addLeadTags(leadId, [CRM_MAP.tags.invalida])
+      await addLeadNote(leadId, `⛔ Lara NÃO iniciou conversa: ${d.motivo}.`)
+      await logExec({ tipo: 'pulou', leadId, nome, detalhe: `inválido: ${d.motivo} · via ${origem}` })
+      return { ok: true, acao: 'invalido', detalhe: d.motivo }
+    }
 
     if (d.acao === 'teste') {
       await addLeadTags(leadId, [CRM_MAP.tags.teste])
@@ -116,7 +137,7 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
     }
 
     const porta = portaById(CRM_MAP.menu.portaUnica)!
-    await patchState(leadId, { comentario: comentario || undefined, porta: porta.id, portaEm: t0 - 1, iniciadoEm: new Date().toISOString(), iniciadoPor: origem })
+    await patchState(leadId, { comentario: comentario || undefined, contexto, porta: porta.id, portaEm: t0 - 1, iniciadoEm: new Date().toISOString(), iniciadoPor: origem })
     if (CRM_MAP.comentarioFieldId && comentario) await updateLeadFields(leadId, [{ field_id: CRM_MAP.comentarioFieldId, values: [{ value: comentario }] }])
     await addLeadTags(leadId, [CRM_MAP.tags.indicacao, ...(CONFIG.gateTag ? [CONFIG.gateTag] : [])])
 
@@ -126,7 +147,7 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
     let guard: string[] = []
     let usage
     try {
-      const ab = await brain.generateOpening(ctx, { nomeContato: nome, primeiroContatoDaPorta: true })
+      const ab = await brain.generateOpening({ ...ctx, lastLeadText: comentario || '' }, { nomeContato: nome, primeiroContatoDaPorta: true })
       if (ab) { texto = ab.text; guard = ab.guard; usage = ab.usage }
     } catch (e) { console.error(`[iniciar] abertura pelo modelo falhou no lead ${leadId}:`, e) }
     if (!texto) { texto = aberturaFixa(nome); guard = [...guard, 'abertura fixa (modelo falhou ou reprovou na trava)'] }

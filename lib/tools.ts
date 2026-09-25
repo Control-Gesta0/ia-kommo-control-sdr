@@ -51,15 +51,31 @@ const err = (content: string): ToolOutcome => ({ content, isError: true })
  * Motivos que o MODELO pode usar. "agendado" não está aqui de propósito: só a
  * tool agendar_reuniao finaliza assim, depois da tarefa criada de verdade.
  */
-export const MOTIVOS = ['qualificado_sem_reuniao', 'ja_tem_parceiro', 'fora_do_escopo', 'pediu_humano', 'desistiu'] as const
+export const MOTIVOS = ['qualificado_sem_reuniao', 'venda_licenca', 'suporte', 'ja_tem_parceiro', 'fora_do_escopo', 'pediu_humano', 'desistiu'] as const
 type Motivo = typeof MOTIVOS[number]
 
 /** Sinal mínimo que a evidência precisa ter para cada motivo de finalização. */
 const SINAL_MOTIVO: Partial<Record<Motivo, RegExp>> = {
   ja_tem_parceiro: /parceir|consultor|consultoria|outra empresa|outra ag[eê]ncia|j[aá] (fechei|fechamos|contratei|contratamos|estou com|estamos com|tenho algu|temos algu)/i,
   desistiu: /desist|n[aã]o (quero|tenho interesse|preciso|vou precisar) mais|deixa (pra|para) l[aá]|pode encerrar|n[aã]o quero continuar|n[aã]o vou (querer|continuar)|sem interesse|n[aã]o tenho interesse/i,
+  suporte: /whats|conect|mensage|envi|caiu|cai|erro|n[aã]o (funciona|envia|chega|aparece|consigo|carrega)|parou|travou|trava|desconect|bug|problema|integra[cç]|login|senha|acesso|cobran/i,
   pediu_humano: /humano|pessoa|atendente|consultor|especialista|vendedor|algu[eé]m|falar com|me liga|liga[cç][aã]o|telefone|reclam/i,
 }
+
+const NUM_PALAVRA: Record<string, number> = { um: 1, uma: 1, dois: 2, duas: 2, tres: 3, quatro: 4, cinco: 5, seis: 6, sete: 7, oito: 8, nove: 9, dez: 10 }
+
+/** "5", "uns 3 vendedores", "só eu" → número. null = não dá para saber. */
+export function numeroVendedores(texto: string | undefined): number | null {
+  if (!texto) return null
+  const t = texto.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  if (/\b(so eu|somente eu|apenas eu|sozinh[oa]|eu mesm[oa])\b/.test(t)) return 1
+  const d = t.match(/\b(\d{1,4})\b/)
+  if (d) return Number(d[1])
+  const w = t.match(/\b(um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez)\b/)
+  return w ? NUM_PALAVRA[w[1]] : null
+}
+
+const PEDIU_REUNIAO = /reuni|call|chamada|video|v[ií]deo|conversar com (o|um|a) (especialista|consultor|time)|apresenta[cç]|marcar|agendar/i
 
 export function buildTools(porta: Porta): OpenAI.Chat.ChatCompletionTool[] {
   const tools: OpenAI.Chat.ChatCompletionTool[] = []
@@ -110,7 +126,7 @@ export function buildTools(porta: Porta): OpenAI.Chat.ChatCompletionTool[] {
       type: 'function',
       function: {
         name: 'finalizar_atendimento',
-        description: 'Encerra a participação da IA SEM reunião marcada (reunião marcada quem encerra é agendar_reuniao). Chame ANTES de escrever a mensagem de encerramento. Motivos: qualificado_sem_reuniao (qualificou mas a agenda falhou ou o lead não quer marcar agora); ja_tem_parceiro (já fechou com outro parceiro/consultoria); fora_do_escopo (não é implantação/uso do Kommo); pediu_humano; desistiu. Depois envie a mensagem de encerramento e NÃO faça perguntas.',
+        description: 'Encerra a participação da IA SEM reunião marcada (reunião marcada quem encerra é agendar_reuniao). Chame ANTES de escrever a mensagem de encerramento. Motivos: qualificado_sem_reuniao (qualificou mas a agenda falhou ou o lead não quer marcar agora); venda_licenca (equipe pequena quer comprar a licença: o time manda o link/proposta; ponha plano e nº de usuários no resumo); suporte (pedido de suporte técnico: WhatsApp caiu, mensagem não envia, conectar número); ja_tem_parceiro (já fechou com outro parceiro/consultoria); fora_do_escopo (não é implantação/uso do Kommo); pediu_humano; desistiu. Depois envie a mensagem de encerramento e NÃO faça perguntas.',
         parameters: {
           type: 'object',
           properties: {
@@ -210,12 +226,12 @@ export function snapshot(porta: Porta, state: LeadState): Snapshot {
   return { preenchidos, abertos }
 }
 
-export function describeOpen(porta: Porta, s: Snapshot): string {
+export function describeOpen(porta: Porta, s: Snapshot, prioridade: string[] = []): string {
   if (!porta.roteiro.length) return ''
-  if (!s.abertos.length) return 'Roteiro COMPLETO — faça o fechamento previsto no prompt e chame finalizar_atendimento(qualificado).'
-  const prox = s.abertos[0]
+  if (!s.abertos.length) return 'Roteiro COMPLETO: ofereça a reunião (consultar_horarios) ou siga o caminho previsto no prompt.'
+  const prox = s.abertos.find(c => prioridade.includes(c.key)) || s.abertos[0]
   const opc = prox.options ? ` (grave com uma destas opções EXATAS: ${prox.options.map(o => o.value).join(' | ')})` : ''
-  return `Faltam ${s.abertos.length}. Próximo assunto do roteiro → ${prox.name}${prox.pergunta ? ` ("${prox.pergunta}")` : ''}${opc}. Se o lead já respondeu algo em aberto, grave com salvar_respostas ANTES de perguntar.`
+  return `Faltam: ${s.abertos.map(c => c.name).join(' · ')}. Próximo que falta → ${prox.name}${prox.pergunta ? ` (sugestão: "${prox.pergunta}", adapte ao que ele já contou)` : ''}${opc}. Se o Comment ou as mensagens já respondem algum desses, grave com salvar_respostas ANTES e pule. Pode seguir outra ordem se ficar mais natural.`
 }
 
 // ---------- Execução ----------
@@ -248,7 +264,8 @@ export async function aplicarFinalizacao(ctx: ToolCtx, motivo: string, resumoRaw
   const state = await port.getState()
   const resumo = resumoRaw.trim().slice(0, 1500)
   if (CRM_MAP.finalizar.removerGate && ctx.gateTag) await port.removeTags([ctx.gateTag])
-  const extras = [...CRM_MAP.finalizar.tags, ...(urgente && CRM_MAP.finalizar.tagUrgente ? [CRM_MAP.finalizar.tagUrgente] : [])]
+  const porMotivo: Record<string, string> = { suporte: CRM_MAP.tags.suporte, venda_licenca: CRM_MAP.tags.licenca }
+  const extras = [...CRM_MAP.finalizar.tags, ...(porMotivo[motivo] ? [porMotivo[motivo]] : []), ...(urgente && CRM_MAP.finalizar.tagUrgente ? [CRM_MAP.finalizar.tagUrgente] : [])]
   if (extras.length) await port.addTags(extras)
   if (CRM_MAP.finalizar.nota) {
     const linhas = snapshot(porta, state).preenchidos.map(p => `• ${p.campo.name}: ${p.valor}`)
@@ -287,7 +304,7 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
           const respondeuPergunta = !!campo.pergunta && overlap(ctx.lastAgentText, campo.pergunta) >= 0.6 && evidenceFound(ev, ctx.lastLeadText)
           if (!evidenceFound(ev, ctx.leadText)) { erros.push(`${campo.name}: a evidência "${ev}" não aparece no que o lead escreveu — NÃO invente; pergunte`); continue }
           if (campo.sinal && !campo.sinal.test(ev) && !naoSei && !respondeuPergunta) { erros.push(`${campo.name}: a evidência "${ev}" não fala deste assunto — NÃO invente; pergunte`); continue }
-          if (/n[aã]o sabe/i.test(valor) && !naoSei) { erros.push(`${campo.name}: "Não sabe" só quando o lead disser que não sabe`); continue }
+          if (/^\s*n[aã]o (sei|sabe)\s*\.?\s*$/i.test(valor) && !naoSei) { erros.push(`${campo.name}: "Não sabe" só quando o lead disser que não sabe`); continue }
           if (naoSei && campo.type !== 'select' && campo.type !== 'multiselect') {
             semResposta.add(key)
             salvos.push(`${campo.name} = (não sabe)`)
@@ -330,7 +347,10 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
         const motivo = String(input.motivo || '') as Motivo
         if (!MOTIVOS.includes(motivo)) return err(`Motivo inválido: ${motivo}`)
         const state = await port.getState()
-        if (motivo === 'qualificado_sem_reuniao') {
+        if (motivo === 'venda_licenca') {
+          const n = numeroVendedores(state.respostas?.vendedores)
+          if (n === null) return err('Antes de encaminhar a licença, grave quantos vendedores vão usar (salvar_respostas).')
+        } else if (motivo === 'qualificado_sem_reuniao') {
           // "Não sabe" só vale se foi registrado por salvar_respostas com a fala do lead — nunca declarado na finalização
           const sem = new Set(state.semResposta || [])
           const faltando = porta.obrigatorios.filter(key => !state.respostas?.[key] && !(sem.has(key) && !campoByKey(key)?.options))
@@ -351,6 +371,10 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
         if (!cfg.ativa || !cfg.responsavelId) return err('Agenda não configurada. Diga que o time confirma o horário e chame finalizar_atendimento(qualificado_sem_reuniao).')
         const state = await port.getState()
         if (state.reuniao) return err(`A reunião já está marcada (${state.reuniao.label}). Não marque outra.`)
+        const nV = numeroVendedores(state.respostas?.vendedores)
+        if (nV !== null && nV <= CRM_MAP.licenca.maxVendedores && !PEDIU_REUNIAO.test(ctx.leadText)) {
+          return err(`Equipe pequena (${nV} vendedor(es)): não ofereça reunião. Siga a venda da LICENÇA pelo WhatsApp (seção "Equipe pequena" do prompt).`)
+        }
         const agora = ctx.agora ?? Date.now()
         const fimJanela = agora + (cfg.diasUteisJanela + 4) * 86400000
         let ocupados: Intervalo[]
@@ -374,6 +398,10 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
         const respondido = (key: string) => !!state.respostas?.[key] || (state.semResposta || []).includes(key)
         const faltando = CRM_MAP.exigirAntesDeAgendar.filter(grupo => !grupo.some(respondido))
         if (faltando.length) return err(`Antes de marcar, falta (CHAMP): ${faltando.map(g => g.map(key => campoByKey(key)?.name || key).join(' OU ')).join('; ')}. Pergunte o próximo item (uma pergunta) e grave com salvar_respostas.`)
+        const nVend = numeroVendedores(state.respostas?.vendedores)
+        if (nVend !== null && nVend <= CRM_MAP.licenca.maxVendedores && !PEDIU_REUNIAO.test(ctx.leadText)) {
+          return err(`Equipe pequena (${nVend} vendedor(es)): não marque reunião. Siga a venda da LICENÇA pelo WhatsApp (seção "Equipe pequena" do prompt). Só marque se o lead pedir reunião.`)
+        }
         const oferta: Slot[] = state.oferta || []
         const agora = ctx.agora ?? Date.now()
         if (!oferta.length) return err('Nenhum horário foi oferecido ainda. Chame consultar_horarios e ofereça as opções.')

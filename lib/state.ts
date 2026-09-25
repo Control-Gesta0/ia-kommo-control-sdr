@@ -28,6 +28,8 @@ export interface LeadState {
   // ---- Indicação de parceiro ----
   /** o "Comment:" da indicação (a necessidade que o cliente escreveu para a Kommo) */
   comentario?: string
+  /** Country / Languages / Industry da nota da indicação */
+  contexto?: { pais?: string; idiomas?: string; segmento?: string }
   /** quando e por onde a IA iniciou a conversa */
   iniciadoEm?: string
   iniciadoPor?: string

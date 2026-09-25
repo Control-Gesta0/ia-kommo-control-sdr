@@ -25,6 +25,7 @@ var FiltroIndicacao = (function () {
    */
   function extrairComentario(texto) {
     var t = String(texto == null ? '' : texto).replace(/\r/g, '').replace(/\\n/g, '\n')
+      .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     var re = /(?:^|[\s"'{,;|>])(?:comment|comments|coment[aá]rio|coment[aá]rios)\s*"?\s*:\s*"?/i
     var m = re.exec(t)
     if (!m) return null
@@ -41,7 +42,8 @@ var FiltroIndicacao = (function () {
     'apenas teste', 'somente teste', 'so teste', 'so um teste', 'teste interno', 'teste kommo',
     'this is a test', 'just a test', 'only a test', 'just testing', 'test only', 'test message',
     'nao e real', 'not real', 'ignore this', 'ignorar este', 'ignorar esse', 'desconsiderar este',
-    'desconsiderar esse', 'favor desconsiderar', 'pode desconsiderar', 'lorem ipsum', 'asdf', 'qwerty'
+    'desconsiderar esse', 'favor desconsiderar', 'pode desconsiderar', 'lorem ipsum', 'asdf', 'qwerty',
+    'nao aceitar', 'nao aceite', 'naao aceitar', 'nao e para aceitar', 'do not accept', 'dont accept'
   ]
 
   // Palavras que, se forem TUDO o que o comentário diz, é teste ("teste", "test 123", "teste teste")

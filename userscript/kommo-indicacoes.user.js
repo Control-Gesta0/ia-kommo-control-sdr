@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kommo · Indicações de parceiro (Control Gestão)
 // @namespace    https://controlgestao.com.br/
-// @version      3.1.0
+// @version      3.3.0
 // @description  Filtra indicações de TESTE pelo "Comment:", aceita no tempo certo (ou avisa, no modo assistido) e aciona o agente de IA SDR.
 // @match        https://*.kommo.com/*
 // @run-at       document-idle
@@ -42,6 +42,7 @@ var FiltroIndicacao = (function () {
    */
   function extrairComentario(texto) {
     var t = String(texto == null ? '' : texto).replace(/\r/g, '').replace(/\\n/g, '\n')
+      .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     var re = /(?:^|[\s"'{,;|>])(?:comment|comments|coment[aá]rio|coment[aá]rios)\s*"?\s*:\s*"?/i
     var m = re.exec(t)
     if (!m) return null
@@ -58,7 +59,8 @@ var FiltroIndicacao = (function () {
     'apenas teste', 'somente teste', 'so teste', 'so um teste', 'teste interno', 'teste kommo',
     'this is a test', 'just a test', 'only a test', 'just testing', 'test only', 'test message',
     'nao e real', 'not real', 'ignore this', 'ignorar este', 'ignorar esse', 'desconsiderar este',
-    'desconsiderar esse', 'favor desconsiderar', 'pode desconsiderar', 'lorem ipsum', 'asdf', 'qwerty'
+    'desconsiderar esse', 'favor desconsiderar', 'pode desconsiderar', 'lorem ipsum', 'asdf', 'qwerty',
+    'nao aceitar', 'nao aceite', 'naao aceitar', 'nao e para aceitar', 'do not accept', 'dont accept'
   ]
 
   // Palavras que, se forem TUDO o que o comentário diz, é teste ("teste", "test 123", "teste teste")
@@ -107,30 +109,45 @@ var FiltroIndicacao = (function () {
 
 /* global FiltroIndicacao, GM_xmlhttpRequest, GM_notification, unsafeWindow */
 /**
- * Indicações Kommo v3.1: corpo do userscript. NÃO edite o .user.js gerado:
+ * Indicações Kommo v3.3: corpo do userscript. NÃO edite o .user.js gerado:
  * edite este arquivo (e o filtro-indicacao.js) e rode `npm run build:userscript`.
  *
  * O aceite é 100% no navegador (a Kommo invalida indicação aceita por API).
  *
- * Como ele pega a liberação (a Kommo NÃO libera em 5 min cravados):
- *   1. SONDA lenta antes da liberação esperada: uma tentativa a cada ~2,5s.
- *      "The leads is no longer available" e "already been accepted by other
- *      partners" nesse período = ainda não liberou PARA NÓS. Segue tentando.
- *   2. RAJADA em volta da liberação esperada: 150 a 300 ms entre tentativas.
- *   3. Depois da rajada, ritmo médio até desistir.
- *   4. Qualquer mudança no card do lead na tela dispara uma tentativa na hora.
- *   5. APRENDE: guarda quanto tempo depois do created_at cada aceite deu certo e
- *      centraliza a rajada na mediana real (não nos 5 min do papel).
- *   6. Limite GLOBAL de 6 req/s somando todos os leads (a Kommo bloqueia IP acima de 7).
+ * REGRA QUE MANDA EM TUDO (confirmada em 25/09/2026): aceite ANTES da liberação
+ * volta "sucesso" e QUEIMA a indicação (o lead passa a mostrar "The leads is no
+ * longer available"). Não existe "tentar de novo": o primeiro aceite que dá
+ * sucesso é o único tiro.
  *
- * Filtro de teste: regra instantânea; se o Comment for ambíguo ("teste" dentro de
- * uma frase maior), pergunta a INTENÇÃO para a IA (/api/classificar) antes de aceitar.
+ * MEDIDO na conta (62 indicações, ago a set/2026, eventos da API): a Kommo libera
+ * EXATAMENTE 300s depois da chegada. Aceites aos 299s: 11 queimados em 16. Aos
+ * 300 a 301s: válidos, mas 8 perdidos para outros parceiros por milissegundos.
+ * O v2.1 disparava 4min57s depois de o card APARECER NA TELA: caía às vezes nos 299s.
  *
- * Depois do aceite, avisa o agente (POST /api/novo-lead) com o Comment. Se o aviso
- * falhar, fica pendente e é reenviado (inclusive depois de recarregar a página).
+ * Por isso:
+ *   1. Nenhuma tentativa antes da liberação. O disparo é o MENOR de dois limites
+ *      que nunca saem cedo:
+ *        a) hora em que o card apareceu na tela + 300s (o card só aparece DEPOIS
+ *           de o lead existir, então isto nunca é cedo, qualquer que seja o relógio);
+ *        b) created_at + 301s no relógio do servidor (created_at vem em segundos
+ *           inteiros), convertido com o limite SEGURO da diferença de relógio
+ *           medida pelo cabeçalho Date das respostas.
+ *      + MARGEM (40 ms).
+ *   2. Repete rápido só enquanto a resposta NÃO for sucesso (rede, erro genérico).
+ *   3. Depois do aceite, CONFERE o lead (notas e eventos): "no longer available"
+ *      = foi cedo → a margem sobe 1s; "already been accepted by other partners"
+ *      = perdeu a corrida; limpo = válido. 5 válidos seguidos → a margem desce 0,25s.
+ *   4. Lead que já passou da janela (indicação antiga parada em Incoming) é
+ *      ignorado em silêncio.
+ *   5. Limite GLOBAL de 6 req/s somando todos os leads.
  *
- * Diagnóstico: `copy(__INDICACOES__.relatorio())` no console copia tudo que o
- * script viu (HTML do card, respostas do aceite com o tempo de cada uma).
+ * Filtro de teste: regra instantânea; Comment ambíguo vai para a IA de intenção
+ * (/api/classificar) antes de aceitar.
+ *
+ * Depois do aceite VÁLIDO, avisa a Lara (POST /api/novo-lead) com o Comment. Se o
+ * aviso falhar, fica pendente e é reenviado (inclusive depois de recarregar).
+ *
+ * Diagnóstico: `copy(__INDICACOES__.relatorio())` no console.
  */
 ;(function () {
   'use strict'
@@ -139,38 +156,38 @@ var FiltroIndicacao = (function () {
   var CFG = {
     USER_ID: 12725576,           // responsável que recebe o lead aceito
     STATUS_ID: 55438567,         // etapa de destino do lead aceito
+    PIPELINE_ID: 4338500,        // funil das indicações: Incoming leads de OUTROS funis nunca são tocados
+    // Incoming leads destas categorias não são indicação de parceiro (chat, e-mail, ligação)
+    CATEGORIAS_IGNORADAS: ['chats', 'mail', 'sip'],
 
     // 'automatico' = o script aceita sozinho · 'assistido' = filtra e avisa, você clica
     MODO: 'automatico',
 
-    // Liberação esperada, contada do created_at do Incoming lead (fallback: hora
-    // em que o card apareceu). Ponto de partida: 5 min. Com APRENDER, depois de
-    // 3 aceites a mediana real substitui este número.
+    // Liberação medida: exatamente 300s depois da chegada do lead
     LIBERACAO_MS: 5 * 60 * 1000,
-    APRENDER: true,
-    APRENDER_MIN_AMOSTRAS: 3,
+    // Folga depois do limite seguro. Sobe sozinha 300 ms se algum aceite sair cedo.
+    MARGEM_MS: 40,
+    AJUSTAR_MARGEM: true,
+    MARGEM_MIN_MS: 0,
+    MARGEM_MAX_MS: 5000,
 
-    SONDA_ANTES_MS: 45000,       // começa a sondar 45s antes da liberação esperada
-    SONDA_INTERVALO_MS: 2500,    // ritmo da sonda (lento)
-    RAJADA_ANTES_MS: 8000,       // rajada de 8s antes...
-    RAJADA_DEPOIS_MS: 20000,     // ...até 20s depois da liberação esperada
-    RAJADA_MIN_MS: 150,
-    RAJADA_MAX_MS: 300,
-    DEPOIS_INTERVALO_MS: 800,    // depois da rajada
-    DESISTIR_APOS_MS: 2 * 60 * 1000, // desiste 2 min depois da liberação esperada
+    JANELA_MS: 8000,             // depois do disparo, repete só enquanto não houver sucesso
+    MIN_INTERVALO_MS: 150,
+    MAX_INTERVALO_MS: 300,
     TAXA_MAX_POR_SEG: 6,         // somando todos os leads
     RECUO_429_MS: 1500,
+    CONFERIR_APOS_MS: 6000,      // confere se o lead aceito ficou válido
 
     FILTRO_MODO: 'inteligente',  // 'inteligente' (IA decide o ambíguo) ou 'estrito'
     SEM_COMENTARIO: 'aceitar',   // não achou "Comment:": 'aceitar' ou 'pular'
 
     POLL_MS: 15000,              // consulta à API de Incoming leads (0 = desliga)
 
-    // Agente de IA. AGENTE_SECRET = INDICACAO_SECRET da Vercel.
+    // Lara (agente de IA). AGENTE_SECRET = INDICACAO_SECRET da Vercel.
     AGENTE_URL: '',
     AGENTE_SECRET: '',
 
-    DIAGNOSTICO: true,           // guarda HTML do card e respostas para o relatório
+    DIAGNOSTICO: true,
     DEBUG: false,
   }
 
@@ -178,7 +195,7 @@ var FiltroIndicacao = (function () {
   var pageFetch = W.fetch.bind(W)
   var STORE_KEY = 'cg-indicacoes-v3'
   var DIAG_KEY = 'cg-indicacoes-v3-diag'
-  var VERSAO = '3.1.0'
+  var VERSAO = '3.3.0'
 
   if (W.__INDICACOES__ && W.__INDICACOES__.stop) {
     console.warn('[INDICAÇÕES] já ativo, reiniciando...')
@@ -205,7 +222,8 @@ var FiltroIndicacao = (function () {
   var store = ler(STORE_KEY, {})
   var memo = store.leads || (store.aprendizado ? {} : store) // migra o formato da 3.0
   if (memo.leads || memo.aprendizado) memo = {}
-  var aprendizado = store.aprendizado || { sucessos: [] }
+  var aprendizado = store.aprendizado || {}
+  if (typeof aprendizado.margem !== 'number') aprendizado = { margem: CFG.MARGEM_MS, validosSeguidos: 0, historico: [] }
   var diag = ler(DIAG_KEY, {})
 
   function salvar() {
@@ -218,7 +236,7 @@ var FiltroIndicacao = (function () {
     salvar()
     desenharSelo(id)
   }
-  var FINAIS = { aceito: 1, teste: 1, nao_existe: 1, perdido: 1, pulado: 1, liberado: 1 }
+  var FINAIS = { aceito: 1, aceito_invalido: 1, teste: 1, nao_existe: 1, perdido: 1, pulado: 1, liberado: 1, expirado: 1 }
 
   // ---------------- DIAGNÓSTICO ----------------
   function registrarDiag(id, tipo, dado) {
@@ -279,7 +297,7 @@ var FiltroIndicacao = (function () {
   }
 
   // ---------------- SELO NO CARD ----------------
-  var CORES = { teste: '#c62828', aceito: '#2e7d32', liberado: '#1565c0', aguardando: '#6d4c41', sondando: '#1565c0', rajada: '#0d47a1', nao_existe: '#757575', perdido: '#ef6c00', pulado: '#757575', avaliando: '#6d4c41' }
+  var CORES = { teste: '#c62828', aceito: '#2e7d32', aceito_invalido: '#ad1457', conferindo: '#2e7d32', liberado: '#1565c0', aguardando: '#6d4c41', aceitando: '#0d47a1', nao_existe: '#757575', perdido: '#ef6c00', pulado: '#757575', avaliando: '#6d4c41', expirado: '#9e9e9e' }
   function cardDe(id) { return document.getElementById('pipeline_item_' + id) || document.querySelector('.pipeline-unsorted__item[data-id="' + id + '"]') }
   function desenharSelo(id) {
     var el = cardDe(id)
@@ -295,25 +313,56 @@ var FiltroIndicacao = (function () {
     var textos = {
       avaliando: 'Lendo o Comment...',
       teste: 'TESTE: não aceito',
-      aceito: 'Aceito ' + hora(m.atualizado) + (m.tentativas ? ' (' + m.tentativas + ' tentativas)' : ''),
-      liberado: 'Real. Aceite manual a partir de ~' + hora(m.libera),
-      aguardando: 'Real. Tenta aceitar a partir de ' + hora(m.inicio),
-      sondando: 'Sondando liberação...',
-      rajada: 'Aceitando...',
+      aceito: 'Aceito e válido ' + hora(m.atualizado),
+      conferindo: 'Aceito, conferindo se ficou válido...',
+      aceito_invalido: 'Aceito, mas INVÁLIDO: ' + (m.motivo || ''),
+      liberado: 'Real. Aceite manual a partir de ' + hora(m.libera),
+      aguardando: 'Real. Aceita às ' + hora(m.libera),
+      aceitando: 'Aceitando...',
       nao_existe: 'Lead não existe mais',
-      perdido: 'Não liberou para nós' + (m.ultimaResposta ? ': ' + m.ultimaResposta : ''),
+      perdido: 'Não aceitou' + (m.ultimaResposta ? ': ' + m.ultimaResposta : ''),
       pulado: 'Pulado: sem Comment',
+      expirado: 'Indicação antiga (fora da janela)',
     }
-    selo.textContent = (textos[m.estado] || m.estado) + (m.motivo ? ' · ' + m.motivo : '')
+    selo.textContent = (textos[m.estado] || m.estado) + (m.motivo && m.estado !== 'aceito_invalido' ? ' · ' + m.motivo : '')
     selo.title = m.comentario ? 'Comment: ' + m.comentario : ''
     selo.style.background = CORES[m.estado] || '#555'
   }
 
+  // ---------------- RELÓGIO DO SERVIDOR DA KOMMO ----------------
+  // created_at é hora do servidor. Se o PC estiver 3s adiantado, "5 min" no PC
+  // viram 4min57s na Kommo e o aceite queima o lead. O cabeçalho Date de cada
+  // resposta dá a hora do servidor (em segundos): a mediana das amostras dá a
+  // diferença com ±0,5s.
+  // Cada resposta prova: servidor - local ∈ [Date - chegada, Date + 1s - envio].
+  // A interseção das amostras aperta o intervalo; para disparar usamos o limite
+  // que NUNCA adianta (relogioLo).
+  var amostrasRelogio = []
+  var relogioLo = null
+  var relogioHi = null
+  function amostrarRelogio(res, t0) {
+    try {
+      var d = Date.parse(res.headers.get('date') || '')
+      if (!d) return
+      amostrasRelogio.push([d - now(), d + 1000 - t0])
+      if (amostrasRelogio.length > 60) amostrasRelogio.shift()
+      var lo = -Infinity, hi = Infinity
+      amostrasRelogio.forEach(function (a) { lo = Math.max(lo, a[0]); hi = Math.min(hi, a[1]) })
+      if (lo > hi) { amostrasRelogio = amostrasRelogio.slice(-1); lo = amostrasRelogio[0][0]; hi = amostrasRelogio[0][1] } // relógio do PC mudou
+      relogioLo = lo; relogioHi = hi
+    } catch (_) { /* sem cabeçalho */ }
+  }
+  function difServidor() { return relogioLo === null ? 0 : (relogioLo + relogioHi) / 2 }
+  /** hora do servidor (ms) → hora local equivalente */
+  function paraLocal(msServidor) { return msServidor - difServidor() }
+
   // ---------------- API COM A SESSÃO DO NAVEGADOR ----------------
   var apiSessaoOk = true
   function apiGet(path) {
+    var t0 = now()
     return pageFetch(path, { credentials: 'include', headers: { accept: 'application/json', 'x-requested-with': 'XMLHttpRequest' } })
       .then(function (r) {
+        amostrarRelogio(r, t0)
         if (r.status === 204) return null
         if (r.status === 401 || r.status === 403) { apiSessaoOk = false; throw new Error('sessão recusada pela API (' + r.status + ')') }
         if (!r.ok) throw new Error(path + ' -> ' + r.status)
@@ -323,14 +372,17 @@ var FiltroIndicacao = (function () {
 
   // leadId -> { criado (ms), texto, visto } da última leitura de Incoming leads
   var incoming = {}
+  var naoIndicacao = {}   // id -> motivo (outro funil ou categoria que não é indicação)
   var ultimaLeituraOk = 0
   function lerIncoming() {
     return apiGet('/api/v4/leads/unsorted?limit=50&order[created_at]=desc').then(function (j) {
       var itens = (j && j._embedded && j._embedded.unsorted) || []
       ultimaLeituraOk = now()
       itens.forEach(function (u) {
-        ((u._embedded && u._embedded.leads) || []).forEach(function (l) {
+        var ehIndicacao = Number(u.pipeline_id) === CFG.PIPELINE_ID && CFG.CATEGORIAS_IGNORADAS.indexOf(u.category) < 0
+        ;((u._embedded && u._embedded.leads) || []).forEach(function (l) {
           var id = String(l.id)
+          if (!ehIndicacao) { naoIndicacao[id] = (u.category || '?') + ' · funil ' + u.pipeline_id; return }
           var novo = !incoming[id]
           incoming[id] = { criado: (u.created_at || 0) * 1000, texto: JSON.stringify(u.metadata || {}) + ' ' + (u.source_name || ''), visto: now() }
           if (novo) registrarDiag(id, 'incoming', JSON.stringify(u).slice(0, 1500))
@@ -439,7 +491,9 @@ var FiltroIndicacao = (function () {
   }
 
   function tentarAceitar(id) {
+    var t0
     return comVaga().then(function () {
+      t0 = now()
       return pageFetch('/ajax/unsorted/accept', {
         method: 'POST',
         credentials: 'include',
@@ -447,6 +501,7 @@ var FiltroIndicacao = (function () {
         body: corpoAceite(id),
       })
     }).then(function (res) {
+      amostrarRelogio(res, t0)
       return res.text().then(function (t) {
         var json = null
         try { json = JSON.parse(t) } catch (_) { /* não é JSON */ }
@@ -475,92 +530,134 @@ var FiltroIndicacao = (function () {
   }
   var ROTULO = { cedo: 'ainda não liberou (no longer available)', outros: 'outros parceiros aceitaram (already accepted)', repetir: 'resposta inesperada', recuar: '429, recuando' }
 
-  // ---------------- APRENDIZADO DA LIBERAÇÃO ----------------
-  function liberacaoEsperada() {
-    var s = aprendizado.sucessos || []
-    if (CFG.APRENDER && s.length >= CFG.APRENDER_MIN_AMOSTRAS) return Math.max(60000, mediana(s.slice(-15)) - 1500)
-    return CFG.LIBERACAO_MS
+  // ---------------- QUANDO DISPARAR ----------------
+  function margem() { return CFG.AJUSTAR_MARGEM ? aprendizado.margem : CFG.MARGEM_MS }
+  /** Hora LOCAL do disparo. null = ainda não sei (sem created_at nem detecção). */
+  function horaDisparo(id) {
+    var m = memo[id] || {}
+    var criado = m.criado || (incoming[id] && incoming[id].criado) || 0
+    var limites = []
+    // a) card na tela: o lead já existia quando o card apareceu
+    if (m.vistoTela) limites.push(m.vistoTela + CFG.LIBERACAO_MS)
+    // b) created_at (segundos inteiros) + 1s, no pior caso do relógio
+    if (criado && relogioLo !== null) limites.push(criado + 1000 + CFG.LIBERACAO_MS - relogioLo)
+    // sem os dois: hora em que o script viu o lead (API) + 300s, também nunca cedo
+    if (!limites.length && m.visto) limites.push(m.visto + CFG.LIBERACAO_MS)
+    return limites.length ? Math.min.apply(null, limites) + margem() : null
   }
-  function aprender(offset) {
-    if (!CFG.APRENDER || !(offset > 30000 && offset < 20 * 60000)) return
-    aprendizado.sucessos = (aprendizado.sucessos || []).concat([offset]).slice(-30)
-    salvar()
-    log('📈', 'aceite em ' + seg(offset) + ' depois do created_at · liberação esperada agora: ' + seg(liberacaoEsperada()))
-  }
-
   function baseDe(id) {
     var m = memo[id] || {}
     return m.criado || (incoming[id] && incoming[id].criado) || m.visto || 0
   }
 
-  // ---------------- LOOP DE ACEITE ----------------
-  var emAndamento = {}   // id -> true enquanto há loop/avaliação
-  var acordar = {}       // id -> função que antecipa a próxima tentativa
+  /** Ajuste automático da margem pelo resultado conferido de cada aceite. */
+  function registrarResultado(id, resultado, offset) {
+    aprendizado.historico = (aprendizado.historico || []).concat([{ id: id, resultado: resultado, offsetMs: offset, margemMs: margem(), em: new Date().toISOString() }]).slice(-30)
+    if (CFG.AJUSTAR_MARGEM) {
+      if (resultado === 'cedo') {
+        aprendizado.margem = Math.min(CFG.MARGEM_MAX_MS, aprendizado.margem + 300)
+        aprendizado.validosSeguidos = 0
+        log('📈', 'aceite saiu CEDO: margem sobe para ' + seg(aprendizado.margem))
+      } else if (resultado === 'valido') {
+        aprendizado.validosSeguidos = (aprendizado.validosSeguidos || 0) + 1
+        if (aprendizado.validosSeguidos >= 5 && aprendizado.margem > CFG.MARGEM_MS) {
+          aprendizado.margem = Math.max(CFG.MARGEM_MS, aprendizado.margem - 100)
+          aprendizado.validosSeguidos = 0
+          log('📉', '5 aceites válidos seguidos: margem desce para ' + seg(aprendizado.margem))
+        }
+      }
+    }
+    salvar()
+  }
 
-  function loopAceite(id) {
+  // ---------------- CONFERÊNCIA DEPOIS DO ACEITE ----------------
+  /** Procura nas notas e eventos do lead a marca de aceite inválido. */
+  function conferirLead(id) {
+    var FALHOU = {}
+    var fontes = [
+      apiGet('/api/v4/leads/' + id + '/notes?limit=50').catch(function () { return FALHOU }),
+      apiGet('/api/v4/events?filter[entity]=lead&filter[entity_id]=' + id + '&limit=50').catch(function () { return FALHOU }),
+      apiGet('/api/v4/leads/' + id).catch(function () { return FALHOU }),
+    ]
+    return Promise.all(fontes).then(function (rs) {
+      var t = rs.map(function (r) { return r && r !== FALHOU ? JSON.stringify(r) : '' }).join('\n').toLowerCase()
+      registrarDiag(id, 'conferencia', t.slice(0, 1500))
+      // 204 (lista vazia) é resposta válida; só é "desconhecido" se TODAS as leituras falharam
+      if (rs.every(function (r) { return r === FALHOU })) return 'desconhecido'
+      if (t.indexOf('no longer available') >= 0) return 'cedo'
+      if (t.indexOf('already been accepted') >= 0 || t.indexOf('accepted by other partners') >= 0) return 'outros'
+      return 'valido'
+    })
+  }
+
+  // ---------------- DISPARO ----------------
+  var emAndamento = {}   // id -> true enquanto há avaliação/disparo
+
+  function disparar(id) {
     var n = 0
-    var contagem = {}
     var inicio = now()
-    log('🔎', 'sondando ' + id + ' (liberação esperada ' + hora(baseDe(id) + liberacaoEsperada()) + ')')
+    var fimJanela = inicio + CFG.JANELA_MS
+    var base = baseDe(id)
+    marcar(id, { estado: 'aceitando' })
+    log('🎯', 'disparando ' + id + (memo[id].vistoTela ? ' · ' + seg(inicio - memo[id].vistoTela) + ' depois de aparecer na tela' : '') + (memo[id].criado ? ' · ~' + seg(inicio + difServidor() - memo[id].criado) + ' depois do created_at' : ''))
     function volta() {
       if (!emAndamento[id]) return Promise.resolve()
-      var base = baseDe(id)
-      var esperado = base + liberacaoEsperada()
-      var t = now()
-      if (t > esperado + CFG.DESISTIR_APOS_MS) return fim('perdido')
-      if (sumiuDoIncoming(id)) return fim('perdido', 'sumiu dos Incoming leads')
-      var fase = t < esperado - CFG.RAJADA_ANTES_MS ? 'sondando' : t < esperado + CFG.RAJADA_DEPOIS_MS ? 'rajada' : 'depois'
-      if (memo[id].estado !== fase && fase !== 'depois') marcar(id, { estado: fase })
+      if (now() > fimJanela) return fim('perdido', 'sem sucesso na janela de ' + seg(CFG.JANELA_MS))
       n++
       return tentarAceitar(id).then(function (r) {
         var res = interpretar(id, r)
-        contagem[res] = (contagem[res] || 0) + 1
         registrarDiag(id, 'aceite:' + res, { n: n, http: r.status, resposta: String(r.texto || '').slice(0, 600) })
         if (res === 'aceito') {
-          var off = base ? now() - base : 0
-          log('✅', 'ACEITO ' + id + ' na tentativa #' + n + (base ? ' · ' + seg(off) + (memo[id].criado ? ' depois do created_at' : ' depois de aparecer na tela') : ''))
-          if (memo[id].criado) aprender(off)
-          marcar(id, { estado: 'aceito', tentativas: n, offsetAceite: off })
-          avisar('Indicação aceita', 'Lead ' + id + (memo[id].comentario ? ': ' + memo[id].comentario.slice(0, 80) : ''))
-          avisarAgente(id)
+          var off = memo[id].criado ? now() + difServidor() - memo[id].criado : null
+          log('✅', 'ACEITO ' + id + ' na tentativa #' + n + ', conferindo se ficou válido...')
+          marcar(id, { estado: 'conferindo', tentativas: n, offsetAceite: off })
+          agendar(now() + CFG.CONFERIR_APOS_MS, function () { conferir(id, off, 1) })
           return
         }
         if (res === 'nao_existe') return fim('nao_existe')
-        if (contagem[res] === 1) log('·', id + ': ' + ROTULO[res] + ' (+' + seg(now() - inicio) + ')')
+        // Se a própria resposta do aceite já disser isso, a indicação acabou para nós
+        if (res === 'cedo' || res === 'outros') { if (res === 'cedo' && memo[id].criado) registrarResultado(id, 'cedo', now() + difServidor() - memo[id].criado); return fim('perdido', ROTULO[res]) }
         marcar(id, { ultimaResposta: ROTULO[res] })
-        return proximaEspera(id, fase, res).then(volta)
+        return esperar(res === 'recuar' ? CFG.RECUO_429_MS : rand(CFG.MIN_INTERVALO_MS, CFG.MAX_INTERVALO_MS)).then(volta)
       }, function (e) {
         dbg('erro de rede ' + id + ': ' + e.message)
-        return proximaEspera(id, fase, 'rede').then(volta)
+        return esperar(rand(CFG.MIN_INTERVALO_MS, CFG.MAX_INTERVALO_MS)).then(volta)
       })
     }
     function fim(estado, motivo) {
-      log(estado === 'perdido' ? '⌛' : '🚫', id + ': ' + (motivo || estado) + ' após ' + n + ' tentativas · ' + JSON.stringify(contagem))
+      log(estado === 'perdido' ? '⌛' : '🚫', id + ': ' + (motivo || estado) + ' (' + n + ' tentativas)')
       marcar(id, { estado: estado, tentativas: n, motivo: motivo || '' })
       return Promise.resolve()
     }
-    return volta().then(function () { delete emAndamento[id]; delete acordar[id] })
+    return volta().then(function () { if (memo[id].estado !== 'conferindo') delete emAndamento[id] }, function () { delete emAndamento[id] })
   }
 
-  function proximaEspera(id, fase, res) {
-    var esperado = baseDe(id) + liberacaoEsperada()
-    var ms = res === 'recuar' ? CFG.RECUO_429_MS
-      : fase === 'sondando' ? Math.min(CFG.SONDA_INTERVALO_MS, Math.max(0, esperado - CFG.RAJADA_ANTES_MS - now()))
-        : fase === 'rajada' ? rand(CFG.RAJADA_MIN_MS, CFG.RAJADA_MAX_MS)
-          : CFG.DEPOIS_INTERVALO_MS
-    return new Promise(function (resolve) {
-      var tarefa = agendar(now() + ms, pronto)
-      function pronto() { delete acordar[id]; tarefas = tarefas.filter(function (x) { return x !== tarefa }); resolve() }
-      acordar[id] = pronto
+  function conferir(id, off, vez) {
+    conferirLead(id).then(function (r) {
+      if (r === 'desconhecido' && vez < 3) { agendar(now() + 5000, function () { conferir(id, off, vez + 1) }); return }
+      delete emAndamento[id]
+      if (r === 'cedo' || r === 'outros') {
+        var motivo = r === 'cedo' ? 'aceito cedo demais (no longer available)' : 'outros parceiros já tinham aceitado'
+        log('❌', id + ': ' + motivo + '. A Lara NÃO vai falar com esse lead.')
+        marcar(id, { estado: 'aceito_invalido', motivo: motivo })
+        if (off !== null) registrarResultado(id, r, off)
+        avisar('Indicação aceita mas inválida', 'Lead ' + id + ': ' + motivo)
+        return
+      }
+      log(r === 'valido' ? '🟢' : '🟡', id + (r === 'valido' ? ' válido' : ' sem como conferir (API), segue') + (off !== null ? ' · aceito ' + seg(off) + ' depois do created_at' : ''))
+      if (r === 'valido' && off !== null) registrarResultado(id, 'valido', off)
+      marcar(id, { estado: 'aceito', validacao: r })
+      avisar('Indicação aceita', 'Lead ' + id + (memo[id].comentario ? ': ' + memo[id].comentario.slice(0, 80) : ''))
+      avisarAgente(id)
     })
   }
 
   // ---------------- DECISÃO POR LEAD ----------------
   function avaliar(id) {
-    var inicioSonda = baseDe(id) + liberacaoEsperada() - CFG.SONDA_ANTES_MS
+    var libera = horaDisparo(id)
     return lerComentario(id).then(function (comentario) {
       if (comentario === null) {
-        if (now() < inicioSonda - 10000) { agendar(now() + 8000, function () { avaliar(id) }); return }
+        if (libera && now() < libera - 15000) { agendar(now() + 8000, function () { avaliar(id) }); return }
         if (CFG.SEM_COMENTARIO === 'pular') { log('⏭️', id + ' sem "Comment:", pulado'); marcar(id, { estado: 'pulado' }); delete emAndamento[id]; return }
         log('❔', id + ' sem "Comment:" em nenhuma fonte, segue (SEM_COMENTARIO=aceitar)')
         return seguir(id)
@@ -582,30 +679,49 @@ var FiltroIndicacao = (function () {
   }
 
   function seguir(id) {
-    var base = baseDe(id)
-    var libera = base + liberacaoEsperada()
-    var inicio = libera - CFG.SONDA_ANTES_MS
+    var libera = horaDisparo(id) || now()
     if (CFG.MODO === 'assistido') {
       marcar(id, { estado: 'liberado', libera: libera })
-      agendar(Math.max(now(), libera), function () { avisar('Indicação perto de liberar', 'Lead ' + id + ': ' + ((memo[id] && memo[id].comentario) || '').slice(0, 100)) })
+      agendar(Math.max(now(), libera), function () { avisar('Indicação liberada', 'Lead ' + id + ': ' + ((memo[id] && memo[id].comentario) || '').slice(0, 100)) })
       delete emAndamento[id]
       return
     }
-    marcar(id, { estado: 'aguardando', inicio: inicio, libera: libera })
-    agendar(Math.max(now(), inicio), function () { loopAceite(id) })
+    marcar(id, { estado: 'aguardando', libera: libera })
+    log('⏳', id + ' aceita às ' + hora(libera) + ' (em ' + seg(Math.max(0, libera - now())) + ')')
+    // Reagenda perto da hora: o relógio do servidor vai ficando mais preciso com as amostras
+    agendar(Math.max(now(), libera - 10000), function () {
+      if (naoIndicacao[id]) { log('⏭️', id + ' não é indicação (' + naoIndicacao[id] + '), não aceito'); marcar(id, { estado: 'pulado', motivo: 'não é indicação' }); delete emAndamento[id]; return }
+      var exato = horaDisparo(id) || libera
+      marcar(id, { libera: exato })
+      agendar(Math.max(now(), exato), function () { disparar(id) })
+    })
+  }
+
+  /** A tela aberta é o funil das indicações? (/leads/pipeline/4338500 ou o funil principal sem id) */
+  function telaDoFunil() {
+    var m = location.pathname.match(/\/leads\/pipeline\/(\d+)/)
+    return m ? Number(m[1]) === CFG.PIPELINE_ID : /\/leads\/pipeline\/?$/.test(location.pathname)
   }
 
   function registrar(id, fonte) {
     if (!id || emAndamento[id]) return
+    if (naoIndicacao[id]) { dbg(id + ' ignorado: não é indicação (' + naoIndicacao[id] + ')'); return }
+    if (fonte === 'tela' && !telaDoFunil()) { dbg(id + ' ignorado: card de outro funil na tela'); return }
     var m = memo[id]
     if (m && FINAIS[m.estado]) { desenharSelo(id); return }
-    emAndamento[id] = true
     var criado = (incoming[id] && incoming[id].criado) || (m && m.criado) || 0
+    // Indicação antiga parada em Incoming (já passou da janela): ignora em silêncio
+    if (criado && paraLocal(criado + CFG.LIBERACAO_MS + margem()) + CFG.JANELA_MS + 60000 < now()) {
+      if (!m || m.estado !== 'expirado') { marcar(id, { visto: now(), criado: criado, estado: 'expirado' }); dbg(id + ' é antiga (criada ' + new Date(criado).toLocaleString('pt-BR') + '), ignorada') }
+      return
+    }
+    emAndamento[id] = true
     marcar(id, { visto: (m && m.visto) || now(), criado: criado, estado: 'avaliando' })
     registrarDiag(id, 'detectado', fonte)
     var el = cardDe(id)
     if (el) registrarDiag(id, 'html', el.outerHTML)
-    log('👀', 'detectado ' + id + ' via ' + fonte + ' · ' + (criado ? 'criado ' + hora(criado) : 'sem created_at, conta da detecção') + ' · liberação esperada ' + hora(baseDe(id) + liberacaoEsperada()))
+    var libera = horaDisparo(id)
+    log('👀', 'detectado ' + id + ' via ' + fonte + ' · ' + (criado ? 'criado ' + new Date(criado).toLocaleString('pt-BR') : 'sem created_at, conta da detecção') + ' · aceita às ' + (libera ? hora(libera) : '?'))
     agendar(now() + 1500, function () { avaliar(id) })
   }
 
@@ -619,28 +735,32 @@ var FiltroIndicacao = (function () {
     if (!(raiz instanceof HTMLElement)) return
     var els = raiz.classList && raiz.classList.contains('pipeline-unsorted__item') ? [raiz] : []
     raiz.querySelectorAll && raiz.querySelectorAll('.pipeline-unsorted__item').forEach(function (e) { els.push(e) })
-    els.forEach(function (e) { var id = idDo(e); if (id) { registrar(id, 'tela'); desenharSelo(id) } })
+    els.forEach(function (e) {
+      var id = idDo(e)
+      if (!id) return
+      // 1ª vez que o card aparece na tela = o lead já existe: base segura dos 300s
+      if (telaDoFunil() && (!memo[id] || !memo[id].vistoTela)) {
+        memo[id] = Object.assign({}, memo[id] || {}, { vistoTela: now(), atualizado: now() }); salvar()
+      }
+      registrar(id, 'tela'); desenharSelo(id)
+    })
   }
-  /** Mudança DENTRO de um card em sondagem = talvez a Kommo liberou: tenta na hora. */
-  var ultimoGatilho = {}
-  function gatilhoDoCard(node) {
+  /** Mudança dentro do card: guarda o HTML no relatório (NÃO dispara aceite: aceite cedo queima o lead). */
+  function capturarCard(node) {
     var el = node && (node.nodeType === 1 ? node : node.parentElement)
     var card = el && el.closest && el.closest('.pipeline-unsorted__item')
     if (!card || (el.closest && el.closest('.cg-indicacao-selo'))) return
     var id = idDo(card)
-    if (!id || !acordar[id]) return
-    registrarDiag(id, 'html', card.outerHTML)
-    if (now() - (ultimoGatilho[id] || 0) < 1000) return
-    ultimoGatilho[id] = now()
-    dbg('card ' + id + ' mudou: tentativa imediata')
-    acordar[id]()
+    if (id && memo[id] && !FINAIS[memo[id].estado]) registrarDiag(id, 'html', card.outerHTML)
   }
   var observer = new MutationObserver(function (ms) {
     ms.forEach(function (m) {
       m.addedNodes.forEach(varrer)
-      gatilhoDoCard(m.target)
+      if (CFG.DIAGNOSTICO) capturarCard(m.target)
     })
   })
+  // Cards que JÁ estavam na tela quando o script carregou apareceram antes:
+  // a hora de agora é tarde demais como base (seguro, só mais lento), então vale.
   observer.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true, attributeFilter: ['class', 'disabled', 'data-status', 'style'] })
   varrer(document.body)
 
@@ -656,6 +776,8 @@ var FiltroIndicacao = (function () {
 
   // Retoma o que ficou no meio antes do reload e reenvia avisos pendentes ao agente
   Object.keys(memo).forEach(function (id) {
+    // Aceito antes do reload: nunca reaceita, só termina a conferência
+    if (memo[id].estado === 'conferindo' || memo[id].estado === 'aceitando') { emAndamento[id] = true; agendar(now() + 2000, function () { conferir(id, typeof memo[id].offsetAceite === 'number' ? memo[id].offsetAceite : null, 1) }); return }
     if (!FINAIS[memo[id].estado]) registrar(id, 'memória')
     else if (memo[id].estado === 'aceito' && memo[id].avisoPendente && now() - memo[id].atualizado < 2 * 3600 * 1000) avisarAgente(id)
   })
@@ -686,12 +808,13 @@ var FiltroIndicacao = (function () {
     },
     /** copy(__INDICACOES__.relatorio()) e cole para o suporte */
     relatorio: function () {
-      return JSON.stringify({ versao: VERSAO, gerado: new Date().toISOString(), url: location.pathname, apiSessaoOk: apiSessaoOk, liberacaoEsperadaMs: liberacaoEsperada(), aprendizado: aprendizado, cfg: CFG, leads: memo, diag: diag }, null, 1)
+      return JSON.stringify({ versao: VERSAO, gerado: new Date().toISOString(), url: location.pathname, apiSessaoOk: apiSessaoOk, difServidorMs: Math.round(difServidor()), relogioIntervaloMs: relogioLo === null ? null : [Math.round(relogioLo), Math.round(relogioHi)], amostrasRelogio: amostrasRelogio.length, margemMs: margem(), aprendizado: aprendizado, cfg: CFG, leads: memo, diag: diag }, null, 1)
     },
     esquecer: function (id) { delete memo[id]; delete diag[id]; salvar(); gravar(DIAG_KEY, diag) },
-    zerarAprendizado: function () { aprendizado.sucessos = []; salvar() },
+    zerarMargem: function () { aprendizado = { margem: CFG.MARGEM_MS, validosSeguidos: 0, historico: [] }; salvar() },
+    relogio: function () { return { difServidorMs: Math.round(difServidor()), intervaloMs: relogioLo === null ? null : [Math.round(relogioLo), Math.round(relogioHi)], amostras: amostrasRelogio.length } },
   }
 
-  log('🚀', 'v' + VERSAO + ' ativo · modo ' + CFG.MODO + ' · filtro ' + CFG.FILTRO_MODO + ' · liberação esperada ' + seg(liberacaoEsperada()) + ((aprendizado.sucessos || []).length ? ' (aprendida de ' + aprendizado.sucessos.length + ' aceites)' : ''))
+  log('🚀', 'v' + VERSAO + ' ativo · modo ' + CFG.MODO + ' · filtro ' + CFG.FILTRO_MODO + ' · aceita 300s depois de o lead chegar (tela ou created_at, o que for mais cedo e seguro) + ' + margem() + ' ms')
   log('💡', 'parar: __INDICACOES__.stop() · testar filtro: __INDICACOES__.testar("Comment: ...") · relatório: copy(__INDICACOES__.relatorio())')
 })();

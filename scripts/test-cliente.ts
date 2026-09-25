@@ -17,9 +17,10 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   // ---------------- Filtro de teste (fonte única) ----------------
   const { extrairComentario, classificarTeste } = await import('../lib/indicacao')
   const teste = (c: string, modo: 'inteligente' | 'estrito' = 'inteligente') => classificarTeste(c, modo).teste
-  const BLOQUEIA = ['teste', 'Teste', 'TESTE 123', 'test', 'testing lead', 'Lead de teste', 'lead teste, favor desconsiderar',
+  const BLOQUEIA = ['TESTE TESTE TESTE NÃO ACEITAR!!!!!!!!', 'NAÕ ACEITAR!!!! TESTE LEAD TESTEEE TEST TEST', 'teste', 'Teste', 'TESTE 123', 'test', 'testing lead', 'Lead de teste', 'lead teste, favor desconsiderar',
     'isso é um teste', 'apenas um teste', 'this is a test', 'teste teste', 'teste de integração', 'asdf', 'qwerty', 'Por favor ignorar este lead']
-  const PASSA = ['Preciso organizar o funil de vendas e integrar o WhatsApp', 'Estou no período de teste do Kommo e preciso de ajuda para configurar',
+  const PASSA = ['Indicações', 'Valor justo de implementeção', 'Quero alguem para me dar suporte para entender como funciona a plataforma',
+    'cadastro mais detalhado dos clientes datas importantes preferências e historico de compras atendimento instantâneo com modo ia','Preciso organizar o funil de vendas e integrar o WhatsApp', 'Estou no período de teste do Kommo e preciso de ajuda para configurar',
     'Quero testar a integração com o WhatsApp antes de assinar', 'Tenho uma conta de teste e quero implantar para 5 vendedores',
     'Preciso de atestado de capacidade técnica', 'Minha contestação de cobrança', 'Necesito ayuda para configurar mi embudo',
     'We need help setting up Kommo for our sales team']
@@ -35,6 +36,12 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   eq('extrai Comentário:', extrairComentario('Comentário: preciso de ajuda'), 'preciso de ajuda')
   eq('extrai de JSON', extrairComentario('{"name":"Ana","comment":"Quero automatizar","phone":"1"}'), 'Quero automatizar')
   eq('sem marcador = null', extrairComentario('Nome: Ana'), null)
+  // Formato REAL da nota da indicação (lead 20751547, 25/09/2026)
+  const NOTA = 'Country: Brazil\nCluster: LATAM\nLanguages: Portuguese\nIndustry: Retail &amp; ecommerce\nComment: cadastro mais detalhado dos clientes \ndatas importantes \npreferências e historico de compras \natendimento instantâneo com modo ia\n\n\npós vendas , aniversário, casamento \natendimento humanizado padrão joalheria'
+  eq('nota real: Comment de várias linhas', extrairComentario(NOTA), 'cadastro mais detalhado dos clientes datas importantes preferências e historico de compras atendimento instantâneo com modo ia pós vendas , aniversário, casamento atendimento humanizado padrão joalheria')
+  const { extrairContexto, marcaDeInvalido } = await import('../lib/indicacao')
+  eq('nota real: contexto', extrairContexto(NOTA), { pais: 'Brazil', idiomas: 'Portuguese', segmento: 'Retail & ecommerce' })
+  eq('marca de inválido', [marcaDeInvalido('The leads is no longer available'), marcaDeInvalido('The leads has already been accepted by other partners'), marcaDeInvalido('O Lead respondeu sua mensagem')], ['cedo', 'outros', null])
 
   // ---------------- Userscript: build atualizado e MESMA regra no navegador ----------------
   const { buildUserscript, USERSCRIPT_PATH } = await import('./build-userscript')
@@ -45,8 +52,9 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   vm.runInNewContext(`${bloco}\nthis.FiltroIndicacao = FiltroIndicacao`, sandbox)
   const divergentes = [...BLOQUEIA, ...PASSA].filter(c => sandbox.FiltroIndicacao!.classificarTeste(c, 'inteligente').teste !== teste(c))
   eq('userscript e servidor decidem igual', divergentes, [])
-  eq('userscript parte de 5 min e aprende a liberação real', [/LIBERACAO_MS: 5 \* 60 \* 1000/.test(src), /APRENDER: true/.test(src), /MODO: 'automatico'/.test(src)], [true, true, true])
+  eq('userscript: 5 min + margem ajustável, automático', [/LIBERACAO_MS: 5 \* 60 \* 1000/.test(src), /AJUSTAR_MARGEM: true/.test(src), /MODO: 'automatico'/.test(src)], [true, true, true])
   eq('userscript entende as mensagens da Kommo', ['no longer available', 'already been accepted', 'requested lead is not found'].every(m => src.includes(m)), true)
+  eq('userscript: sem sonda antes da liberação, relógio do servidor, só o funil 4338500', [!/SONDA_|RAJADA_/.test(src), /amostrarRelogio/.test(src), /PIPELINE_ID: 4338500/.test(src), /CATEGORIAS_IGNORADAS: \['chats', 'mail', 'sip'\]/.test(src)], [true, true, true, true])
 
   // ---------------- Entrada: webhook da Kommo e userscript ----------------
   const { parseEntrada } = await import('../api/novo-lead')
@@ -76,6 +84,7 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   eq('início: sem telefone', decidirInicio({ ...base, telefones: [] }, cfg).acao, 'sem-telefone')
   eq('início: outra etapa', decidirInicio({ ...base, statusId: 1 }, cfg).acao, 'fora-da-entrada')
   eq('início: outro funil', decidirInicio({ ...base, pipelineId: 11 }, cfg).acao, 'fora-da-entrada')
+  eq('início: aceite inválido NÃO inicia (vence tudo menos humano)', [decidirInicio({ ...base, invalido: 'cedo' }, cfg).acao, decidirInicio({ ...base, invalido: 'outros', telefones: [] }, cfg).acao], ['invalido', 'invalido'])
   eq('início: humano assumiu', decidirInicio({ ...base, tags: ['Atendimento-Humano'] }, cfg).acao, 'humano')
   eq('início: rampagem só TEST_LEAD_IDS', [decidirInicio(base, { ...cfg, modoInicio: 'teste' }).acao, decidirInicio({ ...base, leadId: 7 }, { ...cfg, modoInicio: 'teste' }).acao], ['rampagem', 'iniciar'])
   eq('nome de gente', [primeiroNome('ana souza'), primeiroNome('Lead #123'), primeiroNome('Empresa XPTO'), primeiroNome('')], ['Ana', '', '', ''])
@@ -89,6 +98,10 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   eq('saudação errada é trocada', garantirSaudacao('Bom dia, Ana! Aqui é a Lara.', 'Boa noite', 'Ana'), 'Boa noite, Ana! Aqui é a Lara.')
   eq('sem saudação ganha na frente', garantirSaudacao('Oi, Ana! Aqui é a Lara, da Control Gestão.', 'Boa tarde', 'Ana'), 'Boa tarde, Ana! Aqui é a Lara, da Control Gestão.')
   eq('abrir com pergunta é detectado', [abreComPergunta('Tudo bem? Aqui é a Lara.'), abreComPergunta('Boa tarde, Ana! Tudo bem?')], [true, false])
+
+  // ---------------- Equipe pequena e suporte ----------------
+  const { numeroVendedores } = await import('../lib/tools')
+  eq('nº de vendedores', [numeroVendedores('somos 6 vendedores'), numeroVendedores('só eu'), numeroVendedores('duas pessoas'), numeroVendedores('não sei')], [6, 1, 2, null])
 
   // ---------------- Roteador: porta única, sem menu ----------------
   const { rotear } = await import('../lib/router')
@@ -173,5 +186,19 @@ export default async function testesCliente(eq: Eq): Promise<number> {
     [false, true, 1, '2026-10-01T12:30:00.000Z', 'agendado', false])
   out = await runTool(ctx('e se for sexta?'), 'consultar_horarios', { preferencia: 'sexta' })
   eq('não marca segunda reunião', out.isError, true)
+
+  // Equipe pequena: sem reunião (a não ser que peça), licença pelo WhatsApp
+  w.state = { respostas: { dor: 'perco lead', decisor: 'eu', vendedores: '2', prioridade: 'este mês' } }
+  w.tags = new Set(['gate'])
+  out = await runTool(ctx('somos 2'), 'consultar_horarios', { preferencia: '' })
+  eq('equipe de 2: não oferece reunião', [out.isError, /LICENÇA/.test(out.content)], [true, true])
+  out = await runTool(ctx('somos 2, mas quero uma reunião com o especialista'), 'consultar_horarios', { preferencia: '' })
+  eq('equipe de 2 que PEDE reunião: oferece', out.isError, false)
+  w.state = { respostas: { vendedores: '2' } }
+  out = await runTool(ctx('fechado, quero o Advanced para 2 usuários'), 'finalizar_atendimento', { motivo: 'venda_licenca', resumo: 'Advanced, 2 usuários' })
+  eq('venda de licença finaliza com a tag venda-licenca', [out.isError, w.state.finalizado?.motivo, w.tags.has('venda-licenca'), w.tags.has('gate')], [false, 'venda_licenca', true, false])
+  w.state = {}; w.tags = new Set(['gate'])
+  out = await runTool(ctx('meu whatsapp caiu e a mensagem não está enviando'), 'finalizar_atendimento', { motivo: 'suporte', evidencia: 'meu whatsapp caiu', resumo: 'suporte técnico' })
+  eq('suporte técnico finaliza com a tag indicacao-suporte', [out.isError, w.tags.has('indicacao-suporte')], [false, true])
   return 0
 }

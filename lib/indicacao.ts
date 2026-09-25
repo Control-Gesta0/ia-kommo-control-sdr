@@ -25,3 +25,28 @@ export function acharComentario(textos: Array<string | null | undefined>): strin
   }
   return null
 }
+
+export interface ContextoIndicacao { pais?: string; idiomas?: string; segmento?: string }
+
+/**
+ * A nota da indicação traz, antes do Comment, linhas "Country: Brazil",
+ * "Languages: Portuguese", "Industry: Retail & ecommerce". Viram contexto para a
+ * Lara (segmento para o rapport, idioma da conversa).
+ */
+export function extrairContexto(texto: string): ContextoIndicacao {
+  const t = String(texto || '').replace(/&amp;/g, '&')
+  const campo = (re: RegExp) => (t.match(re)?.[1] || '').trim().slice(0, 80) || undefined
+  return {
+    pais: campo(/(?:^|\n)\s*Country:\s*([^\n]+)/i),
+    idiomas: campo(/(?:^|\n)\s*Languages?:\s*([^\n]+)/i),
+    segmento: campo(/(?:^|\n)\s*Industry:\s*([^\n]+)/i),
+  }
+}
+
+/** Marcas que a Kommo põe no lead quando o aceite não valeu. */
+export function marcaDeInvalido(texto: string): 'cedo' | 'outros' | null {
+  const t = String(texto || '').toLowerCase()
+  if (t.includes('no longer available')) return 'cedo'
+  if (t.includes('already been accepted') || t.includes('accepted by other partners')) return 'outros'
+  return null
+}

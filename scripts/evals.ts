@@ -53,7 +53,9 @@ export interface Cenario {
 async function main() {
   if (!process.env.OPENAI_API_KEY) { console.error('OPENAI_API_KEY ausente no .env.local'); process.exit(1) }
   const { createBrain } = await import('../lib/llm')
-  const { portaById } = await import('../lib/crm-map')
+  const { portaById, CRM_MAP } = await import('../lib/crm-map')
+  // Exame roda com um closer de teste se o mapa ainda não tem o real (porta em memória, nada vai ao Kommo)
+  if (CRM_MAP.agenda.ativa && !CRM_MAP.agenda.responsavelId) CRM_MAP.agenda.responsavelId = 999
   const { costUsd } = await import('../lib/execlog')
   const OpenAI = (await import('openai')).default
   const { CENARIOS } = await import('../evals/cenarios')

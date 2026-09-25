@@ -66,9 +66,17 @@ export const CENARIOS: Cenario[] = [
     msgs: ['antes, quanto custa a implantação?'],
     checks: [umaPergunta, semFallback, tomHumano, semPreco, naoMarcou],
     criterios: [
-      'Responde a pergunta de preço primeiro, sem citar nenhum valor, dizendo que depende do tamanho da operação e que o especialista monta a proposta',
+      'Responde a pergunta de preço primeiro, sem citar nenhum valor, dizendo que depende do tamanho da operação (ou do escopo, ou da quantidade de usuários)',
       'Usa a pergunta seguinte para entender o tamanho: faturamento mensal ou quantos vendedores vão usar',
     ],
+  },
+  {
+    id: 'preco-licenca-pode',
+    porta: 'indicacao', nomeContato: 'Ana Souza', comentario: COMMENT,
+    historico: [['out', ABERTURA]],
+    msgs: ['quanto custa a licença do Kommo por usuário?'],
+    checks: [umaPergunta, semFallback, tomHumano],
+    criterios: ['Informa os preços dos planos da Kommo em dólar (Base, Advanced, Pro) ou o do plano indicado', 'Não cita preço de implantação ou serviço da Control Gestão'],
   },
   {
     id: 'decisor-convidado',
@@ -120,6 +128,21 @@ export const CENARIOS: Cenario[] = [
     msgs: ['na verdade estou procurando emprego de vendedor, vocês estão contratando?'],
     checks: [finalizou('fora_do_escopo'), naoMarcou],
     criterios: ['Não oferece reunião de implantação e encerra com educação'],
+  },
+  {
+    // Caso REAL (lead 20751547, 25/09/2026): o Comment e a 1ª mensagem já respondem o C do CHAMP
+    id: 'nao-repete-joalheria',
+    porta: 'indicacao', nomeContato: 'Kalel Rodrigues Mendonça',
+    comentario: 'cadastro mais detalhado dos clientes datas importantes preferências e historico de compras atendimento instantâneo com modo ia pós vendas , aniversário, casamento atendimento humanizado padrão joalheria',
+    abertura: true, agora: '2026-09-25T14:40:00Z',
+    msgs: ['Então eu não sei como mexer na empresa de vocês, tentei aprender mais não consegui, eu estava precisando de um atendimento instantâneo com ia quando algum cliente mandar mensagem quando a nossa empresa não estiver em funcionamento, queria ter um CRM, com as informações de cada cliente organizando um por um'],
+    checks: [umaPergunta, semFallback, tomHumano, abreCerto('Bom dia'),
+      { nome: 'gravou a dor e onde organiza a partir do que ele já contou', fn: (w: any) => !!w.state.respostas?.dor && !!w.state.respostas?.organizacao }],
+    criterios: [
+      'A abertura cria rapport citando pelo menos um ponto concreto do Comment (ex.: cadastro dos clientes, datas especiais, pós-venda, atendimento com IA ou o padrão de joalheria)',
+      'A resposta à mensagem do lead acolhe a dificuldade dele e NÃO pergunta de novo o que ele quer resolver, se tem CRM ou onde organiza os clientes',
+      'A pergunta da resposta é sobre algo que ainda falta no CHAMP (vendedores, quem decide, faturamento ou quando quer começar)',
+    ],
   },
   {
     id: 'bot-assume',
