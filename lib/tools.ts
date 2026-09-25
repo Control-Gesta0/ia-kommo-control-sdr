@@ -29,6 +29,8 @@ export interface LeadPort {
   criarReuniao(r: { ini: number; fim: number; texto: string }): Promise<{ id: string; link: string }>
   /** tarefa simples para o closer (ex.: preencher o link da reunião) */
   criarTarefaCloser(texto: string): Promise<void>
+  /** WhatsApp pessoal do closer (reunião marcada). Opcional: sem ele, não avisa */
+  avisarCloser?(texto: string): Promise<void>
   /** agenda os lembretes da reunião para o cliente (24h e 1h antes) */
   agendarLembretes(r: { ini: number; taskId: string }): Promise<void>
   getState(): Promise<LeadState>
@@ -459,6 +461,18 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
           `⏰ Lembretes para o cliente: ${CRM_MAP.lembretes.horasAntes.map(h => `${h}h antes`).join(' e ')}`,
         ])).catch(() => undefined)
         if (CRM_MAP.etapaAgendado.id) await avancar(port, 'agendado', `Reunião marcada para ${slot.label}`)
+        if (port.avisarCloser) {
+          const lead = await port.getLead()
+          await port.avisarCloser([
+            '📅 *Nova reunião marcada pela Lara*',
+            `🗓️ ${slot.label.replace(/^./, c => c.toUpperCase())}`,
+            convidado && `👥 Decisor convidado: ${convidado}`,
+            link && `🔗 ${link}`,
+            resumoCampos && `📋 ${resumoCampos}`,
+            state.comentario && `📝 Pedido: "${state.comentario.slice(0, 200)}"`,
+            `👉 https://controlgestao.kommo.com/leads/detail/${lead.id}`,
+          ].filter(Boolean).join('\n')).catch(e => console.warn('[aviso closer]', e))
+        }
         await aplicarFinalizacao(ctx, 'agendado', `Reunião marcada para ${slot.label}.${convidado ? ` Decisor convidado: ${convidado}.` : ''} ${resumoCampos}`)
         return ok(`Reunião marcada: ${slot.label} (30 a 45 min). Confirme ao lead o dia e a hora com essas palavras${link ? `, mande o link da reunião ${link} pedindo que ele confira se abre certinho` : ', diga que o especialista manda o link da reunião por aqui'}${convidado ? `, reforce que ${convidado} participa junto` : ''} e NÃO faça pergunta.`, { handoff: true })
       }

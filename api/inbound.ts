@@ -6,7 +6,7 @@ import { CONFIG } from '../lib/config'
 import { logExec } from '../lib/execlog'
 import { appendMessage, isEchoOfSent, markHumanSpoke, seenMessage } from '../lib/history'
 import { mediaKind, mediaToText } from '../lib/media'
-import { isResetCommand, resetLead } from '../lib/reset'
+import { podeResetar, resetLead } from '../lib/reset'
 import { cancelarFollowup } from '../lib/followup'
 import { sendReply } from '../lib/transport'
 
@@ -91,7 +91,7 @@ async function ingest(msgs: InboundMsg[], webhookId: string): Promise<void> {
         continue
       }
 
-      if (isResetCommand(m.leadId, text)) {
+      if (await podeResetar(m.leadId, text)) {
         await resetLead(m.leadId)
         await sendReply(m.leadId, '🔄 Teste reiniciado. Mande a primeira mensagem como se fosse um lead novo.')
         await logExec({ tipo: 'reset', leadId: m.leadId, detalhe: 'reset de teste' })

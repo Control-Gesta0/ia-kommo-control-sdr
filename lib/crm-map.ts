@@ -177,6 +177,8 @@ export const CRM_MAP = {
    * (ou "não sei" dito pelo lead). Money vale por faturamento OU nº de vendedores.
    */
   exigirAntesDeAgendar: [['dor', 'organizacao'], ['decisor'], ['faturamento', 'vendedores'], ['prioridade']] as string[][],
+  /** Aviso de reunião marcada no WhatsApp pessoal do closer: mensagem pelo Salesbot no lead dele (0 = desligado) */
+  avisoCloser: { leadId: 20755415 },  // "Rodrigo Pessoal" (+55 11 97606-1468), funil ATENDIMENTO CONTROL GESTAO
   /** etapa para onde `agendar_reuniao` move o lead DEPOIS da tarefa criada (id 0 = não move) */
   etapaAgendado: { id: 81193772, pipelineId: 4338500, name: 'APRESENTAÇÃO agendada' } as Etapa,
   /** campo date_time "Reunião" (epoch em SEGUNDOS). 0 = não grava */

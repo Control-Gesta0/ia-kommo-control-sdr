@@ -4,6 +4,7 @@ import { agendarLembretes } from './followup'
 import { criarEventoGoogle, googleLeitura, googleOAuth, googleOcupados } from './google'
 import { addLeadNote, addLeadTags, contactEmails, createTask, getContact, getLead, leadTags, listOpenTasks, removeLeadTags, updateLeadFields, updateLeadStatus, type KommoFieldValue } from './kommo'
 import { getState, patchState } from './state'
+import { sendReply } from './transport'
 import type { LeadPort, LeadView } from './tools'
 
 /** Porta de produção: Kommo + Redis. Relê o lead depois de toda escrita. */
@@ -38,6 +39,14 @@ export function kommoPort(leadId: number): LeadPort {
       await createTask({ leadId, responsibleUserId: CRM_MAP.agenda.responsavelId, taskTypeId: 1, text: texto, completeTill: Math.floor(Date.now() / 1000) + 2 * 3600, duration: 0 })
     },
     agendarLembretes: r => agendarLembretes(leadId, r.ini, r.taskId),
+    async avisarCloser(texto) {
+      const alvo = CRM_MAP.avisoCloser.leadId
+      if (!alvo || alvo === leadId) return
+      const lead = await getLead(leadId).catch(() => null)
+      const contatoId = (lead?._embedded?.contacts || []).find(c => c.is_main)?.id
+      const nome = (contatoId ? (await getContact(contatoId).catch(() => null))?.name : '') || lead?.name
+      await sendReply(alvo, nome ? texto.replace('*Nova reunião marcada pela Lara*', `*Nova reunião marcada pela Lara*\n👤 ${nome}`) : texto)
+    },
     async criarReuniao(r) {
       const cfg = CRM_MAP.agenda
       if (googleOAuth()) {

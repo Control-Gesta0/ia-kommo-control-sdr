@@ -191,6 +191,7 @@ export default async function testesCliente(eq: Eq): Promise<number> {
     criarReuniao: async (x: any) => { w.reunioes.push(x); return { id: `t${w.reunioes.length}`, link: w.meet || '' } },
     agendarLembretes: async (x: any) => { w.lembretes = x },
     criarTarefaCloser: async (t: string) => { w.tarefas = [...(w.tarefas || []), t] },
+    avisarCloser: async (t: string) => { w.avisos = [...(w.avisos || []), t] },
     getState: async () => structuredClone(w.state),
     patchState: async (p: Record<string, unknown>) => Object.assign(w.state, p),
   }
@@ -235,6 +236,7 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   out = await runTool(ctxG('9h fica ótimo'), 'agendar_reuniao', { horario: 'quinta 01/10 às 9h' })
   eq('Meet do Google: link no campo e na confirmação, sem tarefa de link', [out.isError, escritos.some(v => v.field_id === CRM_MAP.linkReuniaoFieldId && v.values[0].value === w.meet), out.content.includes(w.meet), (w.tarefas || []).length],
     [false, true, true, 0])
+  eq('reunião avisa o Rodrigo no WhatsApp pessoal com data, link e card', [/Nova reunião marcada/.test(w.avisos?.at(-1) || ''), (w.avisos?.at(-1) || '').includes('01/10 às 9h'), (w.avisos?.at(-1) || '').includes(w.meet), /leads\/detail\/1$/.test(w.avisos?.at(-1) || '')], [true, true, true, true])
   eq('reunião: tag reuniao-agendada e nota visual com data e link', [w.tags.has('reuniao-agendada'), w.notes.some((n: string) => n.startsWith('🤖 LARA · Reunião agendada') && n.includes('01/10 às 9h') && n.includes(w.meet))], [true, true])
   w.meet = ''
 
