@@ -4,8 +4,9 @@ import crypto from 'crypto'
 import { CONFIG } from '../lib/config'
 import { CRM_MAP } from '../lib/crm-map'
 import { extrairComentario } from '../lib/indicacao'
-import { guardarComentarioIncoming, iniciarConversa } from '../lib/iniciar'
-import { sleep } from '../lib/kommo'
+import { guardarComentarioIncoming, iniciarConversa, iniciarPorTag } from '../lib/iniciar'
+import { getLead, leadTags, sleep } from '../lib/kommo'
+import { k, redis } from '../lib/redis'
 
 /**
  * Entrada do lead de indicação (idempotente). NÃO aceita lead: o aceite é só no
@@ -31,15 +32,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const body = (typeof req.body === 'string' ? tryJson(req.body) : req.body) || {}
   const ev = parseEntrada(body)
+  // Diagnóstico (1h): último payload de lead alterado, para conferir o formato que a Kommo manda
+  if (doWebhook && Object.keys(achatar(body)).some(k => k.startsWith('leads['))) await redis.set(k('diag', 'webhook-lead'), JSON.stringify(achatar(body)).slice(0, 4000), { ex: 3600 }).catch(() => undefined)
   if (ev.accountId && ev.accountId !== CONFIG.kommoAccountId) return res.status(200).json({ ok: false, reason: 'outra conta' })
 
   waitUntil((async () => {
     for (const [leadId, comentario] of ev.comentariosIncoming) await guardarComentarioIncoming(leadId, comentario)
+    for (const leadId of ev.verificar) {
+      const lead = await getLead(leadId).catch(() => null)
+      if (lead && leadTags(lead).map(t => t.toLowerCase()).includes(CONFIG.gateTag.toLowerCase())) ev.iniciar.push({ leadId, comentario: null, origem: 'webhook:tag' })
+    }
+    // Uma tentativa por lead a cada 10 min pelo webhook (as próprias escritas da Lara geram update_lead)
+    const lista = []
+    for (const x of ev.iniciar) {
+      if (doUserscript || (await redis.set(k('tentativa-inicio', x.leadId), 1, { nx: true, ex: 600 })) === 'OK') lista.push(x)
+    }
+    ev.iniciar = lista
     if (!ev.iniciar.length) return
     // Webhook: dá alguns segundos para o userscript chegar com o Comment lido na tela
-    if (!doUserscript) await sleep(8000)
+    if (!doUserscript) await sleep(ev.iniciar.every(x => x.origem === 'webhook:tag') ? 3000 : 8000)
     for (const { leadId, comentario, origem } of ev.iniciar) {
-      const r = await iniciarConversa(leadId, doUserscript ? `userscript` : origem, comentario)
+      const r = origem === 'webhook:tag' ? await iniciarPorTag(leadId) : await iniciarConversa(leadId, doUserscript ? `userscript` : origem, comentario)
       console.log(`[novo-lead] lead ${leadId} via ${origem}: ${r.acao} · ${r.detalhe}`)
     }
   })())
@@ -67,10 +80,12 @@ export interface Entrada {
   accountId: string
   iniciar: Array<{ leadId: number; comentario: string | null; origem: string }>
   comentariosIncoming: Array<[number, string]>
+  /** lead na etapa de entrada mas o payload não trouxe as tags: conferir lendo o lead */
+  verificar: number[]
 }
 
-export function parseEntrada(raw: Record<string, unknown>, statusEntrada = CRM_MAP.entrada.statusId): Entrada {
-  const out: Entrada = { accountId: '', iniciar: [], comentariosIncoming: [] }
+export function parseEntrada(raw: Record<string, unknown>, statusEntrada = CRM_MAP.entrada.statusId, gate = CONFIG.gateTag.toLowerCase()): Entrada {
+  const out: Entrada = { accountId: '', iniciar: [], comentariosIncoming: [], verificar: [] }
   // Userscript (JSON simples)
   if (raw.leadId !== undefined) {
     const leadId = Number(raw.leadId)
@@ -101,14 +116,18 @@ export function parseEntrada(raw: Record<string, unknown>, statusEntrada = CRM_M
       if (k2.startsWith(`unsorted[delete][${m[1]}][accept_result][leads]`) || /^accept_result\[leads\]\[\d+\]$/.test(k2)) add(Number(v2), 'webhook:aceite')
     }
   }
-  // Mudança de etapa (o aceite leva o lead para a etapa de entrada)
-  // (status_lead chega para TODO lead da conta: filtra pela etapa já no payload)
+  // Lead alterado / mudou de etapa (update_lead, status_lead): a TAG da Lara é o gatilho.
+  // Chega para TODO lead da conta: filtra pela etapa de entrada e pela tag já no payload.
+  // Sem tags no payload: vai para `verificar` (o handler lê o lead e confere a tag).
   for (const [key, v] of Object.entries(f)) {
-    const m = key.match(/^leads\[(status|add)\]\[(\d+)\]\[id\]$/)
+    const m = key.match(/^leads\[(status|add|update)\]\[(\d+)\]\[id\]$/)
     if (!m) continue
-    const st = Number(f[`leads[${m[1]}][${m[2]}][status_id]`] || 0)
-    if (st && st !== statusEntrada) continue
-    add(Number(v), 'webhook:etapa')
+    const pref = `leads[${m[1]}][${m[2]}]`
+    const st = Number(f[`${pref}[status_id]`] || 0)
+    const tags = Object.keys(f).filter(k => new RegExp(`^${pref.replace(/[[\]]/g, '\\$&')}\\[tags\\]\\[\\d+\\]\\[name\\]$`).test(k)).map(k => f[k].trim().toLowerCase())
+    const temTagsNoPayload = Object.keys(f).some(k => k.startsWith(`${pref}[tags]`))
+    if (tags.includes(gate)) add(Number(v), 'webhook:tag')
+    else if (st === statusEntrada && !temTagsNoPayload && !out.verificar.includes(Number(v))) out.verificar.push(Number(v))
   }
   return out
 }

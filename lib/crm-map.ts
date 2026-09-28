@@ -231,6 +231,9 @@ export const CRM_MAP = {
   etapasProtegidas: [142, 143] as number[],
 
   /** abertura sem LLM (se o modelo falhar ou reprovar na trava). {saudacao} = "Bom dia"; {nome} = ", Ana" ou vazio */
+  /** abertura quando a tag é colocada à mão num lead que não veio de indicação */
+  aberturaDireta: '{saudacao}{nome}! Aqui é a Lara, da Control Gestão, parceira oficial da Kommo. Tô passando pra entender como está a organização do atendimento e das vendas de vocês e ver como a gente pode ajudar. Me conta, o que vocês mais gostariam de organizar hoje?',
+
   aberturaFixa: '{saudacao}{nome}! Aqui é a Lara, da Control Gestão, parceira oficial da Kommo. A Kommo me passou o seu pedido e eu vou te ajudar por aqui. Pra eu entender o cenário de vocês, hoje os leads ficam organizados onde?',
 
   textoSeguro: 'Entendi. Me conta um pouco de como vocês trabalham os leads hoje?',

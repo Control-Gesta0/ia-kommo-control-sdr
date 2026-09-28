@@ -3,8 +3,8 @@ import { brain } from './agent'
 import { CONFIG } from './config'
 import { CRM_MAP, portaById } from './crm-map'
 import { logExec } from './execlog'
-import { appendMessage } from './history'
-import { acharComentario, extrairContexto, foraDoIdioma, marcaDeInvalido, segmentoPt, type Classificacao, type ContextoIndicacao } from './indicacao'
+import { appendMessage, getHistory } from './history'
+import { acharComentario, classificarSuporte, extrairContexto, foraDoIdioma, marcaDeInvalido, segmentoPt, type Classificacao, type ContextoIndicacao } from './indicacao'
 import { classificarIntencao } from './intencao'
 import {
   addLeadNote, addLeadTags, contactPhones, getContact, getLead, getLeadNotes, kommoGet, leadTags, textoDasNotas, textoDoLead, updateLeadFields, type KommoLead,
@@ -33,6 +33,7 @@ export type DecisaoInicio =
   | { acao: 'teste'; classificacao: Classificacao }
   | { acao: 'invalido'; motivo: string }
   | { acao: 'outro-idioma'; motivo: string }
+  | { acao: 'suporte'; motivo: string }
   | { acao: 'sem-comentario' | 'sem-telefone' | 'fora-da-entrada' | 'humano' | 'rampagem'; motivo: string }
 
 export interface FatosInicio {
@@ -45,6 +46,10 @@ export interface FatosInicio {
   invalido?: 'cedo' | 'outros' | null
   /** só atendemos em português: motivo se a indicação é de outro país/idioma */
   foraDoIdioma?: string | null
+  /** pedido de suporte básico da Kommo (não é implantação): motivo */
+  suporte?: string | null
+  /** tag da Lara colocada à mão: a decisão é do time, os filtros da indicação não bloqueiam */
+  manual?: boolean
   /** resultado do filtro de teste (regra + IA de intenção nos ambíguos) */
   classificacao: Classificacao | null
   telefones: string[]
@@ -56,7 +61,13 @@ export function decidirInicio(f: FatosInicio, cfg = {
   modoInicio: modoInicio(), testLeadIds: CONFIG.testLeadIds, entrada: CRM_MAP.entrada,
 }): DecisaoInicio {
   if (f.tags.map(t => t.toLowerCase()).includes(cfg.humanTag)) return { acao: 'humano', motivo: `tag "${cfg.humanTag}"` }
+  if (f.manual) {
+    if (!f.telefones.length) return { acao: 'sem-telefone', motivo: 'contato principal sem telefone' }
+    if (cfg.modoInicio === 'desligado') return { acao: 'rampagem', motivo: 'MODO_INICIO=desligado' }
+    return { acao: 'iniciar' }
+  }
   if (f.foraDoIdioma) return { acao: 'outro-idioma', motivo: f.foraDoIdioma }
+  if (f.suporte) return { acao: 'suporte', motivo: f.suporte }
   if (f.invalido) return { acao: 'invalido', motivo: f.invalido === 'cedo' ? 'aceito antes da liberação (The leads is no longer available)' : 'outros parceiros já tinham aceitado (already accepted by other partners)' }
   if (f.statusId !== cfg.entrada.statusId || (cfg.entrada.pipelineId && f.pipelineId !== cfg.entrada.pipelineId)) {
     return { acao: 'fora-da-entrada', motivo: `lead em ${f.pipelineId}/${f.statusId}, entrada é ${cfg.entrada.pipelineId || '*'}/${cfg.entrada.statusId}` }
@@ -98,7 +109,7 @@ async function lerIndicacao(lead: KommoLead, informado?: string | null): Promise
 
 export interface ResultadoInicio { ok: boolean; acao: string; detalhe: string }
 
-export async function iniciarConversa(leadId: number, origem: string, comentarioInformado?: string | null): Promise<ResultadoInicio> {
+export async function iniciarConversa(leadId: number, origem: string, comentarioInformado?: string | null, opts: { manual?: boolean } = {}): Promise<ResultadoInicio> {
   const t0 = Date.now()
   const chave = k('inicio', leadId)
   if ((await redis.set(chave, origem, { nx: true, ex: 30 * 86400 })) !== 'OK') {
@@ -119,12 +130,19 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
     const invalido = liberado ? null : leitura.invalido
     const idioma = foraDoIdioma(textoIndicacao, comentario || '')
     const classificacao = comentario && !invalido ? await classificarIntencao(comentario) : null
-    const d = decidirInicio({ leadId, statusId: lead.status_id, pipelineId: lead.pipeline_id, tags: leadTags(lead), comentario, classificacao, telefones, invalido, foraDoIdioma: idioma.fora ? idioma.motivo : null })
+    const sup = classificarSuporte(comentario || '')
+    const d = decidirInicio({ leadId, statusId: lead.status_id, pipelineId: lead.pipeline_id, tags: leadTags(lead), comentario, classificacao, telefones, invalido, foraDoIdioma: idioma.fora ? idioma.motivo : null, suporte: sup.suporte ? sup.motivo : null, manual: opts.manual })
 
     if (d.acao === 'outro-idioma') {
       await addLeadTags(leadId, [CRM_MAP.tags.outroIdioma])
       await addLeadNote(leadId, `✈️ Lara NÃO iniciou conversa: ${d.motivo}. A Control Gestão só atende em português.`)
       await logExec({ tipo: 'pulou', leadId, nome, detalhe: `outro idioma: ${d.motivo} · via ${origem}` })
+      return { ok: true, acao: d.acao, detalhe: d.motivo }
+    }
+    if (d.acao === 'suporte') {
+      await addLeadTags(leadId, [CRM_MAP.tags.suporte])
+      await addLeadNote(leadId, nota('NÃO iniciou conversa · suporte básico da Kommo', [`➡️ ${d.motivo}`, comentario && `✉️ Comment: "${comentario}"`, '☑️ Isso quem resolve é o suporte da própria Kommo (chat dentro da conta)']))
+      await logExec({ tipo: 'pulou', leadId, nome, detalhe: `suporte: ${d.motivo} · via ${origem}` })
       return { ok: true, acao: d.acao, detalhe: d.motivo }
     }
     if (d.acao === 'invalido') {
@@ -153,6 +171,10 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
       await logExec({ tipo: 'pulou', leadId, nome, detalhe: `${d.acao}: ${d.motivo} · via ${origem}` })
       return { ok: true, acao: d.acao, detalhe: d.motivo }
     }
+
+    // Tag à mão num lead sem indicação: abertura de contato direto (sem falar de indicação)
+    if (opts.manual) await redis.del(k('humano', leadId)) // o time passou o lead para a Lara
+    if (opts.manual && !comentario) return await iniciarDireto(leadId, lead, nome, origem, t0)
 
     const porta = portaById(CRM_MAP.menu.portaUnica)!
     const segmento = segmentoPt(contexto.segmento)
@@ -196,4 +218,57 @@ export const primeiroNome = primeiroNomeDe
 export function aberturaFixa(nome: string, agora = Date.now()): string {
   const n = primeiroNomeDe(nome)
   return CRM_MAP.aberturaFixa.replace('{saudacao}', saudacao(agora)).replace('{nome}', n ? `, ${n}` : '')
+}
+
+/** Abertura quando a tag foi colocada à mão num lead sem indicação (fixa: sem contexto, sem risco de inventar). */
+export function aberturaDireta(nome: string, agora = Date.now()): string {
+  const n = primeiroNomeDe(nome)
+  return CRM_MAP.aberturaDireta.replace('{saudacao}', saudacao(agora)).replace('{nome}', n ? `, ${n}` : '')
+}
+
+async function iniciarDireto(leadId: number, lead: KommoLead, nome: string, origem: string, t0: number): Promise<ResultadoInicio> {
+  const porta = portaById('direto')!
+  await patchState(leadId, { porta: porta.id, portaEm: t0 - 1, iniciadoEm: new Date().toISOString(), iniciadoPor: origem })
+  const texto = aberturaDireta(nome)
+  const detalhe = await sendReply(leadId, texto)
+  await appendMessage(leadId, { id: crypto.randomUUID(), dir: 'out', text: texto, ts: Date.now() })
+  const prox = await agendarFollowup(leadId, Date.now())
+  const linhas = ['✉️ Lara enviou a primeira mensagem (tag colocada pelo time)', prox && `⏭️ Próximo follow-up: ${quando(prox)} (se não responder)`]
+  const moveu = await avancar(kommoPort(leadId), 'emContato', linhas).catch(() => false)
+  if (!moveu) await addLeadNote(leadId, nota('Primeira mensagem enviada (tag colocada pelo time)', linhas.slice(1))).catch(() => undefined)
+  await logExec({ tipo: 'inicio', leadId, nome, porta: porta.id, ms: Date.now() - t0, detalhe: `${detalhe} · contato direto · via ${origem}` })
+  void lead
+  return { ok: true, acao: 'iniciou', detalhe: `contato direto · ${detalhe}` }
+}
+
+/**
+ * Tag da Lara colocada à mão (webhook update_lead ou varredura do cron): se ela
+ * ainda não falou com esse lead, manda a primeira mensagem (indicação: abertura da
+ * indicação; qualquer outro lead: abertura de contato direto). Se já falou, segue
+ * quando o lead responder.
+ */
+export async function iniciarPorTag(leadId: number, origem = 'tag-manual'): Promise<ResultadoInicio> {
+  const hist = await getHistory(leadId).catch(() => [])
+  if (hist.some(m => m.dir === 'out')) return { ok: true, acao: 'ja-conversando', detalhe: 'a Lara já falou com esse lead: segue quando ele responder' }
+  return iniciarConversa(leadId, origem, null, { manual: true })
+}
+
+/**
+ * Reserva do webhook: indicação na etapa de entrada com a tag da Lara colocada à
+ * mão (aceite manual) e sem conversa iniciada = inicia. Uma tentativa por lead por
+ * dia (lead sem Comment ou recusado não fica tentando a cada 15 min).
+ */
+export async function varrerTagManual(): Promise<string[]> {
+  const e = CRM_MAP.entrada
+  if (!CONFIG.gateTag || modoInicio() === 'desligado') return []
+  const r = await kommoGet<{ _embedded?: { leads?: KommoLead[] } }>(`/api/v4/leads?filter[statuses][0][pipeline_id]=${e.pipelineId}&filter[statuses][0][status_id]=${e.statusId}&limit=250`)
+  const feitos: string[] = []
+  for (const lead of r?._embedded?.leads || []) {
+    if (!leadTags(lead).map(t => t.toLowerCase()).includes(CONFIG.gateTag.toLowerCase())) continue
+    if (await redis.get(k('inicio', lead.id))) continue
+    if ((await redis.set(k('varredura-tag', lead.id), 1, { nx: true, ex: 86400 })) !== 'OK') continue
+    const res = await iniciarPorTag(lead.id, 'varredura-tag')
+    feitos.push(`${lead.id}: ${res.acao}`)
+  }
+  return feitos
 }

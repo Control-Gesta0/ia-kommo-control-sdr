@@ -63,8 +63,14 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   eq('webhook: Incoming lead aceito inicia', [aceite.accountId, aceite.iniciar.map(x => x.leadId)], ['9', [321]])
   const recusa = parseEntrada({ 'unsorted[delete][0][action]': 'decline', 'unsorted[delete][0][decline_result][leads][0]': '322' })
   eq('webhook: Incoming lead recusado NÃO inicia', recusa.iniciar, [])
-  const etapa = parseEntrada({ 'leads[status][0][id]': '400', 'leads[status][0][status_id]': '55438567', 'leads[status][1][id]': '401', 'leads[status][1][status_id]': '777' }, 55438567)
-  eq('webhook: só lead que ENTROU na etapa de entrada', etapa.iniciar.map(x => x.leadId), [400])
+  const etapa = parseEntrada({ 'leads[status][0][id]': '400', 'leads[status][0][status_id]': '55438567', 'leads[status][0][tags][0][name]': 'LEAD Kommo', 'leads[status][1][id]': '401', 'leads[status][1][status_id]': '777' }, 55438567, 'ia-sdr')
+  eq('webhook: lead na entrada SEM a tag da Lara não inicia', etapa.iniciar.map(x => x.leadId), [])
+  const tag = parseEntrada({ 'leads[update][0][id]': '402', 'leads[update][0][status_id]': '55438567', 'leads[update][0][tags][0][name]': 'LEAD Kommo', 'leads[update][0][tags][1][name]': 'ia-sdr', 'leads[update][1][id]': '403', 'leads[update][1][status_id]': '80884464', 'leads[update][1][tags][0][name]': 'ia-sdr' }, 55438567, 'ia-sdr')
+  eq('webhook: lead com a tag ia-sdr (qualquer etapa) vai para o início pela tag', tag.iniciar.map(x => [x.leadId, x.origem]), [[402, 'webhook:tag'], [403, 'webhook:tag']])
+  const semTags = parseEntrada({ 'leads[update][0][id]': '404', 'leads[update][0][status_id]': '55438567' }, 55438567, 'ia-sdr')
+  eq('webhook: payload sem tags vai para conferência', [semTags.iniciar, semTags.verificar], [[], [404]])
+  const { perguntaDuplaPermitida } = await import('../lib/guards')
+  eq('pergunta dupla só a do roteiro (onde + quantos)', [perguntaDuplaPermitida('Hoje vocês organizam os leads onde: WhatsApp, planilha ou outro CRM? E quantos vendedores usariam o sistema?'), checkReply('Qual o faturamento? E quem decide?').some(v => v.regra === 'mais de uma pergunta')], [true, true])
   const add = parseEntrada({ unsorted: { add: [{ uid: 'u2', lead_id: '500', source_data: { data: { comment: { name: 'Comment', value: 'Quero integrar o site' } } } }] } })
   eq('webhook: Incoming lead adicionado guarda o Comment', add.comentariosIncoming, [[500, 'Quero integrar o site']])
   const add2 = parseEntrada({ 'unsorted[add][0][lead_id]': '501', 'unsorted[add][0][source_data][text]': 'Name: Ana\nComment: teste' })
@@ -76,6 +82,13 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   const base = { leadId: 1, statusId: 55438567, pipelineId: 10, tags: [] as string[], comentario: 'Quero organizar o funil' as string | null, classificacao: cls('Quero organizar o funil') as ReturnType<typeof cls> | null, telefones: ['+5511999999999'] }
   const cfg = { humanTag: 'atendimento-humano', exigirComentario: true, modoInicio: 'ligado' as const, testLeadIds: [7], entrada: { pipelineId: 10, statusId: 55438567, name: 'x' } }
   eq('início: lead real inicia', decidirInicio(base, cfg).acao, 'iniciar')
+  eq('tag à mão: a decisão do time passa por cima dos filtros da indicação', [
+    decidirInicio({ ...base, manual: true, comentario: 'teste', classificacao: cls('teste') }, cfg).acao,
+    decidirInicio({ ...base, manual: true, invalido: 'outros' }, cfg).acao,
+    decidirInicio({ ...base, manual: true, comentario: null, classificacao: null, statusId: 999 }, cfg).acao,
+    decidirInicio({ ...base, manual: true, telefones: [] }, cfg).acao,
+    decidirInicio({ ...base, manual: true, tags: ['atendimento-humano'] }, cfg).acao,
+  ], ['iniciar', 'iniciar', 'iniciar', 'sem-telefone', 'humano'])
   eq('início: teste NÃO inicia', decidirInicio({ ...base, comentario: 'teste', classificacao: cls('teste') }, cfg).acao, 'teste')
   eq('início: IA disse "real" num ambíguo → inicia', decidirInicio({ ...base, comentario: 'teste de integração do Kommo com o nosso site', classificacao: { ...cls('teste de integração'), teste: false, fonte: 'ia' as const } }, cfg).acao, 'iniciar')
   eq('início: teste vence falta de telefone', decidirInicio({ ...base, comentario: 'lead de teste', classificacao: cls('lead de teste'), telefones: [] }, cfg).acao, 'teste')
@@ -137,8 +150,17 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   eq('lembrete 1h', textoLembrete(1, reuniao, reuniao - 3600000, 'Ana'), 'Oi, Ana! Daqui a pouco, às 9h30, é a nossa reunião com o especialista da Control Gestão. Até já!')
   eq('lembrete com link pede para conferir', textoLembrete(24, reuniao, reuniao - 86400000, 'Ana', 'https://meet.google.com/abc-defg-hij').includes('https://meet.google.com/abc-defg-hij\nConfere se abre certinho aí pra você?'), true)
   const { foraDoIdioma } = await import('../lib/indicacao')
-  eq('só português: Brasil/Portugal sim, Venezuela e Comment em espanhol não', [foraDoIdioma('Country: Brazil\nComment: x', 'x').fora, foraDoIdioma('Country: Portugal', 'y').fora, foraDoIdioma('Country: Venezuela\nLanguages: Portuguese', 'Consultoría').fora, foraDoIdioma('', 'Necesitamos configurar el embudo').fora, foraDoIdioma('', 'Indicações').fora], [false, false, true, true, false])
-  eq('início: outro país NÃO inicia', decidirInicio({ ...base, foraDoIdioma: 'país não atendido: Venezuela' }, cfg).acao, 'outro-idioma')
+  eq('idioma decide pelo Comment: EUA com Comment em português aceita; espanhol/inglês não', [
+    foraDoIdioma('Country: United States\nLanguages: English\nComment: Quero configurar meu CRM', 'Quero configurar meu CRM').fora,
+    foraDoIdioma('Country: Brazil Cluster: LATAM Languages: Portuguese Comment: Configuração de etapas de funis e IA', 'Configuração de etapas de funis e IA').fora,
+    foraDoIdioma('Country: Venezuela', 'Consultoría').fora,
+    foraDoIdioma('', 'Necesitamos configurar el embudo de ventas').fora,
+    foraDoIdioma('Country: Brazil', 'I need help with my sales pipeline').fora,
+    foraDoIdioma('', 'Indicações').fora,
+  ], [false, false, false, true, true, false])
+  const { classificarSuporte } = await import('../lib/indicacao')
+  eq('suporte básico não inicia; implantação sim', [classificarSuporte('meu whatsapp caiu').suporte, classificarSuporte('preciso conectar meu whatsapp').suporte, classificarSuporte('conectar o whatsapp e montar o funil').suporte, decidirInicio({ ...base, suporte: 'suporte básico: "whatsapp caiu"' }, cfg).acao], [true, true, false, 'suporte'])
+  eq('início: Comment em outro idioma NÃO inicia', decidirInicio({ ...base, foraDoIdioma: 'Comment em espanhol' }, cfg).acao, 'outro-idioma')
   eq('lembretes passam nas travas', [regras(textoLembrete(24, reuniao, reuniao - 86400000, 'Ana')), regras(textoLembrete(1, reuniao, reuniao - 3600000, ''))], [[], []])
 
   // ---------------- Roteador: porta única, sem menu ----------------

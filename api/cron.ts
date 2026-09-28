@@ -7,6 +7,7 @@ import { getHistory } from '../lib/history'
 import { getContact, getLead } from '../lib/kommo'
 import { kommoPort } from '../lib/port'
 import { getState } from '../lib/state'
+import { varrerTagManual } from '../lib/iniciar'
 import { assinaturaValida } from '../lib/qstash'
 
 /**
@@ -51,6 +52,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const feitos: string[] = []
   let novosNeg = 0
   try { novosNeg = await varrerNegociacao() } catch (e) { feitos.push(`varredura negociação: ${e instanceof Error ? e.message : e}`) }
+  try { for (const x of await varrerTagManual()) feitos.push(`tag manual ${x}`) } catch (e) { feitos.push(`varredura tag manual: ${e instanceof Error ? e.message : e}`) }
   for (const item of await vencidos()) {
     if (Date.now() - t0 > 240_000) break
     try { feitos.push(`${item}: ${await processarItem(item, gerar)}`) } catch (e) { feitos.push(`${item}: ERRO ${e instanceof Error ? e.message : e}`) }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kommo · Indicações de parceiro (Control Gestão)
 // @namespace    https://controlgestao.com.br/
-// @version      3.4.0
+// @version      3.5.0
 // @description  Filtra indicações de TESTE pelo "Comment:", aceita no tempo certo (ou avisa, no modo assistido) e aciona o agente de IA SDR.
 // @match        https://*.kommo.com/*
 // @run-at       document-idle
@@ -104,44 +104,71 @@ var FiltroIndicacao = (function () {
     return { teste: true, ambiguo: modo !== 'estrito', nivel: 'palavra', motivo: 'palavra de teste: "' + m[1] + '"' }
   }
 
-  /** "Country: Brazil" da nota da indicação. null = não veio. */
-  function extrairPais(texto) {
-    var t = String(texto == null ? '' : texto).replace(/\\n/g, '\n')
-    var m = /(?:^|[\n|"{,;>]|\s)Country\s*"?\s*:\s*"?([^\n|",}<]+)/i.exec(t)
-    return m ? m[1].trim() : null
-  }
+  // Palavras que só existem (ou quase só) em cada idioma. Compartilhadas ("para", "empresa",
+  // "como", "de", "que", "clientes", "negocio") ficam de fora para não confundir.
+  var PT = ['nao', 'atendimento', 'funil', 'funis', 'preciso', 'precisamos', 'quero', 'queria', 'gostaria', 'nosso', 'nossa', 'meu', 'minha', 'meus', 'minhas', 'o', 'e', 'com', 'uma', 'um', 'voces', 'voce', 'ajuda', 'ajudar', 'do', 'da', 'dos', 'das', 'no', 'na', 'nos', 'nas', 'em', 'ao', 'sao', 'esta', 'estou', 'estamos', 'tenho', 'temos', 'organizar', 'vendas', 'automacao', 'automacoes', 'configuracao', 'configurar', 'implantacao', 'implementacao', 'integracao', 'equipe', 'ola', 'oi', 'obrigado', 'obrigada', 'tambem', 'mais', 'etapas', 'orcamento']
+  var ES = ['necesito', 'necesitamos', 'embudo', 'ventas', 'nuestro', 'nuestra', 'el', 'y', 'los', 'las', 'mi', 'mis', 'quiero', 'queria', 'ayuda', 'una', 'un', 'con', 'del', 'hola', 'gracias', 'tengo', 'tenemos', 'estoy', 'estamos', 'equipo', 'configuracion', 'automatizacion', 'integracion', 'usted', 'ustedes', 'hacer', 'puede', 'pueden', 'informacion', 'precio', 'cuanto', 'tambien', 'mas', 'presupuesto', 'implementacion', 'pero', 'muy']
+  var EN = ['we', 'need', 'help', 'our', 'the', 'and', 'sales', 'team', 'with', 'want', 'my', 'company', 'to', 'for', 'i', 'am', 'is', 'are', 'have', 'hello', 'hi', 'please', 'business', 'would', 'like', 'setup', 'set', 'up', 'how', 'thanks', 'looking', 'integration', 'automation', 'pipeline', 'this', 'that', 'it']
 
-  var PAISES_ATENDIDOS = ['brazil', 'brasil', 'portugal']
-
-  /** Idioma do texto do Comment pelas palavras mais comuns: 'pt' | 'es' | 'en' | '?' */
+  /** Idioma do texto do Comment pelas palavras típicas: 'pt' | 'es' | 'en' | '?' */
   function idiomaComentario(comentario) {
     var n = ' ' + normalizar(comentario) + ' '
     function conta(ws) { var c = 0; for (var i = 0; i < ws.length; i++) if (n.indexOf(' ' + ws[i] + ' ') >= 0) c++; return c }
-    var pt = conta(['nao', 'atendimento', 'funil', 'vendas', 'preciso', 'precisamos', 'quero', 'nosso', 'nossa', 'meu', 'minha', 'o', 'e', 'com', 'uma', 'para', 'voces', 'ajuda', 'empresa'])
-    var es = conta(['necesitamos', 'necesito', 'embudo', 'ventas', 'nuestro', 'nuestra', 'el', 'y', 'los', 'mi', 'quiero', 'consultoria', 'por', 'favor', 'ayuda', 'empresa', 'para', 'con', 'una'])
-    var en = conta(['we', 'need', 'help', 'our', 'the', 'and', 'sales', 'team', 'with', 'want', 'my', 'company', 'to', 'for'])
-    if (es > pt && es >= 2) return 'es'
-    if (en > pt && en > es && en >= 2) return 'en'
+    var pt = conta(PT), es = conta(ES), en = conta(EN)
+    // Estrangeiro só com evidência clara: 2+ palavras típicas e nenhuma de português
+    // (ou predominância forte). Na dúvida é '?', e na dúvida a indicação é aceita.
+    if (es >= 2 && (pt === 0 || es >= 3 * pt) && es >= en) return 'es'
+    if (en >= 2 && (pt === 0 || en >= 3 * pt) && en > es) return 'en'
     if (pt >= 1) return 'pt'
     return '?'
   }
 
-  /**
-   * A Control Gestão só atende em português. País da nota manda (Brasil/Portugal
-   * aceita; outro não). Sem país: decide pelo idioma do Comment (espanhol/inglês = não).
-   */
-  function foraDoIdioma(texto, comentario) {
-    var pais = extrairPais(texto)
-    if (pais) {
-      var ok = PAISES_ATENDIDOS.indexOf(normalizar(pais)) >= 0
-      return { fora: !ok, motivo: ok ? 'país atendido: ' + pais : 'país não atendido: ' + pais }
-    }
-    var lang = idiomaComentario(comentario)
-    if (lang === 'es' || lang === 'en') return { fora: true, motivo: 'Comment em ' + (lang === 'es' ? 'espanhol' : 'inglês') }
-    return { fora: false, motivo: 'sem país; Comment em português ou neutro' }
+  /** "Country: Brazil" da nota da indicação (só informativo: não decide mais nada). */
+  function extrairPais(texto) {
+    var t = String(texto == null ? '' : texto).replace(/\\n/g, '\n')
+    var m = /(?:^|[\n|"{,;>]|\s)Country\s*"?\s*:\s*"?([A-Za-zÀ-ú .'-]+?)(?=\s*(?:\n|$|[|",}<]|\s+(?:Cluster|Languages?|Industry|Comment)\s*:))/i.exec(t)
+    return m ? m[1].trim() : null
   }
 
-  return { normalizar: normalizar, extrairComentario: extrairComentario, classificarTeste: classificarTeste, extrairPais: extrairPais, idiomaComentario: idiomaComentario, foraDoIdioma: foraDoIdioma }
+  /**
+   * A Control Gestão só atende em português, mas o Country/Languages da Kommo não é
+   * confiável (cliente do Brasil marca EUA/inglês; a tela cola as linhas da nota).
+   * Decide SÓ pelo Comment: recusa quando ele está claramente em espanhol ou inglês.
+   * Português, curto, vazio ou na dúvida = aceita (melhor atender do que perder o lead).
+   */
+  function foraDoIdioma(texto, comentario) {
+    var lang = idiomaComentario(comentario || '')
+    if (lang === 'es' || lang === 'en') return { fora: true, motivo: 'Comment em ' + (lang === 'es' ? 'espanhol' : 'inglês') }
+    return { fora: false, motivo: lang === 'pt' ? 'Comment em português' : 'idioma do Comment indefinido: aceita' }
+  }
+
+  // Suporte BÁSICO da própria Kommo (não é lead de implantação). Só frases fortes.
+  var SUPORTE = [
+    /\b(whats(app)?|wpp|zap|numero|chip|instagram|insta|facebook|canal)\b.{0,40}\b(caiu|cai|desconect\w*|deslog\w*|nao (conecta|envia|recebe|funciona|chega|aparece|sincroniza)|parou|bloquead\w*|banid\w*|sumiu|fora do ar|expirou)\b/,
+    /\b(caiu|desconect\w*|parou de funcionar|bloquead\w*|banid\w*)\b.{0,30}\b(whats(app)?|wpp|zap|numero|instagram|conta)\b/,
+    /\b(nao|n) (consigo|estou conseguindo|to conseguindo|conseguimos|estamos conseguindo) (mais )?(acessar|entrar|logar|conectar|reconectar|enviar|receber|integrar|vincular|sincronizar|ver as mensagens|mandar mensage\w*)\b/,
+    /\b(mensage(m|ns)|conversas?)\b.{0,25}\bnao (estao |esta |tao |ta )?(chegando|saindo|indo|enviando|aparecendo|sendo enviadas?)\b/,
+    /\b(esqueci|recuperar|redefinir|resetar) (a |minha |de )?senha\b/,
+    /\b(cancelar|cancelamento|reembolso|estorno|estornar)\b/,
+    /\b(cobranca|cobrado|cobrada|fatura|boleto|pagamento)\b.{0,30}\b(indevid\w*|errad\w*|duplicad\w*|nao reconhe\w*|em dobro)\b/,
+    /\b(reconectar|conectar|vincular) (o |meu |nosso |a )?(numero|whats(app)?|wpp|instagram)\b/
+  ]
+  // Qualquer sinal de projeto/implantação tira do corte (na dúvida, a Lara conversa)
+  var IMPLANTACAO = /\b(funil|funis|pipeline|etapa|etapas|implant\w*|automa\w*|robo|robos|bot|bots|chatbot|salesbot|ia|inteligencia artificial|agente|organiz\w*|equipe|vendedor\w*|vendas|processo\w*|relatorio\w*|dashboard|treinamento|consultoria|projeto|estrutur\w*|campanha\w*|disparo\w*|parceiro|configurar o (kommo|crm|sistema)|montar)\b/
+
+  /** Pedido de suporte básico? { suporte, motivo }. Só com frase forte e nenhum sinal de implantação. */
+  function classificarSuporte(comentario) {
+    var n = normalizar(comentario)
+    if (!n) return { suporte: false, motivo: 'comentário vazio' }
+    if (IMPLANTACAO.test(n)) return { suporte: false, motivo: 'tem sinal de implantação' }
+    for (var i = 0; i < SUPORTE.length; i++) {
+      var m = SUPORTE[i].exec(n)
+      if (m) return { suporte: true, motivo: 'suporte básico: "' + m[0].slice(0, 60) + '"' }
+    }
+    return { suporte: false, motivo: 'sem sinal de suporte' }
+  }
+
+  return { normalizar: normalizar, extrairComentario: extrairComentario, classificarTeste: classificarTeste, extrairPais: extrairPais, idiomaComentario: idiomaComentario, foraDoIdioma: foraDoIdioma, classificarSuporte: classificarSuporte }
 })();
 
 /* global FiltroIndicacao, GM_xmlhttpRequest, GM_notification, unsafeWindow */
@@ -232,7 +259,7 @@ var FiltroIndicacao = (function () {
   var pageFetch = W.fetch.bind(W)
   var STORE_KEY = 'cg-indicacoes-v3'
   var DIAG_KEY = 'cg-indicacoes-v3-diag'
-  var VERSAO = '3.4.0'
+  var VERSAO = '3.5.0'
 
   if (W.__INDICACOES__ && W.__INDICACOES__.stop) {
     console.warn('[INDICAÇÕES] já ativo, reiniciando...')
@@ -273,7 +300,7 @@ var FiltroIndicacao = (function () {
     salvar()
     desenharSelo(id)
   }
-  var FINAIS = { aceito: 1, aceito_invalido: 1, teste: 1, outro_idioma: 1, nao_existe: 1, perdido: 1, pulado: 1, liberado: 1, expirado: 1 }
+  var FINAIS = { aceito: 1, aceito_invalido: 1, teste: 1, outro_idioma: 1, suporte: 1, nao_existe: 1, perdido: 1, pulado: 1, liberado: 1, expirado: 1 }
 
   // ---------------- DIAGNÓSTICO ----------------
   function registrarDiag(id, tipo, dado) {
@@ -334,7 +361,7 @@ var FiltroIndicacao = (function () {
   }
 
   // ---------------- SELO NO CARD ----------------
-  var CORES = { outro_idioma: '#6a1b9a', teste: '#c62828', aceito: '#2e7d32', aceito_invalido: '#ad1457', conferindo: '#2e7d32', liberado: '#1565c0', aguardando: '#6d4c41', aceitando: '#0d47a1', nao_existe: '#757575', perdido: '#ef6c00', pulado: '#757575', avaliando: '#6d4c41', expirado: '#9e9e9e' }
+  var CORES = { outro_idioma: '#6a1b9a', suporte: '#5d4037', teste: '#c62828', aceito: '#2e7d32', aceito_invalido: '#ad1457', conferindo: '#2e7d32', liberado: '#1565c0', aguardando: '#6d4c41', aceitando: '#0d47a1', nao_existe: '#757575', perdido: '#ef6c00', pulado: '#757575', avaliando: '#6d4c41', expirado: '#9e9e9e' }
   function cardDe(id) { return document.getElementById('pipeline_item_' + id) || document.querySelector('.pipeline-unsorted__item[data-id="' + id + '"]') }
   function desenharSelo(id) {
     var el = cardDe(id)
@@ -350,7 +377,8 @@ var FiltroIndicacao = (function () {
     var textos = {
       avaliando: 'Lendo o Comment...',
       teste: 'TESTE: não aceito',
-      outro_idioma: 'Fora do Brasil/português: não aceito',
+      outro_idioma: 'Comment em outro idioma: não aceito',
+      suporte: 'Suporte básico da Kommo: não aceito',
       aceito: 'Aceito e válido ' + hora(m.atualizado),
       conferindo: 'Aceito, conferindo se ficou válido...',
       aceito_invalido: 'Aceito, mas INVÁLIDO: ' + (m.motivo || ''),
@@ -711,12 +739,21 @@ var FiltroIndicacao = (function () {
       }
       marcar(id, { comentario: comentario })
       return lerTextoIndicacao(id).then(function (texto) {
-        // Só atendemos em português: país de fora (ou Comment em espanhol/inglês) não é aceito
+        // Só atendemos em português: decide pelo Comment (Country/Languages da Kommo não são confiáveis)
         var idioma = FiltroIndicacao.foraDoIdioma(texto, comentario)
         registrarDiag(id, 'idioma', idioma)
         if (idioma.fora) {
           log('🌎', id + ' NÃO será aceito: ' + idioma.motivo + '. Comment: "' + comentario.slice(0, 100) + '"')
           marcar(id, { estado: 'outro_idioma', motivo: idioma.motivo })
+          delete emAndamento[id]
+          return null
+        }
+        // Suporte básico da própria Kommo (WhatsApp caiu, senha, cancelamento): não é lead de implantação
+        var sup = FiltroIndicacao.classificarSuporte(comentario)
+        registrarDiag(id, 'suporte', sup)
+        if (sup.suporte) {
+          log('🛠️', id + ' NÃO será aceito: ' + sup.motivo + '. Comment: "' + comentario.slice(0, 100) + '"')
+          marcar(id, { estado: 'suporte', motivo: sup.motivo })
           delete emAndamento[id]
           return null
         }

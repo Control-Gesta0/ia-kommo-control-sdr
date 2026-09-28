@@ -20,9 +20,21 @@ export function checkReply(text: string, regras = REGRAS_CLIENTE): Violation[] {
   const travessao = text.match(/[—–]/)
   if (travessao) out.push({ regra: 'travessão', trecho: travessao[0] })
   const perguntas = (text.match(/\?/g) || []).length
-  if (perguntas > 1) out.push({ regra: 'mais de uma pergunta', trecho: `${perguntas} interrogações` })
+  if (perguntas > 1 && !perguntaDuplaPermitida(text)) out.push({ regra: 'mais de uma pergunta', trecho: `${perguntas} interrogações` })
   if (!text.trim()) out.push({ regra: 'vazio', trecho: '' })
   return out
+}
+
+/**
+ * A única exceção à "uma pergunta por mensagem" (pedido do comercial): onde os
+ * leads ficam + quantos vendedores, juntas. Qualquer outra dupla continua barrada.
+ */
+export function perguntaDuplaPermitida(text: string): boolean {
+  const qs = text.split('?').slice(0, -1).map(q => q.toLowerCase())
+  if (qs.length !== 2) return false
+  const onde = /\b(onde|whats|planilha|crm|sistema|organiz|ferramenta|trello|caderno)/
+  const quantos = /\bquant[oa]s?\b[^.!]*\b(vendedor|pessoa|usu[aá]rio|atendente|corretor|consultor|colaborador|gente)/
+  return (onde.test(qs[0]) && quantos.test(qs[1])) || (quantos.test(qs[0]) && onde.test(qs[1]))
 }
 
 /**
