@@ -23,5 +23,6 @@ export async function resetLead(leadId: number): Promise<void> {
   await redis.zrem(k('fila'), `lem24:${leadId}`, `lem1:${leadId}`)
   // Marca o início como 'reset': devolver a tag não dispara abertura (a pessoa escreve primeiro)
   await redis.set(k('inicio', leadId), 'reset', { ex: 30 * 86400 })
+  await redis.set(k('tag-vista', leadId), 1, { ex: 60 * 86400 }) // devolver a tag no reset não é "tag nova"
   if (CONFIG.gateTag) await addLeadTags(leadId, [CONFIG.gateTag])
 }

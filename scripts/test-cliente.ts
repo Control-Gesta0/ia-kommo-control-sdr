@@ -69,6 +69,8 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   eq('webhook: lead com a tag ia-sdr (qualquer etapa) vai para o início pela tag', tag.iniciar.map(x => [x.leadId, x.origem]), [[402, 'webhook:tag'], [403, 'webhook:tag']])
   const semTags = parseEntrada({ 'leads[update][0][id]': '404', 'leads[update][0][status_id]': '55438567' }, 55438567, 'ia-sdr')
   eq('webhook: payload sem tags vai para conferência', [semTags.iniciar, semTags.verificar], [[], [404]])
+  const tirou = parseEntrada({ 'leads[update][0][id]': '405', 'leads[update][0][status_id]': '80884464', 'leads[update][0][tags][0][name]': 'LEAD Kommo' }, 55438567, 'ia-sdr')
+  eq('webhook: lead sem a tag zera a marca de tag vista', [tirou.iniciar, tirou.semTag], [[], [405]])
   const { perguntaDuplaPermitida } = await import('../lib/guards')
   eq('pergunta dupla só a do roteiro (onde + quantos)', [perguntaDuplaPermitida('Hoje vocês organizam os leads onde: WhatsApp, planilha ou outro CRM? E quantos vendedores usariam o sistema?'), checkReply('Qual o faturamento? E quem decide?').some(v => v.regra === 'mais de uma pergunta')], [true, true])
   const add = parseEntrada({ unsorted: { add: [{ uid: 'u2', lead_id: '500', source_data: { data: { comment: { name: 'Comment', value: 'Quero integrar o site' } } } }] } })

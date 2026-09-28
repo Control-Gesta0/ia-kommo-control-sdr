@@ -38,12 +38,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     for (const [leadId, comentario] of ev.comentariosIncoming) await guardarComentarioIncoming(leadId, comentario)
     for (const leadId of ev.verificar) {
       const lead = await getLead(leadId).catch(() => null)
-      if (lead && leadTags(lead).map(t => t.toLowerCase()).includes(CONFIG.gateTag.toLowerCase())) ev.iniciar.push({ leadId, comentario: null, origem: 'webhook:tag' })
+      if (!lead) continue
+      if (leadTags(lead).map(t => t.toLowerCase()).includes(CONFIG.gateTag.toLowerCase())) ev.iniciar.push({ leadId, comentario: null, origem: 'webhook:tag' })
+      else ev.semTag.push(leadId)
     }
-    // Uma tentativa por lead a cada 10 min pelo webhook (as próprias escritas da Lara geram update_lead)
+    // A tag só vale quando APARECE no lead (antes não tinha): toda alteração de um lead com a tag
+    // gera update_lead, e tratar cada uma como "tag nova" apagava a pausa de humano
+    for (const leadId of ev.semTag) await redis.del(k('tag-vista', leadId))
     const lista = []
     for (const x of ev.iniciar) {
-      if (doUserscript || (await redis.set(k('tentativa-inicio', x.leadId), 1, { nx: true, ex: 600 })) === 'OK') lista.push(x)
+      if (doUserscript) { lista.push(x); continue }
+      if (x.origem === 'webhook:tag' && (await redis.set(k('tag-vista', x.leadId), 1, { nx: true, ex: 60 * 86400 })) !== 'OK') continue
+      if ((await redis.set(k('tentativa-inicio', x.leadId), 1, { nx: true, ex: 600 })) === 'OK') lista.push(x)
     }
     ev.iniciar = lista
     if (!ev.iniciar.length) return
@@ -80,10 +86,12 @@ export interface Entrada {
   comentariosIncoming: Array<[number, string]>
   /** lead na etapa de entrada mas o payload não trouxe as tags: conferir lendo o lead */
   verificar: number[]
+  /** lead alterado SEM a tag da Lara (a tag saiu): zera a marca de "tag vista" */
+  semTag: number[]
 }
 
 export function parseEntrada(raw: Record<string, unknown>, statusEntrada = CRM_MAP.entrada.statusId, gate = CONFIG.gateTag.toLowerCase()): Entrada {
-  const out: Entrada = { accountId: '', iniciar: [], comentariosIncoming: [], verificar: [] }
+  const out: Entrada = { accountId: '', iniciar: [], comentariosIncoming: [], verificar: [], semTag: [] }
   // Userscript (JSON simples)
   if (raw.leadId !== undefined) {
     const leadId = Number(raw.leadId)
@@ -125,7 +133,8 @@ export function parseEntrada(raw: Record<string, unknown>, statusEntrada = CRM_M
     const tags = Object.keys(f).filter(k => new RegExp(`^${pref.replace(/[[\]]/g, '\\$&')}\\[tags\\]\\[\\d+\\]\\[name\\]$`).test(k)).map(k => f[k].trim().toLowerCase())
     const temTagsNoPayload = Object.keys(f).some(k => k.startsWith(`${pref}[tags]`))
     if (tags.includes(gate)) add(Number(v), 'webhook:tag')
-    else if (st === statusEntrada && !temTagsNoPayload && !out.verificar.includes(Number(v))) out.verificar.push(Number(v))
+    else if (temTagsNoPayload) out.semTag.push(Number(v))
+    else if (st === statusEntrada && !out.verificar.includes(Number(v))) out.verificar.push(Number(v))
   }
   return out
 }
