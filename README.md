@@ -89,3 +89,13 @@ Prova em navegador (Chromium + Kommo simulado): `npm i --no-save playwright && n
 Variáveis na Vercel: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` (escopo `https://www.googleapis.com/auth/calendar`) e, opcional, `GOOGLE_CALENDAR_ID` (padrão `primary`).
 Com elas: horários livres saem do Google (free/busy) + tarefas do Kommo; a reunião é criada só no Google (evita duplicar pela integração Kommo ↔ Google); o lembrete confere o evento (cancelado = não manda; remarcado = reagenda). `/api/validate` testa o acesso.
 Importante: publique a tela de consentimento OAuth ("Em produção"); em modo "Teste" o refresh token vence em 7 dias.
+
+## Regras em vigor (28/09)
+
+**Aceite (script v3.5.0):** o idioma é decidido só pelo `Comment` (o Country/Languages da Kommo não é confiável e a tela junta as linhas da nota). Só não aceita Comment claramente em espanhol/inglês, pedido de teste e suporte básico da Kommo (WhatsApp caiu, senha, cancelamento, cobrança). Na dúvida, aceita.
+
+**Tag `ia-sdr` colocada à mão:** assim que a tag aparece no lead (webhook `update_lead` + varredura no cron), a Lara age: indicação que ainda não recebeu abertura → abertura da indicação; lead com quem ela nunca falou → abertura de contato direto; lead que escreveu e ninguém respondeu → responde a mensagem. A decisão do time passa por cima dos filtros (teste, idioma, "aceito por outro parceiro"). Só não envia com `atendimento-humano` ou sem telefone. `reset` não conta como tag nova.
+
+**Mídia:** áudio é reconhecido pelo tipo ou pela extensão do link e transcrito; se não abrir, a Lara pede para escrever (nada é descartado calado). O formato recebido fica 24h em `diag:inbound-midia`.
+
+**Tom (lib/tom.ts, em toda resposta):** saudação e apresentação só na primeira mensagem; nome só de pessoa, de vez em quando, e nunca o de outra pessoa; pede o nome se não souber; reação repetida sai; generalização sobre o nicho e descrição da solução não se repetem; pergunta 1 dupla (onde + quantos) sem repetir o que o lead já disse.
