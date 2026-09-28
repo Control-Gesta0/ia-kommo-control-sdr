@@ -2,7 +2,7 @@ import { fromLocal, local, rotulo } from './agenda'
 import { CONFIG } from './config'
 import { CRM_MAP } from './crm-map'
 import { logExec } from './execlog'
-import { appendMessage, humanSpokeRecently } from './history'
+import { appendMessage, getHistory, humanSpokeRecently } from './history'
 import { addLeadNote, addLeadTags, createTask, getContact, getLead, getTask, kommoGet, leadTags, patchLead, removeLeadTags, updateLeadFields } from './kommo'
 import { lerEventoGoogle } from './google'
 import { nota, quando } from './notas'
@@ -51,6 +51,21 @@ export function noExpediente(ms: number): number {
     return ini
   }
   return ms
+}
+
+/**
+ * Próximo passo da cadência: no horário previsto, mas NUNCA antes do intervalo
+ * entre os passos contado do envio anterior (um fim de semana empurrava dois
+ * passos para a mesma segunda 9h e eles saíam com segundos de diferença).
+ */
+export function proximoPasso(desde: number, alvo: number, anterior: number, agora: number): number {
+  return noExpediente(Math.max(desde + alvo, agora + (alvo - anterior)))
+}
+
+/** Última mensagem que a Lara mandou (resposta ou follow-up) = base do intervalo mínimo. */
+async function ultimoEnvio(leadId: number): Promise<number> {
+  const hist = await getHistory(leadId).catch(() => [])
+  return hist.filter(m => m.dir === 'out').reduce((mx, m) => Math.max(mx, m.ts || 0), 0)
 }
 
 // ---------- estado ----------
@@ -161,13 +176,23 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
       return 'cancelado (gate, humano ou finalizado)'
     }
     const total = CRM_MAP.followup.horas.length
+    const horas = CRM_MAP.followup.horas
+    // Trava: respeita o intervalo desde o último envio (item antigo na fila, fim de semana, feriado)
+    const minimo = est.passo === 0 ? horas[0] * HORA * 0.75 : (horas[est.passo] - horas[est.passo - 1]) * HORA
+    const ultimo = await ultimoEnvio(leadId)
+    if (ultimo && agora - ultimo < minimo) {
+      const novo = noExpediente(ultimo + minimo)
+      await enfileirar(`sdr:${leadId}`, novo)
+      await campoProximo(leadId, novo)
+      return `adiado para ${new Date(novo).toISOString()} (intervalo mínimo desde o último envio)`
+    }
     const texto = (await gerar(leadId, instrucaoSdr(est.passo, total)).catch(() => null)) || FIXOS_SDR[Math.min(est.passo, FIXOS_SDR.length - 1)]
     await enviarFollowup(leadId, texto, 'sdr', est.passo)
     const passo = est.passo + 1
     let linhaProx: string
     if (passo < total) {
       await redis.set(chaveEstado('sdr', leadId), { ...est, passo }, { ex: 30 * 86400 })
-      const prox = noExpediente(est.desde + CRM_MAP.followup.horas[passo] * HORA)
+      const prox = proximoPasso(est.desde, horas[passo] * HORA, horas[passo - 1] * HORA, agora)
       await enfileirar(`sdr:${leadId}`, prox)
       await campoProximo(leadId, prox)
       linhaProx = `⏭️ Próximo follow-up: ${quando(prox, agora)}`
@@ -208,13 +233,23 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
       await redis.del(chaveEstado('neg', leadId))
       return 'saiu da etapa de negociação'
     }
+    if (est.passo > 0) {
+      const minimo = (n.dias[est.passo] - n.dias[est.passo - 1]) * DIA
+      const ultimo = await ultimoEnvio(leadId)
+      if (ultimo && agora - ultimo < minimo) {
+        const novo = noExpediente(ultimo + minimo)
+        await enfileirar(`neg:${leadId}`, novo)
+        await campoProximo(leadId, novo)
+        return `adiado para ${new Date(novo).toISOString()} (intervalo mínimo desde o último envio)`
+      }
+    }
     const texto = (await gerar(leadId, instrucaoNeg(est.passo, n.dias.length)).catch(() => null)) || FIXOS_NEG[Math.min(est.passo, FIXOS_NEG.length - 1)]
     await enviarFollowup(leadId, texto, 'neg', est.passo)
     const passo = est.passo + 1
     await redis.set(chaveEstado('neg', leadId), { ...est, passo }, { ex: 60 * 86400 })
     let linhaProx: string
     if (passo < n.dias.length) {
-      const prox = noExpediente(est.desde + n.dias[passo] * DIA)
+      const prox = proximoPasso(est.desde, n.dias[passo] * DIA, n.dias[passo - 1] * DIA, agora)
       await enfileirar(`neg:${leadId}`, prox)
       await campoProximo(leadId, prox)
       linhaProx = `⏭️ Próximo follow-up: ${quando(prox, agora)}`

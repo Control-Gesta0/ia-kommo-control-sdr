@@ -276,5 +276,12 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   const sub = 'https://x.vercel.app/api/cron?item=sdr%3A123'
   eq('QStash: assinatura válida (chave atual e próxima)', [assinaturaValida(jwt('sig_teste_atual', sub), '/api/cron?item=sdr%3A123'), assinaturaValida(jwt('sig_teste_prox', sub), '/api/cron?item=sdr:123')], [true, true])
   eq('QStash: chave errada ou outro item = recusado', [assinaturaValida(jwt('outra', sub), '/api/cron?item=sdr%3A123'), assinaturaValida(jwt('sig_teste_atual', sub), '/api/cron?item=sdr%3A999')], [false, false])
+
+  // Follow-up: fim de semana não junta dois passos na mesma segunda 9h
+  const { proximoPasso } = await import('../lib/followup')
+  const sexta = iso('2026-09-25T17:40:00Z')           // última msg da Lara: sexta 14h40
+  const segunda9h = iso('2026-09-28T12:00:00Z')       // passo 1 (4h) saiu segunda 9h
+  eq('passo 2 (1 dia) não sai junto do passo 1 depois do fim de semana', new Date(proximoPasso(sexta, 24 * 3600000, 4 * 3600000, segunda9h)).toISOString(), '2026-09-29T12:00:00.000Z')
+  eq('dia normal: passo 2 segue a cadência', new Date(proximoPasso(iso('2026-09-29T13:00:00Z'), 24 * 3600000, 4 * 3600000, iso('2026-09-29T17:00:00Z'))).toISOString(), '2026-09-30T13:00:00.000Z')
   return 0
 }
