@@ -19,6 +19,8 @@ export interface Campo {
   sinal?: RegExp
   /** a pergunta do roteiro (a regra da resposta curta "sim/não" usa) */
   pergunta?: string
+  /** grava se o lead falar, mas a Lara não pergunta só por isso (fora das 4 perguntas) */
+  opcional?: boolean
 }
 
 export interface Porta {

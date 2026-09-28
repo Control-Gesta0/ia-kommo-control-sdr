@@ -262,8 +262,8 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
     return `neg ${passo}/${n.dias.length} enviado`
   }
 
-  const lem = tipo.match(/^lem(\d+)$/)
-  if (lem) return processarLembrete(Number(lem[1]), leadId, agora)
+  const lem = tipo.match(/^lem(m?)(\d+)$/) // lemm10 = minutos; lem24/lem1 (formato antigo) = horas
+  if (lem) return processarLembrete(lem[1] ? Number(lem[2]) : Number(lem[2]) * 60, leadId, agora)
 
   if (tipo === 'negfim') {
     const t = CRM_MAP.negociacao.tarefa
@@ -282,23 +282,35 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
 /** taskId: id da tarefa do Kommo, ou 'g:<id>' do evento no Google (antigos: número) */
 interface Lembrete { ini: number; taskId: string | number }
 
-/** Agenda 24h e 1h antes (só os que ainda estão no futuro). Não segue o expediente: é hora marcada. */
+/** Agenda os lembretes (24h, 1h e 10 min antes; só os que ainda estão no futuro). Hora marcada: não segue o expediente. */
 export async function agendarLembretes(leadId: number, ini: number, taskId: string | number, agora = Date.now()): Promise<void> {
   const cfg = CRM_MAP.lembretes
   if (!cfg.ativo) return
   await redis.set(k('lem', leadId), { ini, taskId } satisfies Lembrete, { ex: 30 * 86400 })
-  for (const h of cfg.horasAntes) {
-    const quando = ini - h * HORA
-    if (quando > agora + 5 * MIN) await enfileirar(`lem${h}:${leadId}`, quando)
+  // Remarcou: tira os lembretes do horário antigo (inclusive os do formato antigo lem24/lem1)
+  await redis.zrem(FILA(), ...cfg.minutosAntes.map(m => `lemm${m}:${leadId}`), `lem24:${leadId}`, `lem1:${leadId}`)
+  for (const m of cfg.minutosAntes) {
+    const quando = ini - m * MIN
+    if (quando > agora + 2 * MIN) await enfileirar(`lemm${m}:${leadId}`, quando)
   }
 }
 
 /** Texto do lembrete (fixo, sem IA: data e hora não podem sair erradas). Sempre em português. */
-export function textoLembrete(horas: number, ini: number, agora: number, nome: string, link = ''): string {
+export function textoLembrete(minutos: number, ini: number, agora: number, nome: string, link = ''): string {
   const l = local(ini)
   const hora = l.min ? `${l.h}h${String(l.min).padStart(2, '0')}` : `${l.h}h`
   const n = nome ? `, ${nome}` : ''
-  if (horas >= 12) {
+  // 10 min antes: o link para entrar
+  if (minutos <= 15) {
+    return link
+      ? `Oi${n}! Em ${minutos} minutinhos começa a nossa reunião com o especialista da Control Gestão. É só entrar por aqui: ${link}\nAté já!`
+      : `Oi${n}! Em ${minutos} minutinhos começa a nossa reunião com o especialista da Control Gestão. Ele te chama por aqui. Até já!`
+  }
+  // 1h antes: aviso (o link vai 10 min antes)
+  if (minutos <= 120 && CRM_MAP.lembretes.minutosAntes.some(m => m <= 15)) {
+    return `Oi${n}! Daqui a pouco, às ${hora}, é a nossa reunião com o especialista da Control Gestão. Te mando o link 10 minutinhos antes. Até já!`
+  }
+  if (minutos >= 12 * 60) {
     return link
       ? `Oi${n}! Passando pra lembrar da nossa reunião ${rotulo(ini, agora)} com o especialista da Control Gestão. O link é este: ${link}\nConfere se abre certinho aí pra você?`
       : `Oi${n}! Passando pra lembrar da nossa reunião ${rotulo(ini, agora)} com o especialista da Control Gestão. Tudo certo pra você?`
@@ -308,7 +320,7 @@ export function textoLembrete(horas: number, ini: number, agora: number, nome: s
     : `Oi${n}! Daqui a pouco, às ${hora}, é a nossa reunião com o especialista da Control Gestão. Até já!`
 }
 
-async function processarLembrete(horas: number, leadId: number, agora: number): Promise<string> {
+async function processarLembrete(minutos: number, leadId: number, agora: number): Promise<string> {
   const lem = await redis.get<Lembrete>(k('lem', leadId))
   if (!lem) return 'sem reunião registrada'
   const ref = String(lem.taskId || '')
@@ -338,12 +350,12 @@ async function processarLembrete(horas: number, leadId: number, agora: number): 
   const linkCampo = CRM_MAP.linkReuniaoFieldId ? (lead.custom_fields_values || []).find(f => f.field_id === CRM_MAP.linkReuniaoFieldId)?.values?.[0]?.value : ''
   // O campo vence (o Rodrigo pode ter trocado o link à mão); depois o Meet do evento
   const link = String(linkCampo || linkEvento || CONFIG.linkReuniao || '').trim()
-  const texto = textoLembrete(horas, lem.ini, agora, nome, link)
-  if (!link && horas >= 12) {
-    await createTask({ leadId, responsibleUserId: CRM_MAP.agenda.responsavelId, taskTypeId: 1, text: `URGENTE: o lembrete de ${horas}h saiu SEM link. Mande o link da reunião para o cliente e preencha o campo "Link da Reunião" (o lembrete de 1h usa ele).`, completeTill: Math.floor(agora / 1000) + 3600, duration: 0 }).catch(() => undefined)
+  const texto = textoLembrete(minutos, lem.ini, agora, nome, link)
+  if (!link && minutos >= 12 * 60) {
+    await createTask({ leadId, responsibleUserId: CRM_MAP.agenda.responsavelId, taskTypeId: 1, text: `URGENTE: o lembrete de ${minutos >= 60 ? `${minutos / 60}h` : `${minutos} min`} saiu SEM link. Mande o link da reunião para o cliente e preencha o campo "Link da Reunião" (o lembrete de 1h usa ele).`, completeTill: Math.floor(agora / 1000) + 3600, duration: 0 }).catch(() => undefined)
   }
-  await enviarFollowup(leadId, texto, `lembrete-${horas}h`, 0)
-  return `lembrete ${horas}h enviado`
+  await enviarFollowup(leadId, texto, `lembrete-${minutos >= 60 ? `${minutos / 60}h` : `${minutos} min`}`, 0)
+  return `lembrete ${minutos >= 60 ? `${minutos / 60}h` : `${minutos} min`} enviado`
 }
 
 // ---------- negociação: quem entrou na etapa ----------

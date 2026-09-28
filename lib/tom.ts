@@ -1,4 +1,4 @@
-import { completarPergunta1, garantirSaudacao, naturalizar, pedirNomeSeFalta, primeiroNomeDe, saudacao, semGeneralizacaoRepetida, semSolucaoRepetida, tirarApresentacao, tirarSaudacao, vocativoCerto } from './saudacao'
+import { garantirSaudacao, naturalizar, pedirNomeSeFalta, primeiroNomeDe, saudacao, semGeneralizacaoRepetida, semSolucaoRepetida, tirarApresentacao, tirarSaudacao, vocativoCerto } from './saudacao'
 
 /**
  * Acabamento em código de TODA resposta da Lara (o que o comercial pediu e o
@@ -24,7 +24,6 @@ export function ajustarResposta(texto: string, o: {
       const base = semGeneralizacaoRepetida(naturalizar(tirarApresentacao(tirarSaudacao(texto)), nomeLead, o.anteriores, o.nomeCadastro), o.anteriores)
       return o.protegerSolucao ? base : semSolucaoRepetida(base, o.anteriores)
     })()
-  t = completarPergunta1(t, o.faltaVendedores)
   t = vocativoCerto(t, nomeLead)
   if (!o.handoff) t = pedirNomeSeFalta(t, !!nomeLead, o.anteriores.length)
   return t

@@ -20,7 +20,8 @@ export function checkReply(text: string, regras = REGRAS_CLIENTE): Violation[] {
   const travessao = text.match(/[—–]/)
   if (travessao) out.push({ regra: 'travessão', trecho: travessao[0] })
   const perguntas = (text.match(/\?/g) || []).length
-  if (perguntas > 1 && !perguntaDuplaPermitida(text)) out.push({ regra: 'mais de uma pergunta', trecho: `${perguntas} interrogações` })
+  // Até 2 perguntas (ex.: decisão + investimento em 2 blocos, pedido do comercial para ter menos mensagens)
+  if (perguntas > 2) out.push({ regra: 'mais de uma pergunta', trecho: `${perguntas} interrogações` })
   if (!text.trim()) out.push({ regra: 'vazio', trecho: '' })
   return out
 }

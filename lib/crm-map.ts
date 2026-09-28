@@ -18,28 +18,33 @@
 import type { AgendaConfig, Alerta, Campo, Etapa, Porta } from './crm-map-types'
 export type { AgendaConfig, Alerta, Campo, CampoTipo, Etapa, Porta } from './crm-map-types'
 
-// CHAMP: Challenges (organização + dor + vendedores) · Authority (decisor) ·
-// Money (faturamento ou nº de usuários) · Prioritization (quando começar)
+// Roteiro de 4 perguntas (pedido do comercial, 28/09): 1. Problema (dor) · 2. Impacto ·
+// 3. Prioridade · 4. Decisão + Investimento (decisor + faturamento). Opcionais: gravados se o lead falar.
 const CAMPOS = {
   segmento: {
-    key: 'segmento', curto: 'Segmento', id: 0, name: 'Nicho/segmento da empresa', type: 'text',
+    key: 'segmento', curto: 'Segmento', opcional: true, id: 0, name: 'Nicho/segmento da empresa', type: 'text',
     sinal: /advog|advocacia|jur[ií]dic|escrit[oó]rio|cl[ií]nic|est[eé]tic|odonto|dent|m[eé]dic|sa[uú]de|psic|fisio|nutri|imobili|corretor|im[oó]v|escola|curso|educa|faculdade|idioma|loja|varejo|commerce|moda|roupa|cal[cç]ado|m[oó]veis|decora|autom[oó]v|carro|moto|oficina|pe[cç]as|ve[ií]culo|consult|ag[eê]ncia|marketing|servi[cç]o|contab|seguro|financ|cr[eé]dito|cons[oó]rcio|constru|engenharia|arquitet|reforma|solar|energia|turismo|viage|hotel|pousada|restaurante|aliment|delivery|academia|fitness|ind[uú]stria|f[aá]brica|distribui|atacad|log[ií]stic|transport|tecnologia|software|saas|pet|veterin|beleza|sal[aã]o|barbear|evento|igreja|ong\b|laborat|farm[aá]c|[oó]tica|gr[aá]fica|com[eé]rcio|representa|franquia|infoproduto|mentoria|coach|agro|fazenda|emprestimo|telecom|internet|provedor|cosm[eé]tic|joia|joalher|rel[oó]gio|bijou|acess[oó]rio|perfum|pizzaria|padaria|confeitaria|doceria|cafeteria|lanchonete|mercado|a[cç]ougue|hortifruti|bebida|cervej|vinho|floricultura|gr[aá]fica|papelaria|brinquedo|eletr[oô]nic|inform[aá]tica|seguran[cç]a|limpeza|log[ií]stica|b2b|b2c|ramo|segmento|nicho|setor|trabalho com|trabalhamos com|somos (uma|um)/i,
     pergunta: 'Me conta rapidinho, vocês atuam em qual ramo?',
   },
   organizacao: {
-    key: 'organizacao', curto: 'Organização', id: 1046001, kommoName: 'Situação', name: 'Onde organizam os leads hoje', type: 'text',
+    key: 'organizacao', curto: 'Organização', opcional: true, id: 1046001, kommoName: 'Situação', name: 'Onde organizam os leads hoje', type: 'text',
     sinal: /planilha|excel|sheets|caderno|papel|whats|kommo|amo|crm|sistema|agenda|cabe[cç]a|mem[oó]ria|google|trello|notion|pipedrive|\brd\b|hubspot|bitrix|ploomes|anot|nada|nenhum|lugar nenhum|n[aã]o (organiz|temos|tenho|usamos)/i,
     pergunta: 'Hoje vocês organizam os leads onde: WhatsApp, planilha ou outro CRM?',
   },
   vendedores: {
-    key: 'vendedores', curto: 'Vendedores', id: 0, name: 'Quantos vendedores usariam o Kommo', type: 'text',
+    key: 'vendedores', curto: 'Vendedores', opcional: true, id: 0, name: 'Quantos vendedores usariam o Kommo', type: 'text',
     sinal: /\d|\b(um|uma|dois|duas|tr[eê]s|quatro|cinco|seis|sete|oito|nove|dez|vinte|trinta)\b|s[oó] eu|sozinh|vendedor|pessoa|usu[aá]rio|atendente|consultor|corretor|equipe|time/i,
     pergunta: 'Quantos vendedores usariam o sistema?',
   },
   dor: {
     key: 'dor', curto: 'Dor', id: 1046003, kommoName: 'Problema', name: 'O que mais incomoda hoje (perder lead, não saber a etapa, falta de relatório)', type: 'textarea',
     sinal: /perd|esquec|some|sum|escap|etapa|fase|onde (est|par)|relat[oó]rio|n[uú]mero|m[eé]trica|indicador|controle|acompanh|organiz|bagun|demor|follow|retorno|respond|resposta|vis[aã]o|gest[aã]o|funil|atendimento|whats/i,
-    pergunta: 'O que mais te incomoda hoje: perder lead, não saber em que etapa cada um está ou não ter relatório?',
+    pergunta: 'O que mais tá travando hoje no atendimento de vocês: perder lead, não saber em que etapa cada um está ou não ter relatório?',
+  },
+  impacto: {
+    key: 'impacto', curto: 'Impacto', id: 0, name: 'Impacto do problema (quanto pesa: leads, vendas, tempo, dinheiro)', type: 'text',
+    sinal: /\d|muito|bastante|demais|pouco|perco|perd|escap|vend|client|lead|dinheiro|faturamento|receita|tempo|hora|dia|semana|m[eê]s|preju[ií]zo|custa|caro|atras|demora|sobrecarreg|estress|equipe|n[aã]o sei|dif[ií]cil|grande|enorme|pesa/i,
+    pergunta: 'E quanto isso pesa hoje pra vocês? Mais ou menos quantos clientes ou vendas acabam escapando por mês?',
   },
   decisor: {
     key: 'decisor', curto: 'Decisor', id: 1046753, kommoName: 'Authorit', name: 'Quem decide a contratação', type: 'text',
@@ -54,7 +59,7 @@ const CAMPOS = {
   prioridade: {
     key: 'prioridade', curto: 'Prioridade', id: 1046757, kommoName: 'Tempo', name: 'Quando quer começar (este mês ou mais pra frente)', type: 'text',
     sinal: /m[eê]s|semana|\bj[aá]\b|agora|urgente|logo|hoje|amanh|\bano\b|trimestre|depois|pra frente|sem pressa|quanto antes|imediat|r[aá]pido|pressa|\d/i,
-    pergunta: 'Vocês querem começar a usar ainda este mês ou estão pesquisando pra mais pra frente?',
+    pergunta: 'Vocês querem resolver isso ainda este mês ou estão pesquisando pra mais pra frente?',
   },
 } satisfies Record<string, Campo>
 
@@ -119,7 +124,8 @@ export const CRM_MAP = {
   linkReuniaoFieldId: 1046627,
 
   /** Lembretes da reunião PARA O CLIENTE, no WhatsApp: horas antes do horário marcado */
-  lembretes: { ativo: true, horasAntes: [24, 1] },
+  /** minutos antes da reunião: 24h (link para conferir), 1h (aviso) e 10 min (link para entrar) */
+  lembretes: { ativo: true, minutosAntes: [1440, 60, 10] },
 
   /** quem recebe o lead aceito (o USER_ID do userscript) */
   responsavelEntradaId: 12725576,
@@ -148,8 +154,8 @@ export const CRM_MAP = {
       ativa: true,
       promptFile: 'indicacao.md',
       sinais: /$^/,
-      roteiro: ['segmento', 'organizacao', 'vendedores', 'dor', 'decisor', 'faturamento', 'prioridade'],
-      obrigatorios: ['organizacao', 'vendedores'],
+      roteiro: ['segmento', 'dor', 'impacto', 'prioridade', 'decisor', 'faturamento', 'organizacao', 'vendedores'],
+      obrigatorios: ['dor'],
     },
     {
       // Tag ia-sdr colocada à mão num lead qualquer (teste, demonstração): mesmo CHAMP, sem falar de indicação
@@ -159,8 +165,8 @@ export const CRM_MAP = {
       ativa: true,
       promptFile: 'direto.md',
       sinais: /$^/,
-      roteiro: ['segmento', 'organizacao', 'vendedores', 'dor', 'decisor', 'faturamento', 'prioridade'],
-      obrigatorios: ['organizacao', 'vendedores'],
+      roteiro: ['segmento', 'dor', 'impacto', 'prioridade', 'decisor', 'faturamento', 'organizacao', 'vendedores'],
+      obrigatorios: ['dor'],
     },
   ] as Porta[],
 
@@ -182,7 +188,7 @@ export const CRM_MAP = {
    * CHAMP antes de marcar: cada grupo precisa de PELO MENOS UM campo respondido
    * (ou "não sei" dito pelo lead). Money vale por faturamento OU nº de vendedores.
    */
-  exigirAntesDeAgendar: [['dor', 'organizacao'], ['decisor'], ['faturamento', 'vendedores'], ['prioridade']] as string[][],
+  exigirAntesDeAgendar: [['dor'], ['prioridade'], ['decisor'], ['faturamento', 'vendedores']] as string[][],
   /** Aviso de reunião marcada no WhatsApp pessoal do closer: mensagem pelo Salesbot no lead dele (0 = desligado) */
   avisoCloser: { leadId: 20755415 },  // "Rodrigo Pessoal" (+55 11 97606-1468), funil ATENDIMENTO CONTROL GESTAO
   /** etapa para onde `agendar_reuniao` move o lead DEPOIS da tarefa criada (id 0 = não move) */

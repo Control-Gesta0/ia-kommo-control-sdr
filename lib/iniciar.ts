@@ -15,7 +15,7 @@ import { avancar } from './etapas'
 import { agendarFollowup } from './followup'
 import { kommoPort } from './port'
 import { k, redis } from './redis'
-import { completarPergunta1, mencionaQuantidade, saudacao } from './saudacao'
+import { saudacao } from './saudacao'
 import { getState, patchState } from './state'
 import { sendReply } from './transport'
 
@@ -192,9 +192,6 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
       if (ab) { texto = ab.text; guard = ab.guard; usage = ab.usage }
     } catch (e) { console.error(`[iniciar] abertura pelo modelo falhou no lead ${leadId}:`, e) }
     if (!texto) { texto = aberturaFixa(nome); guard = [...guard, 'abertura fixa (modelo falhou ou reprovou na trava)'] }
-    // Pergunta 1 sempre dupla (onde + quantos vendedores), também na abertura
-    const stAb = await getState(leadId)
-    texto = completarPergunta1(texto, !stAb.respostas?.vendedores && !(stAb.semResposta || []).includes('vendedores') && !mencionaQuantidade(comentario || ''))
 
     const detalhe = await sendReply(leadId, texto)
     await appendMessage(leadId, { id: crypto.randomUUID(), dir: 'out', text: texto, ts: Date.now() })

@@ -1,4 +1,3 @@
-import { perguntaDuplaPermitida } from '../lib/guards'
 /**
  * CENÁRIOS DO CLIENTE (patch) — Control Gestão · SDR de indicações Kommo.
  * Relógio fixo: segunda 28/09/2026 10h de Brasília (scripts/evals.ts).
@@ -9,7 +8,7 @@ import { perguntaDuplaPermitida } from '../lib/guards'
  */
 import type { Cenario } from '../scripts/evals'
 
-const umaPergunta = { nome: 'no máximo 1 pergunta por resposta (ou a dupla do roteiro)', fn: (_w: any, t: any[]) => t.every(x => (x.resposta.match(/\?/g) || []).length <= 1 || perguntaDuplaPermitida(x.resposta)) }
+const umaPergunta = { nome: 'no máximo 2 perguntas por resposta', fn: (_w: any, t: any[]) => t.every(x => (x.resposta.match(/\?/g) || []).length <= 2) }
 const ABERTURA_ENCENADA = /^(ótima pergunta|excelente pergunta|perfeito!|show!|bora lá|deixa eu te explicar|claro!|com certeza!)/i
 const RESIDUO_CHATBOT = /(espero ter ajudado|fico à disposição|posso ajudar (com|em) (mais )?(alguma|algo)|qualquer dúvida,? (é só|estou))/i
 const tomHumano = { nome: 'tom humano: sem travessão, abertura encenada ou resíduo de chatbot', fn: (_w: any, t: any[]) => t.every(x => !/[—–]/.test(x.resposta) && !ABERTURA_ENCENADA.test(x.resposta.trim()) && !RESIDUO_CHATBOT.test(x.resposta)) }
@@ -36,7 +35,7 @@ export const CENARIOS: Cenario[] = [
     criterios: [
       'Começa com saudação e apresentação (Lara, Control Gestão) e diz que o pedido veio pela Kommo, antes de qualquer pergunta',
       'Cria rapport citando a necessidade do Comment (funil e/ou WhatsApp) com as palavras do lead, sem copiar o texto inteiro',
-      'Termina com a pergunta 1 do roteiro (onde organizam os leads e quantos vendedores, juntas numa frase ou em duas perguntas seguidas), pulando o que o Comment já respondeu',
+      'Termina com uma pergunta do roteiro (o que mais trava / quanto isso pesa / prioridade), sem perguntar o que o Comment já respondeu',
       'Tem no máximo 3 linhas',
     ],
   },
@@ -60,7 +59,7 @@ export const CENARIOS: Cenario[] = [
     historico: [['out', ABERTURA]],
     msgs: ['planilha. Mas vocês integram o WhatsApp oficial ou só o Lite?'],
     checks: [umaPergunta, semFallback, tomHumano, chamou('salvar_respostas')],
-    criterios: ['Responde a pergunta sobre WhatsApp primeiro (sem inventar detalhe técnico que não sabe; pode dizer que o especialista detalha) e só depois faz UMA pergunta do CHAMP'],
+    criterios: ['Responde a pergunta sobre WhatsApp primeiro (sem inventar detalhe técnico que não sabe; pode dizer que o especialista detalha) e só depois faz a próxima pergunta do roteiro'],
   },
   {
     id: 'preco-sem-valor',
@@ -148,11 +147,11 @@ export const CENARIOS: Cenario[] = [
     abertura: true, agora: '2026-09-25T14:40:00Z',
     msgs: ['Então eu não sei como mexer na empresa de vocês, tentei aprender mais não consegui, eu estava precisando de um atendimento instantâneo com ia quando algum cliente mandar mensagem quando a nossa empresa não estiver em funcionamento, queria ter um CRM, com as informações de cada cliente organizando um por um'],
     checks: [umaPergunta, semFallback, tomHumano, abreCerto('Bom dia'),
-      { nome: 'gravou a dor e onde organiza a partir do que ele já contou', fn: (w: any) => !!w.state.respostas?.dor && !!w.state.respostas?.organizacao }],
+      { nome: 'gravou a dor a partir do que ele já contou', fn: (w: any) => !!w.state.respostas?.dor }],
     criterios: [
       'A abertura cria rapport citando pelo menos um ponto concreto do Comment (ex.: cadastro dos clientes, datas especiais, pós-venda, atendimento com IA ou o padrão de joalheria)',
       'A resposta à mensagem do lead acolhe a dificuldade dele e NÃO pergunta de novo o que ele quer resolver, se tem CRM ou onde organiza os clientes',
-      'A pergunta da resposta é sobre algo que ainda falta no CHAMP (vendedores, quem decide, faturamento ou quando quer começar)',
+      'A pergunta da resposta é sobre algo que ainda falta no roteiro (impacto, prioridade, ou decisão e faturamento)',
     ],
   },
   {

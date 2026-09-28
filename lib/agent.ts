@@ -7,7 +7,6 @@ import {
 } from './history'
 import { getContact, getLead, leadTags } from './kommo'
 import { ajustarResposta } from './tom'
-import { mencionaQuantidade } from './saudacao'
 import { createBrain } from './llm'
 import { kommoPort } from './port'
 import { rotear } from './router'
@@ -152,7 +151,7 @@ export async function processLead(leadId: number, webhookId: string): Promise<vo
         nomeCadastro: nomePessoa,
         respondenteNome: st2.respondenteNome,
         anteriores: conversa.filter(m => m.dir === 'out').map(m => m.text),
-        faltaVendedores: !st2.respostas?.vendedores && !(st2.semResposta || []).includes('vendedores') && !mencionaQuantidade(ctx.leadText),
+        faltaVendedores: false,
         handoff: reply.handoff,
         protegerSolucao: (!state.respostas?.dor && !!st2.respostas?.dor) || textoTurno.includes('?'),
       })

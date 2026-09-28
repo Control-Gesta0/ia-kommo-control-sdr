@@ -26,7 +26,7 @@ async function main() {
   // Degeneração do modelo (comum §49)
   eq('tool vazada', regras('salvar_respostas({"campo":"x"}) to=functions.salvar_respostas 重庆'), ['texto corrompido'])
   eq('JSON vazado', regras('{"respostas":[{"campo":"nome","evidencia":"joão","valor":"João"}]}'), ['texto corrompido'])
-  eq('duas perguntas', regras('Qual a idade dele? E quantas pessoas moram na casa?'), ['mais de uma pergunta'])
+  eq('até 2 perguntas passam; 3 não', [regras('Qual a idade dele? E quantas pessoas moram na casa?'), regras('Qual a idade? Onde mora? Quem decide?')], [[], ['mais de uma pergunta']])
   eq('texto normal passa', regras('Entendido, Cláudia. Quantas pessoas moram junto com o Davi?'), [])
   // Tom humano (SKILL §5.1): travessão sai em código
   eq('travessão é violação', regras('O curso — que começa em março — custa R$ 1.200.'), ['travessão'])

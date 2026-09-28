@@ -71,8 +71,9 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   eq('webhook: payload sem tags vai para conferência', [semTags.iniciar, semTags.verificar], [[], [404]])
   const tirou = parseEntrada({ 'leads[update][0][id]': '405', 'leads[update][0][status_id]': '80884464', 'leads[update][0][tags][0][name]': 'LEAD Kommo' }, 55438567, 'ia-sdr')
   eq('webhook: lead sem a tag zera a marca de tag vista', [tirou.iniciar, tirou.semTag], [[], [405]])
-  const { perguntaDuplaPermitida } = await import('../lib/guards')
-  eq('pergunta dupla só a do roteiro (onde + quantos)', [perguntaDuplaPermitida('Hoje vocês organizam os leads onde: WhatsApp, planilha ou outro CRM? E quantos vendedores usariam o sistema?'), checkReply('Qual o faturamento? E quem decide?').some(v => v.regra === 'mais de uma pergunta')], [true, true])
+  const reu = parseEntrada({ 'leads[update][0][id]': '406', 'leads[update][0][status_id]': '40438379', 'leads[update][0][custom_fields][0][id]': '1048615', 'leads[update][0][custom_fields][0][values][0][value]': 'x', 'leads[update][0][custom_fields][1][id]': '1040772', 'leads[update][0][custom_fields][1][values][0]': '1790600400' }, 55438567, 'ia-sdr', 1040772)
+  eq('webhook: campo Reunião no payload vai para a marcação manual', reu.reunioes, [[406, '1790600400']])
+  eq('decisão + investimento juntas passam; 3 perguntas não', [checkReply('A escolha do CRM é sua?\n\nE o faturamento fica em qual faixa?').some(v => v.regra === 'mais de uma pergunta'), checkReply('Qual o faturamento? E quem decide? Quando começa?').some(v => v.regra === 'mais de uma pergunta')], [false, true])
   const add = parseEntrada({ unsorted: { add: [{ uid: 'u2', lead_id: '500', source_data: { data: { comment: { name: 'Comment', value: 'Quero integrar o site' } } } }] } })
   eq('webhook: Incoming lead adicionado guarda o Comment', add.comentariosIncoming, [[500, 'Quero integrar o site']])
   const add2 = parseEntrada({ 'unsorted[add][0][lead_id]': '501', 'unsorted[add][0][source_data][text]': 'Name: Ana\nComment: teste' })
@@ -190,7 +191,7 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   eq('nunca volta (qualificado → em contato)', podeAvancar(4338500, 40438379, 'emContato'), false)
   eq('não mexe depois da reunião (PROPOSTA ENVIADA)', podeAvancar(4338500, 103456716, 'agendado'), false)
   eq('não mexe em outro funil', podeAvancar(7975447, 55438567, 'emContato'), false)
-  eq('CHAMP incompleto x completo', [champCompleto({ dor: 'x', decisor: 'eu', vendedores: '3' }), champCompleto({ dor: 'x', decisor: 'eu', vendedores: '3', prioridade: 'mês' }), champCompleto({ organizacao: 'planilha', decisor: 'eu', faturamento: '50 mil' }, ['prioridade'])], [false, true, true])
+  eq('CHAMP incompleto x completo', [champCompleto({ dor: 'x', decisor: 'eu', vendedores: '3' }), champCompleto({ dor: 'x', decisor: 'eu', vendedores: '3', prioridade: 'mês' }), champCompleto({ organizacao: 'planilha', decisor: 'eu', faturamento: '50 mil' }, ['prioridade'])], [false, true, false])
 
   // ---------------- Follow-up só no expediente (seg a sex, 9h às 18h, Brasília) ----------------
   const { noExpediente } = await import('../lib/followup')
@@ -204,9 +205,10 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   // ---------------- Lembretes para o cliente ----------------
   const { textoLembrete } = await import('../lib/followup')
   const reuniao = Date.parse('2026-10-01T09:30:00-03:00') // quinta 9h30
-  eq('lembrete 24h', textoLembrete(24, reuniao, reuniao - 24 * 3600000, 'Ana'), 'Oi, Ana! Passando pra lembrar da nossa reunião amanhã, quinta 01/10 às 9h30 com o especialista da Control Gestão. Tudo certo pra você?')
-  eq('lembrete 1h', textoLembrete(1, reuniao, reuniao - 3600000, 'Ana'), 'Oi, Ana! Daqui a pouco, às 9h30, é a nossa reunião com o especialista da Control Gestão. Até já!')
-  eq('lembrete com link pede para conferir', textoLembrete(24, reuniao, reuniao - 86400000, 'Ana', 'https://meet.google.com/abc-defg-hij').includes('https://meet.google.com/abc-defg-hij\nConfere se abre certinho aí pra você?'), true)
+  eq('lembrete 24h', textoLembrete(1440, reuniao, reuniao - 24 * 3600000, 'Ana'), 'Oi, Ana! Passando pra lembrar da nossa reunião amanhã, quinta 01/10 às 9h30 com o especialista da Control Gestão. Tudo certo pra você?')
+  eq('lembrete 1h (o link vai 10 min antes)', textoLembrete(60, reuniao, reuniao - 3600000, 'Ana'), 'Oi, Ana! Daqui a pouco, às 9h30, é a nossa reunião com o especialista da Control Gestão. Te mando o link 10 minutinhos antes. Até já!')
+  eq('lembrete 10 min com o link', textoLembrete(10, reuniao, reuniao - 600000, 'Ana', 'meet.google.com/abc-defg-hij'), 'Oi, Ana! Em 10 minutinhos começa a nossa reunião com o especialista da Control Gestão. É só entrar por aqui: meet.google.com/abc-defg-hij\nAté já!')
+  eq('lembrete com link pede para conferir', textoLembrete(1440, reuniao, reuniao - 86400000, 'Ana', 'https://meet.google.com/abc-defg-hij').includes('https://meet.google.com/abc-defg-hij\nConfere se abre certinho aí pra você?'), true)
   const { foraDoIdioma } = await import('../lib/indicacao')
   eq('idioma decide pelo Comment: EUA com Comment em português aceita; espanhol/inglês não', [
     foraDoIdioma('Country: United States\nLanguages: English\nComment: Quero configurar meu CRM', 'Quero configurar meu CRM').fora,
@@ -219,7 +221,7 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   const { classificarSuporte } = await import('../lib/indicacao')
   eq('suporte básico não inicia; implantação sim', [classificarSuporte('meu whatsapp caiu').suporte, classificarSuporte('preciso conectar meu whatsapp').suporte, classificarSuporte('conectar o whatsapp e montar o funil').suporte, decidirInicio({ ...base, suporte: 'suporte básico: "whatsapp caiu"' }, cfg).acao], [true, true, false, 'suporte'])
   eq('início: Comment em outro idioma NÃO inicia', decidirInicio({ ...base, foraDoIdioma: 'Comment em espanhol' }, cfg).acao, 'outro-idioma')
-  eq('lembretes passam nas travas', [regras(textoLembrete(24, reuniao, reuniao - 86400000, 'Ana')), regras(textoLembrete(1, reuniao, reuniao - 3600000, ''))], [[], []])
+  eq('lembretes passam nas travas', [regras(textoLembrete(1440, reuniao, reuniao - 86400000, 'Ana')), regras(textoLembrete(60, reuniao, reuniao - 3600000, '')), regras(textoLembrete(10, reuniao, reuniao - 600000, '', 'meet.google.com/x'))], [[], [], []])
 
   // ---------------- Roteador: porta única, sem menu ----------------
   const { rotear } = await import('../lib/router')

@@ -98,7 +98,7 @@ export function createBrain(opts: LlmOptions) {
       state.respondenteNome ? `Quem está digitando: ${state.respondenteNome} (${state.respondenteRelacao || 'relação não informada'})` : 'Quem está digitando: não confirmado',
       snap.preenchidos.length ? `Já respondido (NUNCA pergunte de novo): ${snap.preenchidos.map(p => `${p.campo.name} = ${p.valor}`).join(' · ')}` : 'Já respondido: nada ainda',
       state.outroAssunto ? `Outro assunto já registrado: ${state.outroAssunto}` : '',
-      state.oferta?.length ? `Horários já oferecidos (só estes valem): ${state.oferta.map(o => o.label).join(' · ')}` : '',
+      state.oferta?.length ? `Horários já oferecidos (só estes valem): ${state.oferta.map(o => o.label).join(' · ')}. O FOCO AGORA é ele escolher um deles: não volte a fazer perguntas do roteiro.` : '',
       state.reuniao ? `REUNIÃO JÁ MARCADA: ${state.reuniao.label}. Não marque outra.` : '',
       ...CRM_MAP.alertas.filter(a => a.re.test(ctx.lastLeadText)).map(a => `⚠️ ALERTA DO SISTEMA (${a.nome}): ${a.aviso}`),
       // Perguntou preço: a próxima pergunta é o TAMANHO (código, não sugestão)

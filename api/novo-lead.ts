@@ -6,6 +6,7 @@ import { CRM_MAP } from '../lib/crm-map'
 import { extrairComentario } from '../lib/indicacao'
 import { guardarComentarioIncoming, iniciarConversa, iniciarPorTag } from '../lib/iniciar'
 import { getLead, leadTags, sleep } from '../lib/kommo'
+import { conferirReuniaoManual } from '../lib/manual'
 import { k, redis } from '../lib/redis'
 
 /**
@@ -45,6 +46,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // A tag só vale quando APARECE no lead (antes não tinha): toda alteração de um lead com a tag
     // gera update_lead, e tratar cada uma como "tag nova" apagava a pausa de humano
     for (const leadId of ev.semTag) await redis.del(k('tag-vista', leadId))
+    // Reunião marcada à mão pelo campo do card
+    for (const [leadId, valor] of ev.reunioes) {
+      const r = await conferirReuniaoManual(leadId, valor).catch(e => `erro: ${e instanceof Error ? e.message : e}`)
+      if (!/sem mudança/.test(r)) console.log(`[reunião manual] lead ${leadId}: ${r}`)
+    }
     const lista = []
     for (const x of ev.iniciar) {
       if (doUserscript) { lista.push(x); continue }
@@ -88,10 +94,12 @@ export interface Entrada {
   verificar: number[]
   /** lead alterado SEM a tag da Lara (a tag saiu): zera a marca de "tag vista" */
   semTag: number[]
+  /** campo "Reunião" no payload: [leadId, valor bruto] (o handler confere se mudou e se foi uma pessoa) */
+  reunioes: Array<[number, string]>
 }
 
-export function parseEntrada(raw: Record<string, unknown>, statusEntrada = CRM_MAP.entrada.statusId, gate = CONFIG.gateTag.toLowerCase()): Entrada {
-  const out: Entrada = { accountId: '', iniciar: [], comentariosIncoming: [], verificar: [], semTag: [] }
+export function parseEntrada(raw: Record<string, unknown>, statusEntrada = CRM_MAP.entrada.statusId, gate = CONFIG.gateTag.toLowerCase(), campoReuniao = CRM_MAP.dataReuniaoFieldId): Entrada {
+  const out: Entrada = { accountId: '', iniciar: [], comentariosIncoming: [], verificar: [], semTag: [], reunioes: [] }
   // Userscript (JSON simples)
   if (raw.leadId !== undefined) {
     const leadId = Number(raw.leadId)
@@ -130,6 +138,15 @@ export function parseEntrada(raw: Record<string, unknown>, statusEntrada = CRM_M
     if (!m) continue
     const pref = `leads[${m[1]}][${m[2]}]`
     const st = Number(f[`${pref}[status_id]`] || 0)
+    // Campo "Reunião" (marcação à mão): guarda o valor bruto para o handler conferir
+    if (campoReuniao) {
+      const idx = Object.keys(f).map(k2 => k2.match(new RegExp(`^${pref.replace(/[[\]]/g, '\\$&')}\\[custom_fields\\]\\[(\\d+)\\]\\[id\\]$`))).find(mm => mm && f[mm[0]] === String(campoReuniao))
+      if (idx) {
+        const base = `${pref}[custom_fields][${idx[1]}]`
+        const valor = Object.keys(f).filter(k2 => k2.startsWith(base) && /value/i.test(k2)).map(k2 => f[k2]).join('|')
+        if (valor) out.reunioes.push([Number(v), valor])
+      }
+    }
     const tags = Object.keys(f).filter(k => new RegExp(`^${pref.replace(/[[\]]/g, '\\$&')}\\[tags\\]\\[\\d+\\]\\[name\\]$`).test(k)).map(k => f[k].trim().toLowerCase())
     const temTagsNoPayload = Object.keys(f).some(k => k.startsWith(`${pref}[tags]`))
     if (tags.includes(gate)) add(Number(v), 'webhook:tag')

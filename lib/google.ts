@@ -114,3 +114,12 @@ export async function lerEventoGoogle(id: string): Promise<EventoGoogle | null> 
     throw e
   }
 }
+
+/** Remarca o evento (o Google avisa o convidado, se houver). */
+export async function moverEventoGoogle(id: string, ini: number, fim: number): Promise<EventoGoogle> {
+  const e = await api<EventoApi>('PATCH', `/calendars/${encodeURIComponent(calendarId())}/events/${encodeURIComponent(id)}?sendUpdates=all`, {
+    start: { dateTime: new Date(ini).toISOString(), timeZone: 'America/Sao_Paulo' },
+    end: { dateTime: new Date(fim).toISOString(), timeZone: 'America/Sao_Paulo' },
+  })
+  return paraEvento(e)
+}

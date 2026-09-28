@@ -238,16 +238,21 @@ export function snapshot(porta: Porta, state: LeadState): Snapshot {
 export function describeOpen(porta: Porta, snap0: Snapshot, prioridade: string[] = []): string {
   if (!porta.roteiro.length) return ''
   const nicho = snap0.abertos.some(c => c.key === 'segmento') ? ' Ramo da empresa ainda não identificado: se ele já contou (ex.: "sou advogado", "minha clínica"), grave em segmento agora. NÃO faça pergunta só para descobrir o ramo.' : ''
-  const s = { ...snap0, abertos: snap0.abertos.filter(c => c.key !== 'segmento') }
+  // Só as 4 perguntas do roteiro (opcionais são gravados se o lead falar, nunca perguntados)
+  const s = { ...snap0, abertos: snap0.abertos.filter(c => !c.opcional) }
   const aberto = (k: string) => s.abertos.some(c => c.key === k)
-  if (!s.abertos.length) return 'Roteiro COMPLETO: agora VENDA a reunião (ligue a dor dele e o problema comum do nicho ao que fazemos e ofereça a análise gratuita com o especialista, perguntando se ele quer marcar). Só chame consultar_horarios depois que ele topar ou se ele já pediu horário.'
-  // Onde organizam + quantos vendedores vão juntos numa mensagem só (menos mensagens de qualificação)
-  if (!prioridade.length && aberto('organizacao') && aberto('vendedores')) {
-    return `Faltam: ${s.abertos.map(c => c.name).join(' · ')}. Próximo → as DUAS perguntas juntas, numa mensagem só: "Hoje vocês organizam os leads onde: WhatsApp, planilha ou outro CRM? E quantos vendedores usariam o sistema?" (adapte ao que ele já contou; se ele já respondeu uma, pergunte só a outra). Frases como "queria ter um CRM" (= não tem CRM), "tá tudo no WhatsApp", "uso o Trello" JÁ respondem onde: grave organizacao com esse trecho e pergunte só quantos vendedores. Se o Comment ou as mensagens já respondem algum item, grave com salvar_respostas ANTES e pule.${nicho}`
+  // O que trava a reunião já foi respondido (problema, prioridade, decisão, investimento): o impacto não segura a venda
+  const respondidas = Object.fromEntries(snap0.preenchidos.map(p => [p.campo.key, String(p.valor)]))
+  if (s.abertos.length && champCompleto(respondidas)) s.abertos = []
+  const gravar = ' Se o Comment ou as mensagens já respondem algum item (inclusive onde organizam os leads ou quantos vendedores), grave com salvar_respostas ANTES e pule.'
+  if (!s.abertos.length) return `Roteiro COMPLETO: agora VENDA a reunião (ligue o problema e o impacto que ele contou ao que fazemos e ofereça a análise gratuita com o especialista, perguntando se ele quer marcar). Só chame consultar_horarios depois que ele topar ou se ele já pediu horário.${nicho}`
+  // 4ª pergunta: decisão + investimento juntas, em 2 blocos (menos mensagens)
+  if (!prioridade.length && s.abertos.every(c => c.key === 'decisor' || c.key === 'faturamento') && aberto('decisor') && aberto('faturamento')) {
+    return `Faltam: decisão e investimento. Próximo → as DUAS juntas numa mensagem só, em 2 blocos (linha em branco entre eles):\n"A escolha do CRM é sua ou passa por mais alguém?\n\nE pra eu entender o tamanho da operação: o faturamento mensal de vocês fica mais perto de até R$ 50 mil, de R$ 50 a 200 mil ou acima disso?"\n(adapte com naturalidade; se ele já respondeu uma, pergunte só a outra).${gravar}${nicho}`
   }
   const prox = s.abertos.find(c => prioridade.includes(c.key)) || s.abertos[0]
   const opc = prox.options ? ` (grave com uma destas opções EXATAS: ${prox.options.map(o => o.value).join(' | ')})` : ''
-  return `Faltam: ${s.abertos.map(c => c.name).join(' · ')}. Próximo que falta → ${prox.name}${prox.pergunta ? ` (sugestão: "${prox.pergunta}"; adapte com naturalidade ao que ele contou, mantendo as faixas se for o faturamento)` : ''}${opc}. Se o Comment ou as mensagens já respondem algum desses, grave com salvar_respostas ANTES e pule. Pode seguir outra ordem se ficar mais natural.${nicho}`
+  return `Faltam: ${s.abertos.map(c => c.name).join(' · ')}. Próximo que falta → ${prox.name}${prox.pergunta ? ` (sugestão: "${prox.pergunta}"; adapte com naturalidade ao que ele contou, mantendo as faixas se for o faturamento)` : ''}${opc}.${gravar} Pode seguir outra ordem se ficar mais natural.${nicho}`
 }
 
 // ---------- Execução ----------
@@ -288,6 +293,12 @@ export function decisorSemNome(texto: string): boolean {
   if (!cargo.test(texto) || /\b(eu|mim|s[oó] eu)\b/i.test(texto.replace(/\b(eu e|e eu)\b/i, ''))) return false
   const sobra = texto.toLowerCase().replace(/[^\p{L}\s-]/gu, ' ').split(/\s+/).filter(w => w.length >= 3 && !PALAVRAS_DECISOR.has(w))
   return sobra.length === 0
+}
+
+/** "24h, 1h e 10 min antes" */
+export function rotuloLembretes(): string {
+  const r = CRM_MAP.lembretes.minutosAntes.map(m => (m >= 60 ? `${m / 60}h` : `${m} min`))
+  return `${r.length > 1 ? `${r.slice(0, -1).join(', ')} e ${r[r.length - 1]}` : r[0]} antes`
 }
 
 /** Efeitos no CRM ao finalizar. Ordem importa: primeiro desliga (tag), depois marca o estado. */
@@ -516,7 +527,7 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
           '⭐ Especialista: Rodrigo Campeoti',
           convidado && `☑️ Decisor convidado: ${convidado}`,
           link ? `➡️ ${link}` : '⚠️ Sem link ainda: tarefa criada para preencher o campo "Link da Reunião"',
-          `⏳ Lembretes para o cliente: ${CRM_MAP.lembretes.horasAntes.map(h => `${h}h antes`).join(' e ')}`,
+          `⏳ Lembretes para o cliente: ${rotuloLembretes()}`,
         ]
         const moveu = CRM_MAP.etapaAgendado.id ? await avancar(port, 'agendado', [], true) : false
         if (port.avisarCloser) {
