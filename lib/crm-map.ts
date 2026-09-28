@@ -23,6 +23,7 @@ export type { AgendaConfig, Alerta, Campo, CampoTipo, Etapa, Porta } from './crm
 const CAMPOS = {
   segmento: {
     key: 'segmento', curto: 'Segmento', id: 0, name: 'Nicho/segmento da empresa', type: 'text',
+    sinal: /advog|advocacia|jur[ií]dic|escrit[oó]rio|cl[ií]nic|est[eé]tic|odonto|dent|m[eé]dic|sa[uú]de|psic|fisio|nutri|imobili|corretor|im[oó]v|escola|curso|educa|faculdade|idioma|loja|varejo|commerce|moda|roupa|cal[cç]ado|m[oó]veis|decora|autom[oó]v|carro|moto|oficina|pe[cç]as|ve[ií]culo|consult|ag[eê]ncia|marketing|servi[cç]o|contab|seguro|financ|cr[eé]dito|cons[oó]rcio|constru|engenharia|arquitet|reforma|solar|energia|turismo|viage|hotel|pousada|restaurante|aliment|delivery|academia|fitness|ind[uú]stria|f[aá]brica|distribui|atacad|log[ií]stic|transport|tecnologia|software|saas|pet|veterin|beleza|sal[aã]o|barbear|evento|igreja|ong\b|laborat|farm[aá]c|[oó]tica|gr[aá]fica|com[eé]rcio|representa|franquia|infoproduto|mentoria|coach|agro|fazenda|emprestimo|telecom|internet|provedor|cosm[eé]tic|joia|joalher|rel[oó]gio|bijou|acess[oó]rio|perfum|pizzaria|padaria|confeitaria|doceria|cafeteria|lanchonete|mercado|a[cç]ougue|hortifruti|bebida|cervej|vinho|floricultura|gr[aá]fica|papelaria|brinquedo|eletr[oô]nic|inform[aá]tica|seguran[cç]a|limpeza|log[ií]stica|b2b|b2c|ramo|segmento|nicho|setor|trabalho com|trabalhamos com|somos (uma|um)/i,
     pergunta: 'Me conta rapidinho, vocês atuam em qual ramo?',
   },
   organizacao: {
@@ -136,6 +137,7 @@ export const CRM_MAP = {
     suporte: 'indicacao-suporte',
     licenca: 'venda-licenca',
     reuniao: 'reuniao-agendada',
+    contatoErrado: 'contato-errado',
   },
 
   portas: [
@@ -222,7 +224,7 @@ export const CRM_MAP = {
     {
       nome: 'dificuldade',
       re: /n[aã]o sei (configurar|mexer|usar)|n[aã]o consegui|tentei aprender|dif[ií]cil|perdid[oa]|complicado|n[aã]o entendo/i,
-      aviso: 'O lead contou uma DIFICULDADE. Comece a resposta acolhendo em meia frase (ex.: "normal, no começo o Kommo assusta mesmo, a gente deixa isso simples pra você") e só depois siga.',
+      aviso: 'O lead contou uma DIFICULDADE (não sabe configurar/mexer). Comece a resposta acolhendo EXATAMENTE essa dificuldade em meia frase e mostre que é aí que a gente entra (ex.: "normal, no começo o Kommo assusta mesmo, e a configuração a gente faz junto com você na implantação"). Só depois siga com a próxima pergunta.',
     },
   ] as Alerta[],
 

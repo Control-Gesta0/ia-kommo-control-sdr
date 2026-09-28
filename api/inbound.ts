@@ -5,8 +5,10 @@ import { processLead } from '../lib/agent'
 import { CONFIG } from '../lib/config'
 import { logExec } from '../lib/execlog'
 import { appendMessage, isEchoOfSent, markHumanSpoke, seenMessage } from '../lib/history'
-import { mediaKind, mediaToText } from '../lib/media'
+import { mediaKind, mediaToText, tipoPeloLink } from '../lib/media'
+import { k, redis } from '../lib/redis'
 import { podeResetar, resetLead } from '../lib/reset'
+import { ehRespostaAutomatica } from '../lib/automatica'
 import { cancelarFollowup } from '../lib/followup'
 import { sendReply } from '../lib/transport'
 
@@ -35,7 +37,22 @@ function safeEq(a: string, b: string): boolean {
   return crypto.timingSafeEqual(crypto.createHash('sha256').update(a).digest(), crypto.createHash('sha256').update(b).digest())
 }
 
-export interface InboundMsg { id: string; leadId: number; text: string; attachType: string; attachLink: string; direction: string }
+export interface InboundMsg { id: string; leadId: number; text: string; attachType: string; attachLink: string; direction: string; bruto?: Record<string, string> }
+
+/** Todas as chaves da mensagem i, achatadas ("message[add][0][attachment][link]" → valor). */
+function achatarMsg(body: Record<string, unknown>, i: number): Record<string, string> {
+  const out: Record<string, string> = {}
+  const pref = `message[add][${i}]`
+  for (const [k2, v] of Object.entries(body)) if (k2.startsWith(pref) && v !== null && typeof v !== 'object') out[k2] = String(v)
+  const aninhado = ((body.message as Record<string, unknown> | undefined)?.add as unknown[] | undefined)?.[i]
+  const rec = (o: unknown, p2: string) => {
+    if (o === null || o === undefined) return
+    if (typeof o !== 'object') { out[p2] = String(o); return }
+    for (const [k3, v3] of Object.entries(o as Record<string, unknown>)) rec(v3, `${p2}[${k3}]`)
+  }
+  if (aninhado) rec(aninhado, pref)
+  return out
+}
 
 function pick(body: Record<string, unknown>, flat: string, nested: Array<string | number>): string {
   const v = body[flat]
@@ -60,12 +77,17 @@ export function parseKommoWebhook(raw: unknown): { accountId: string; msgs: Inbo
     if (!id && !entityId && !text) break
     const leadId = Number(entityId)
     if (!leadId) continue
+    // Mídia: o campo muda conforme o canal (attachment/media/file). Procura tipo e link em qualquer chave da mensagem.
+    const plano = achatarMsg(body, i)
+    const attachType = p('[attachment][type]', ['attachment', 'type']) || Object.entries(plano).find(([k2]) => /(attachment|media|file)\]\[(type|mime)/i.test(k2))?.[1] || ''
+    const attachLink = p('[attachment][link]', ['attachment', 'link']) || Object.values(plano).find(v => /^https?:\/\//i.test(v) && !/\/leads\/detail\//.test(v)) || ''
     msgs.push({
       id: id || `${leadId}:${p('[created_at]', ['created_at'])}:${i}`,
       leadId, text,
-      attachType: p('[attachment][type]', ['attachment', 'type']),
-      attachLink: p('[attachment][link]', ['attachment', 'link']),
+      attachType,
+      attachLink,
       direction: p('[type]', ['type']).toLowerCase(),
+      bruto: plano,
     })
   }
   return msgs.length ? { accountId: pick(body, 'account[id]', ['account', 'id']), msgs } : null
@@ -77,9 +99,17 @@ async function ingest(msgs: InboundMsg[], webhookId: string): Promise<void> {
     try {
       if (await seenMessage(`kommo:${m.id}`)) continue
       let text = (m.text || '').trim()
-      const kind = mediaKind(m.attachType)
       const outgoing = m.direction === 'outgoing'
+      const kind = mediaKind(m.attachType) || tipoPeloLink(m.attachLink) || (!text && m.attachLink ? 'audio' : null)
       if (kind && !outgoing) text = await mediaToText(kind, m.attachLink, text)
+      if (!outgoing && (kind || !text)) {
+        // Guarda o formato que a Kommo mandou (24h) para conferir mídia que não abriu
+        await redis.lpush(k('diag', 'inbound-midia'), JSON.stringify({ em: new Date().toISOString(), leadId: m.leadId, attachType: m.attachType, attachLink: m.attachLink ? m.attachLink.slice(0, 120) : '', texto: text.slice(0, 120), bruto: m.bruto })).catch(() => 0)
+        await redis.ltrim(k('diag', 'inbound-midia'), 0, 19).catch(() => undefined)
+        await redis.expire(k('diag', 'inbound-midia'), 86400).catch(() => undefined)
+      }
+      // Mensagem do lead sem texto e sem mídia legível: NUNCA some calada (a Lara pede pra escrever)
+      if (!text && !outgoing) text = '[o lead mandou uma mensagem sem texto (provavelmente áudio, foto ou arquivo) que não consegui abrir]'
       if (!text) continue
 
       // Eco do que o NOSSO bot enviou: já está no histórico
@@ -95,6 +125,13 @@ async function ingest(msgs: InboundMsg[], webhookId: string): Promise<void> {
         await resetLead(m.leadId)
         await sendReply(m.leadId, '🔄 Teste reiniciado. Mande a primeira mensagem como se fosse um lead novo.')
         await logExec({ tipo: 'reset', leadId: m.leadId, detalhe: 'reset de teste' })
+        continue
+      }
+
+      // Resposta automática da empresa do lead: não é ele falando. Não responde e não
+      // cancela o follow-up (quem vai ler ainda não leu)
+      if (ehRespostaAutomatica(text)) {
+        await logExec({ tipo: 'pulou', leadId: m.leadId, detalhe: `resposta automática ignorada: ${text.slice(0, 80)}` })
         continue
       }
 

@@ -2,6 +2,8 @@ import type OpenAI from 'openai'
 import { ehAfirmativo, escolherOpcoes, gerarLivres, parsePreferencia, resolverEscolha, slotsCitados, type Intervalo, type Slot } from './agenda'
 import { CRM_MAP, campoByKey, type Campo, type Porta } from './crm-map'
 import { avancar, champCompleto, NOMES } from './etapas'
+import { classificarSuporte } from './indicacao'
+import { primeiroNomeDe } from './saudacao'
 import { nota } from './notas'
 import { DISSE_NAO_SEI, evidenceFound, matchOption, overlap, parseNumeroBR } from './guards'
 import type { KommoFieldValue } from './kommo'
@@ -60,7 +62,7 @@ const err = (content: string): ToolOutcome => ({ content, isError: true })
  * Motivos que o MODELO pode usar. "agendado" não está aqui de propósito: só a
  * tool agendar_reuniao finaliza assim, depois da tarefa criada de verdade.
  */
-export const MOTIVOS = ['qualificado_sem_reuniao', 'venda_licenca', 'suporte', 'ja_tem_parceiro', 'fora_do_escopo', 'pediu_humano', 'desistiu'] as const
+export const MOTIVOS = ['qualificado_sem_reuniao', 'venda_licenca', 'suporte', 'ja_tem_parceiro', 'fora_do_escopo', 'pediu_humano', 'desistiu', 'contato_errado'] as const
 type Motivo = typeof MOTIVOS[number]
 
 /** Sinal mínimo que a evidência precisa ter para cada motivo de finalização. */
@@ -120,7 +122,7 @@ export function buildTools(porta: Porta): OpenAI.Chat.ChatCompletionTool[] {
       type: 'function',
       function: {
         name: 'registrar_respondente',
-        description: 'Registra QUEM está digitando quando não é quem pediu a indicação (ex.: a secretária falando pelo dono). Depois chame a pessoa pelo nome dela.',
+        description: 'Registra o NOME de quem está DIGITANDO: o próprio lead quando o cadastro não tem nome de pessoa (relacao "o próprio"), ou quem fala por ele (a secretária pelo dono). NÃO use para o decisor citado na conversa (o nome dele vai em decisor_convidado). Depois chame a pessoa por esse nome.',
         parameters: {
           type: 'object',
           properties: { nome: { type: 'string' }, relacao: { type: 'string', description: 'sócio, secretária, gerente, funcionário, o próprio...' } },
@@ -133,7 +135,7 @@ export function buildTools(porta: Porta): OpenAI.Chat.ChatCompletionTool[] {
       type: 'function',
       function: {
         name: 'finalizar_atendimento',
-        description: 'Encerra a participação da IA SEM reunião marcada (reunião marcada quem encerra é agendar_reuniao). Chame ANTES de escrever a mensagem de encerramento. Motivos: qualificado_sem_reuniao (qualificou mas a agenda falhou ou o lead não quer marcar agora); venda_licenca (o lead só precisa da LICENÇA, sem implantação, e quer comprar: o time manda o link/proposta; ponha plano e nº de usuários no resumo); suporte (pedido de suporte técnico: WhatsApp caiu, mensagem não envia, conectar número); ja_tem_parceiro (já fechou com outro parceiro/consultoria); fora_do_escopo (não é implantação/uso do Kommo); pediu_humano; desistiu. Depois envie a mensagem de encerramento e NÃO faça perguntas.',
+        description: 'Encerra a participação da IA SEM reunião marcada (reunião marcada quem encerra é agendar_reuniao). Chame ANTES de escrever a mensagem de encerramento. Motivos: qualificado_sem_reuniao (qualificou mas a agenda falhou ou o lead não quer marcar agora); venda_licenca (o lead só precisa da LICENÇA, sem implantação, e quer comprar: o time manda o link/proposta; ponha plano e nº de usuários no resumo); suporte (pedido de suporte técnico: WhatsApp caiu, mensagem não envia, conectar número); ja_tem_parceiro (já fechou com outro parceiro/consultoria); fora_do_escopo (não é implantação/uso do Kommo); pediu_humano; desistiu. contato_errado (a pessoa diz que não é quem pediu, que não pediu nada ou que o número é de outra pessoa: peça desculpa em uma frase, sem insistir). Depois envie a mensagem de encerramento e NÃO faça perguntas.',
         parameters: {
           type: 'object',
           properties: {
@@ -235,17 +237,17 @@ export function snapshot(porta: Porta, state: LeadState): Snapshot {
 
 export function describeOpen(porta: Porta, snap0: Snapshot, prioridade: string[] = []): string {
   if (!porta.roteiro.length) return ''
-  const nicho = snap0.abertos.some(c => c.key === 'segmento') ? ' Ramo da empresa ainda não identificado: se ele já contou (ex.: "sou advogado"), grave em segmento agora; senão, pergunte de leve junto da próxima pergunta ("e vocês atuam em qual ramo?").' : ''
+  const nicho = snap0.abertos.some(c => c.key === 'segmento') ? ' Ramo da empresa ainda não identificado: se ele já contou (ex.: "sou advogado", "minha clínica"), grave em segmento agora. NÃO faça pergunta só para descobrir o ramo.' : ''
   const s = { ...snap0, abertos: snap0.abertos.filter(c => c.key !== 'segmento') }
   const aberto = (k: string) => s.abertos.some(c => c.key === k)
   if (!s.abertos.length) return 'Roteiro COMPLETO: agora VENDA a reunião (ligue a dor dele e o problema comum do nicho ao que fazemos e ofereça a análise gratuita com o especialista, perguntando se ele quer marcar). Só chame consultar_horarios depois que ele topar ou se ele já pediu horário.'
   // Onde organizam + quantos vendedores vão juntos numa mensagem só (menos mensagens de qualificação)
   if (!prioridade.length && aberto('organizacao') && aberto('vendedores')) {
-    return `Faltam: ${s.abertos.map(c => c.name).join(' · ')}. Próximo → as DUAS perguntas juntas, numa mensagem só: "Hoje vocês organizam os leads onde: WhatsApp, planilha ou outro CRM? E quantos vendedores usariam o sistema?" (adapte ao que ele já contou; se ele já respondeu uma, pergunte só a outra). Se o Comment ou as mensagens já respondem algum item, grave com salvar_respostas ANTES e pule.${nicho}`
+    return `Faltam: ${s.abertos.map(c => c.name).join(' · ')}. Próximo → as DUAS perguntas juntas, numa mensagem só: "Hoje vocês organizam os leads onde: WhatsApp, planilha ou outro CRM? E quantos vendedores usariam o sistema?" (adapte ao que ele já contou; se ele já respondeu uma, pergunte só a outra). Frases como "queria ter um CRM" (= não tem CRM), "tá tudo no WhatsApp", "uso o Trello" JÁ respondem onde: grave organizacao com esse trecho e pergunte só quantos vendedores. Se o Comment ou as mensagens já respondem algum item, grave com salvar_respostas ANTES e pule.${nicho}`
   }
   const prox = s.abertos.find(c => prioridade.includes(c.key)) || s.abertos[0]
   const opc = prox.options ? ` (grave com uma destas opções EXATAS: ${prox.options.map(o => o.value).join(' | ')})` : ''
-  return `Faltam: ${s.abertos.map(c => c.name).join(' · ')}. Próximo que falta → ${prox.name}${prox.pergunta ? ` (use esta pergunta, com o mínimo de ajuste: "${prox.pergunta}")` : ''}${opc}. Se o Comment ou as mensagens já respondem algum desses, grave com salvar_respostas ANTES e pule. Pode seguir outra ordem se ficar mais natural.${nicho}`
+  return `Faltam: ${s.abertos.map(c => c.name).join(' · ')}. Próximo que falta → ${prox.name}${prox.pergunta ? ` (sugestão: "${prox.pergunta}"; adapte com naturalidade ao que ele contou, mantendo as faixas se for o faturamento)` : ''}${opc}. Se o Comment ou as mensagens já respondem algum desses, grave com salvar_respostas ANTES e pule. Pode seguir outra ordem se ficar mais natural.${nicho}`
 }
 
 // ---------- Execução ----------
@@ -276,6 +278,16 @@ const MOTIVO_TXT: Record<string, string> = {
   agendado: '⏰ Reunião agendada', qualificado_sem_reuniao: '✅ Qualificado (reunião a combinar)', venda_licenca: '✅ Venda de licença',
   suporte: '⚙️ Pedido de suporte técnico', ja_tem_parceiro: '☑️ Já tem parceiro', fora_do_escopo: '⛔ Fora do escopo',
   pediu_humano: '✋ Pediu para falar com uma pessoa', desistiu: '✌️ Desistiu', sem_resposta: '⌛ Sem resposta',
+  contato_errado: '⛔ Contato errado (não é quem pediu)',
+}
+
+const PALAVRAS_DECISOR = new Set(['e', 'é', 'o', 'a', 'os', 'as', 'meu', 'minha', 'meus', 'minhas', 'nosso', 'nossa', 'socio', 'sócio', 'socia', 'sócia', 'socios', 'sócios', 'dono', 'dona', 'donos', 'gestor', 'gestora', 'gerente', 'diretor', 'diretora', 'chefe', 'patrao', 'patrão', 'marido', 'esposa', 'pai', 'mae', 'mãe', 'decide', 'decidem', 'quem', 'que', 'ele', 'ela', 'eles', 'da', 'do', 'de', 'das', 'dos', 'empresa', 'escritorio', 'escritório', 'loja', 'clinica', 'clínica', 'nos', 'nós', 'eu', 'com', 'junto', 'juntos', 'mais', 'alguem', 'alguém', 'decisao', 'decisão', 'passa', 'por', 'pelo', 'pela', 'aqui', 'la', 'lá', 'presidente', 'ceo', 'responsavel', 'responsável', 'financeiro', 'socio-proprietario', 'proprietario', 'proprietário', 'sim', 'nao', 'não', 'só', 'so', 'tambem', 'também', 'mesmo', 'decido', 'dele', 'dela', 'na', 'no', 'em', 'um', 'uma', 'outro', 'outra', 'pessoa', 'area', 'área', 'setor', 'time', 'equipe', 'diretoria', 'conselho'])
+/** "Meu sócio decide" / "o dono da empresa": cargo sem nome de pessoa. */
+export function decisorSemNome(texto: string): boolean {
+  const cargo = /\b(dono|dona|gestor|gestora|gerente|s[oó]ci[oa]s?|diretor|diretora|chefe|patr[aã]o|marido|esposa|presidente|ceo|respons[aá]vel|propriet[aá]rio)\b/i
+  if (!cargo.test(texto) || /\b(eu|mim|s[oó] eu)\b/i.test(texto.replace(/\b(eu e|e eu)\b/i, ''))) return false
+  const sobra = texto.toLowerCase().replace(/[^\p{L}\s-]/gu, ' ').split(/\s+/).filter(w => w.length >= 3 && !PALAVRAS_DECISOR.has(w))
+  return sobra.length === 0
 }
 
 /** Efeitos no CRM ao finalizar. Ordem importa: primeiro desliga (tag), depois marca o estado. */
@@ -284,7 +296,7 @@ export async function aplicarFinalizacao(ctx: ToolCtx, motivo: string, resumoRaw
   const state = await port.getState()
   const resumo = resumoRaw.trim().slice(0, 1500)
   if (CRM_MAP.finalizar.removerGate && ctx.gateTag) await port.removeTags([ctx.gateTag])
-  const porMotivo: Record<string, string> = { suporte: CRM_MAP.tags.suporte, venda_licenca: CRM_MAP.tags.licenca }
+  const porMotivo: Record<string, string> = { suporte: CRM_MAP.tags.suporte, venda_licenca: CRM_MAP.tags.licenca, contato_errado: CRM_MAP.tags.contatoErrado }
   const extras = [...CRM_MAP.finalizar.tags, ...(porMotivo[motivo] ? [porMotivo[motivo]] : []), ...(urgente && CRM_MAP.finalizar.tagUrgente ? [CRM_MAP.finalizar.tagUrgente] : [])]
   if (extras.length) await port.addTags(extras)
   if (CRM_MAP.finalizar.nota) {
@@ -330,6 +342,11 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
           // "sim"/"não" curto vale quando responde exatamente a pergunta deste campo
           const respondeuPergunta = !!campo.pergunta && overlap(ctx.lastAgentText, campo.pergunta) >= 0.6 && evidenceFound(ev, ctx.lastLeadText)
           if (!evidenceFound(ev, ctx.leadText)) { erros.push(`${campo.name}: a evidência "${ev}" não aparece no que o lead escreveu — NÃO invente; pergunte`); continue }
+          // "Preciso organizar o funil" é o que ele QUER, não onde os leads estão hoje ("queria ter um CRM" = não tem, vale)
+          if (key === 'organizacao' && /\b(preciso|precisamos|quero|queremos|gostaria|gostariamos|necessito|necessitamos)\b/i.test(ev) && !/\b(hoje|atualmente|usamos|uso|utilizo|utilizamos|fica|ficam|est[aá]o?|temos|tenho|planilha|caderno|excel|trello|notion)\b|n[aã]o (tem|temos|tenho|usamos|uso)\b/i.test(ev)) {
+            erros.push(`${campo.name}: "${ev}" é o que ele quer, não onde os leads ficam hoje — pergunte`)
+            continue
+          }
           if (campo.sinal && !campo.sinal.test(ev) && !naoSei && !respondeuPergunta) { erros.push(`${campo.name}: a evidência "${ev}" não fala deste assunto — NÃO invente; pergunte`); continue }
           if (/^\s*n[aã]o (sei|sabe)\s*\.?\s*$/i.test(valor) && !naoSei) { erros.push(`${campo.name}: "Não sabe" só quando o lead disser que não sabe`); continue }
           if (naoSei && campo.type !== 'select' && campo.type !== 'multiselect') {
@@ -353,15 +370,26 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
           const champ = snapshot(porta, next).preenchidos.map(p => `• ${p.campo.curto || p.campo.name}: ${p.valor}`)
           await avancar(port, 'qualificado', ['✅ CHAMP completo', ...champ]).catch(e => console.warn('[etapa] qualificado:', e))
         }
+        const salvouDecisor = salvos.some(x => x.startsWith(campoByKey('decisor')?.name || 'decisor'))
+        const pedirNomeDecisor = !!respostas.decisor && decisorSemNome(respostas.decisor) && salvouDecisor
+        const convidarDecisor = salvouDecisor && !pedirNomeDecisor && !!respostas.decisor && !/\b(eu|mim|s[oó] eu|eu mesm[oa])\b/i.test(respostas.decisor.replace(/\b(eu e|e eu)\b/i, ''))
         return {
           isError: erros.length > 0 && salvos.length === 0,
-          content: [salvos.length ? `Salvo: ${salvos.join(' · ')}.` : '', erros.length ? `Não salvo: ${erros.join(' · ')}.` : '', describeOpen(porta, snapshot(porta, next))].filter(Boolean).join(' '),
+          content: [salvos.length ? `Salvo: ${salvos.join(' · ')}.` : '',
+            pedirNomeDecisor ? 'O decisor foi citado só pelo cargo: NESTA resposta, peça o nome dele sem ponto de interrogação ("Me passa o nome dele que eu já deixo no convite da reunião.") e diga que ele precisa participar. Depois use o nome.' : '',
+            convidarDecisor ? 'O decisor é outra pessoa: NESTA resposta, em meia frase, diga que vale ele participar da reunião com o nosso especialista (é quem aprova), usando o nome dele.' : '', erros.length ? `Não salvo: ${erros.join(' · ')}.` : '', describeOpen(porta, snapshot(porta, next))].filter(Boolean).join(' '),
         }
       }
 
       case 'registrar_respondente': {
         const nome = String(input.nome || '').trim().slice(0, 60)
+        const relacao = String(input.relacao || '').trim()
         if (!nome || !evidenceFound(nome, ctx.leadText)) return err('Nome não registrado: ele não aparece no que o lead escreveu.')
+        if (!primeiroNomeDe(nome)) return err(`Não registrado: "${nome}" não é nome de pessoa (saudação, resposta curta ou nome de empresa). Se ainda não sabe o nome, peça.`)
+        // Decisor NÃO é quem está digitando (o nome dele vai no decisor_convidado da reunião)
+        if (/decis|decide|dono|dona|gestor|gerente|diretor|chefe|patr[aã]o/i.test(relacao) && !/pr[oó]prio|mesm/i.test(relacao)) return err(`Não registrado: ${nome} é o decisor, não quem está digitando. Guarde o nome dele para o decisor_convidado do agendar_reuniao.`)
+        const atual = (await port.getState()).respondenteNome
+        if (atual && primeiroNomeDe(atual) && atual.toLowerCase() !== nome.toLowerCase()) return err(`Não registrado: quem está digitando já é ${atual}. Se ${nome} é outra pessoa (o decisor, um sócio), não registre aqui.`)
         await port.patchState({ respondenteNome: nome, respondenteRelacao: String(input.relacao || '').trim().slice(0, 60) })
         return ok(`Anotado: quem está falando é ${nome}. Chame por este nome.`)
       }
@@ -392,6 +420,10 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
           const sinal = SINAL_MOTIVO[motivo]
           if (!evidenceFound(ev, ctx.leadText) || (sinal && !sinal.test(ev))) {
             return err(`NÃO finalizado: a evidência "${ev}" não comprova "${motivo}" no que o lead escreveu. Continue o atendimento.`)
+          }
+          // Pergunta sobre o produto ("integram o WhatsApp oficial ou só o Lite?") é pré-venda, não suporte
+          if (motivo === 'suporte' && !classificarSuporte(ev).suporte && (ev.includes('?') || /integr|funciona|oficial|\bapi\b|lite|d[aá] pra|tem como|consigo usar|serve pra/i.test(ev))) {
+            return err('NÃO finalizado: isso é uma PERGUNTA sobre o que o Kommo faz, não pedido de suporte. Responda em linhas gerais (seção 2c do prompt) ou diga que o especialista mostra na análise, e siga o CHAMP com a próxima pergunta.')
           }
         }
         await aplicarFinalizacao(ctx, motivo, String(input.resumo || ''))

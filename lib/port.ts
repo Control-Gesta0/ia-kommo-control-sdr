@@ -5,6 +5,7 @@ import { criarEventoGoogle, googleLeitura, googleOAuth, googleOcupados } from '.
 import { addLeadNote, addLeadTags, contactEmails, createTask, getContact, getLead, leadTags, listOpenTasks, removeLeadTags, updateLeadFields, updateLeadStatus, type KommoFieldValue } from './kommo'
 import { getState, patchState } from './state'
 import { k, redis } from './redis'
+import { primeiroNomeDe } from './saudacao'
 import { sendReply } from './transport'
 import type { LeadPort, LeadView } from './tools'
 
@@ -48,7 +49,10 @@ export function kommoPort(leadId: number): LeadPort {
       const lead = await getLead(leadId).catch(() => null)
       const contatoId = (lead?._embedded?.contacts || []).find(c => c.is_main)?.id
       const nome = (contatoId ? (await getContact(contatoId).catch(() => null))?.name : '') || lead?.name
-      await sendReply(alvo, texto.replace('{{CLIENTE}}', nome || `Lead #${leadId}`))
+      // Cadastro com nome de empresa: vale o nome que o lead disse na conversa
+      const falou = (await getState(leadId)).respondenteNome
+      const cliente = nome && primeiroNomeDe(nome) ? nome : falou ? `${falou}${nome ? ` (${nome})` : ''}` : nome || `Lead #${leadId}`
+      await sendReply(alvo, texto.replace('{{CLIENTE}}', cliente))
     },
     async criarReuniao(r) {
       const cfg = CRM_MAP.agenda

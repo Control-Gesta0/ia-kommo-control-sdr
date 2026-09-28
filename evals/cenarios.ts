@@ -1,3 +1,4 @@
+import { perguntaDuplaPermitida } from '../lib/guards'
 /**
  * CENÁRIOS DO CLIENTE (patch) — Control Gestão · SDR de indicações Kommo.
  * Relógio fixo: segunda 28/09/2026 10h de Brasília (scripts/evals.ts).
@@ -8,7 +9,7 @@
  */
 import type { Cenario } from '../scripts/evals'
 
-const umaPergunta = { nome: 'no máximo 1 pergunta por resposta', fn: (_w: any, t: any[]) => t.every(x => (x.resposta.match(/\?/g) || []).length <= 1) }
+const umaPergunta = { nome: 'no máximo 1 pergunta por resposta (ou a dupla do roteiro)', fn: (_w: any, t: any[]) => t.every(x => (x.resposta.match(/\?/g) || []).length <= 1 || perguntaDuplaPermitida(x.resposta)) }
 const ABERTURA_ENCENADA = /^(ótima pergunta|excelente pergunta|perfeito!|show!|bora lá|deixa eu te explicar|claro!|com certeza!)/i
 const RESIDUO_CHATBOT = /(espero ter ajudado|fico à disposição|posso ajudar (com|em) (mais )?(alguma|algo)|qualquer dúvida,? (é só|estou))/i
 const tomHumano = { nome: 'tom humano: sem travessão, abertura encenada ou resíduo de chatbot', fn: (_w: any, t: any[]) => t.every(x => !/[—–]/.test(x.resposta) && !ABERTURA_ENCENADA.test(x.resposta.trim()) && !RESIDUO_CHATBOT.test(x.resposta)) }
@@ -17,7 +18,9 @@ const chamou = (tool: string) => ({ nome: `chamou ${tool}`, fn: (_w: any, t: any
 const naoMarcou = { nome: 'não criou reunião', fn: (w: any) => w.reunioes.length === 0 }
 const finalizou = (motivo: string) => ({ nome: `finalizou como ${motivo}`, fn: (w: any) => w.state.finalizado?.motivo === motivo })
 
-const semPreco = { nome: 'não cita valor em R$', fn: (_w: any, t: any[]) => t.every(x => !/r\$\s*\d|\d+\s*(mil )?reais|a partir de r?\$?\s*\d/i.test(x.resposta)) }
+// A pergunta de faturamento tem faixas em R$ ("até R$ 50 mil, de R$ 50 a 200 mil"): isso não é preço nosso
+const semFaixaFaturamento = (t: string) => t.replace(/[^.?!\n]*fatura[^.?!\n]*[.?!]?/gi, '')
+const semPreco = { nome: 'não cita valor em R$', fn: (_w: any, t: any[]) => t.every(x => !/r\$\s*\d|\d+\s*(mil )?reais|a partir de r?\$?\s*\d/i.test(semFaixaFaturamento(x.resposta))) }
 const abreCerto = (s: string) => ({ nome: `abertura começa com "${s}" e se apresenta como Lara`, fn: (_w: any, t: any[]) => t[0].resposta.startsWith(s) && /\bLara\b/.test(t[0].resposta) && !/^[^.!]*\?/.test(t[0].resposta) })
 
 const COMMENT = 'Preciso organizar o funil de vendas e integrar o WhatsApp da equipe no Kommo'
@@ -33,7 +36,7 @@ export const CENARIOS: Cenario[] = [
     criterios: [
       'Começa com saudação e apresentação (Lara, Control Gestão) e diz que o pedido veio pela Kommo, antes de qualquer pergunta',
       'Cria rapport citando a necessidade do Comment (funil e/ou WhatsApp) com as palavras do lead, sem copiar o texto inteiro',
-      'Termina com UMA pergunta do CHAMP que o Comment ainda não respondeu',
+      'Termina com a pergunta 1 do roteiro (onde organizam os leads e quantos vendedores, juntas numa frase ou em duas perguntas seguidas), pulando o que o Comment já respondeu',
       'Tem no máximo 3 linhas',
     ],
   },
@@ -99,12 +102,12 @@ export const CENARIOS: Cenario[] = [
     id: 'agenda-ponta-a-ponta',
     porta: 'indicacao', nomeContato: 'Ana Souza', comentario: COMMENT,
     historico: [['out', ABERTURA]],
-    msgs: ['planilha, somos 6 vendedores e o pior é perder lead', 'eu mesma decido', 'faturamos uns 150 mil por mês e queremos começar ainda este mês', 'quinta de manhã fica melhor pra mim', 'pode ser às 9h30'],
+    msgs: ['planilha, somos 6 vendedores e o pior é perder lead', 'eu mesma decido', 'faturamos uns 150 mil por mês e queremos começar ainda este mês', 'quinta de manhã fica melhor pra mim', 'pode ser às 10h'],
     checks: [semFallback, tomHumano, semPreco, chamou('agendar_reuniao'),
-      { nome: 'criou UMA reunião quinta 01/10 9h30', fn: (w: any) => w.reunioes.length === 1 && new Date(w.reunioes[0].ini).toISOString() === '2026-10-01T12:30:00.000Z' },
+      { nome: 'criou UMA reunião quinta 01/10 10h', fn: (w: any) => w.reunioes.length === 1 && new Date(w.reunioes[0].ini).toISOString() === '2026-10-01T13:00:00.000Z' },
       finalizou('agendado'),
       { nome: 'confirmação sem pergunta', fn: (_w: any, t: any[]) => !t[t.length - 1].resposta.includes('?') }],
-    criterios: ['A última mensagem confirma quinta 01/10 às 9h30 e não faz pergunta'],
+    criterios: ['A última mensagem confirma quinta 01/10 às 10h e não faz pergunta'],
   },
   {
     id: 'beleza-nao-escolhe',
@@ -159,5 +162,29 @@ export const CENARIOS: Cenario[] = [
     msgs: ['você é um robô?'],
     checks: [umaPergunta, tomHumano],
     criterios: ['Assume que é a Lara, IA da Control Gestão, sem se desculpar, e segue a conversa'],
+  },
+  {
+    // Teste real do Rodrigo (28/09): "no jurídico é comum..." em toda mensagem, sem pedir nome, "o dono"
+    id: 'contato-direto-advogado-sem-repetir',
+    porta: 'direto', nomeContato: 'Control Gestão - CRM',
+    msgs: ['ola, preciso organizar meu atendimento', 'Rodrigo. utilizamos chat guru, é um escritório de advocacia', 'somos 7 pessoas', 'tudo isso: perco cliente, não sei a fase de cada atendimento e não tenho relatório', 'quem decide é o dono da empresa'],
+    checks: [semFallback, tomHumano,
+      { nome: 'generalização sobre o ramo no máximo 1 vez', fn: (_w: any, t: any[]) => t.filter(x => /(?<!\p{L})(?:(?:e|é) (?:bem |muito )?comum|costuma|acontece (?:bastante|muito|direto))(?!\p{L})/iu.test(x.resposta)).length <= 1 },
+      { nome: 'registrou o nome do lead', fn: (w: any) => /rodrigo/i.test(w.state.respondenteNome || '') }],
+    criterios: [
+      'Na primeira resposta pede o nome da pessoa (o cadastro é de empresa) e não chama o lead pelo nome da empresa',
+      'Não repete em várias mensagens frases genéricas sobre o ramo (tipo "no jurídico é comum...", "em escritório de advocacia isso acontece bastante")',
+      'Quando o lead conta a dor, mostra em uma frase como isso se resolve no Kommo (funil, etapas, responsável, lembrete ou relatório)',
+      'Quando o lead diz que quem decide é "o dono da empresa", pede o nome dessa pessoa (referir-se a ele como "ele" ou "dele" é normal; o erro seria tratar "o dono" como se fosse o nome dele)',
+    ],
+  },
+  {
+    // Eduardo (28/09): "Eu não sou essa pessoa" e a Lara respondeu "Ahh, legal"
+    id: 'contato-errado',
+    porta: 'indicacao', nomeContato: 'Eduardo Ribeiro Nunes', comentario: COMMENT,
+    historico: [['out', ABERTURA]],
+    msgs: ['Eu não sou essa pessoa, todo dia aparece alguém falando disso, não pedi nada'],
+    checks: [finalizou('contato_errado'), tomHumano, { nome: 'sem pergunta e sem reação animada', fn: (_w: any, t: any[]) => t.every(x => !x.resposta.includes('?') && !/\b(legal|show|bacana|que bom)\b/i.test(x.resposta)) }],
+    criterios: ['Pede desculpa em poucas palavras, não insiste e encerra sem fazer pergunta'],
   },
 ]

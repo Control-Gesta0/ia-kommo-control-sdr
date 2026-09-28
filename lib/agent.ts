@@ -6,7 +6,8 @@ import {
   alreadyAnswered, appendMessage, getHistory, humanSpokeRecently, lastInbound, markAnswered, type ChatMsg,
 } from './history'
 import { getContact, getLead, leadTags } from './kommo'
-import { garantirSaudacao, naturalizar, primeiroNomeDe, saudacao, tirarSaudacao } from './saudacao'
+import { ajustarResposta } from './tom'
+import { mencionaQuantidade } from './saudacao'
 import { createBrain } from './llm'
 import { kommoPort } from './port'
 import { rotear } from './router'
@@ -144,9 +145,17 @@ export async function processLead(leadId: number, webhookId: string): Promise<vo
         continue
       }
 
-      // Só a primeira mensagem cumprimenta; nela, saudação certa do horário + primeiro nome de pessoa
-      const anteriores = conversa.filter(m => m.dir === 'out').map(m => m.text)
-      reply.text = primeiroContatoDaPorta ? garantirSaudacao(reply.text, saudacao(Date.now()), primeiroNomeDe(nomePessoa)) : naturalizar(tirarSaudacao(reply.text), primeiroNomeDe(nomePessoa), anteriores)
+      // Acabamento em código (lib/tom.ts): saudação, apresentação, nome, reação, nicho, pergunta 1
+      const st2 = await getState(leadId)
+      reply.text = ajustarResposta(reply.text, {
+        primeiro: primeiroContatoDaPorta,
+        nomeCadastro: nomePessoa,
+        respondenteNome: st2.respondenteNome,
+        anteriores: conversa.filter(m => m.dir === 'out').map(m => m.text),
+        faltaVendedores: !st2.respostas?.vendedores && !(st2.semResposta || []).includes('vendedores') && !mencionaQuantidade(ctx.leadText),
+        handoff: reply.handoff,
+        protegerSolucao: (!state.respostas?.dor && !!st2.respostas?.dor) || textoTurno.includes('?'),
+      })
       const detail = await enviar(leadId, reply.text)
       await markAnswered(leadId, target.id)
       // Follow-up: finalizou (reunião, suporte, licença...) = para; senão recomeça a contar desta mensagem

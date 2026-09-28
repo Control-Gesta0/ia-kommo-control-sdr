@@ -38,6 +38,8 @@ export function abreComPergunta(texto: string): boolean {
   return primeira.trim().endsWith('?')
 }
 
+const NAO_E_NOME = new Set(['ola', 'oi', 'oie', 'opa', 'eai', 'hello', 'hi', 'bom', 'boa', 'dia', 'tarde', 'noite', 'obrigado', 'obrigada', 'valeu', 'tudo', 'bem', 'sim', 'nao', 'ok', 'okay', 'certo', 'legal', 'show', 'beleza', 'blz', 'top', 'claro', 'lara', 'kommo', 'control', 'gestao', 'eu', 'ele', 'ela', 'quem', 'aqui', 'isso', 'pode', 'quero', 'preciso', 'somos', 'sou', 'meu', 'minha', 'dono', 'dona', 'socio', 'socia', 'gestor', 'gerente', 'senhor', 'senhora', 'amigo', 'amiga'])
+
 const TITULOS: Record<string, string> = { dr: 'Dr.', dra: 'Dra.', doutor: 'Dr.', doutora: 'Dra.' }
 
 /** Palavras que denunciam nome de empresa/lead ("Control Gestão - CRM", "MOTOS TD", "Lead №85370") */
@@ -53,6 +55,8 @@ export function primeiroNomeDe(nome: string): string {
   const titulo = TITULOS[(partes[0] || '').toLowerCase().replace(/\.$/, '')]
   const p = (titulo ? partes[1] : partes[0]) || ''
   if (!/^[A-Za-zÀ-ú]{2,20}$/.test(p)) return ''
+  // Saudação, resposta curta ou nome nosso não é nome de pessoa ("ola" virava "Bom dia, Olá!")
+  if (NAO_E_NOME.has(normalizar(p))) return ''
   const n = p[0].toUpperCase() + p.slice(1).toLowerCase()
   return titulo ? `${titulo} ${n}` : n
 }
@@ -65,32 +69,138 @@ export function tirarSaudacao(texto: string): string {
   return sem[0].toUpperCase() + sem.slice(1)
 }
 
-const REACOES = ['Ahh, legal', 'Ótimo', 'Show', 'Boa', 'Bacana', 'Entendi', 'Faz sentido']
-const REACAO_INICIO = /^(perfeito|[óo]timo|show|boa|bacana|entendi|faz sentido|ahh?,? legal|legal|certo|beleza|fechado)\b/i
+const REACAO_INICIO = /^(perfeito|[óo]timo|show|boa|bacana|entendi|faz sentido|ahh?,? legal|legal|certo|certinho|beleza|fechado)\b[\s,.!]*/i
 
 /**
  * Tom natural (pedido do comercial): o nome aparece de vez em quando, não em toda
- * mensagem, e a reação do começo varia ("Perfeito" no máximo uma vez na conversa).
+ * mensagem; reação repetida ("Entendi" de novo, "Perfeito" pela 2ª vez) SAI da
+ * frase (nunca vira outra reação: "Ahh, legal" para quem reclamou soa péssimo);
+ * nome de empresa nunca vira vocativo ("Certinho, TD MOTOS").
  */
-export function naturalizar(texto: string, nome: string, anteriores: string[]): string {
+export function naturalizar(texto: string, nome: string, anteriores: string[], nomeCadastro = ''): string {
   let t = texto.trim()
   const ultima = anteriores[anteriores.length - 1] || ''
+  const escapa = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   // Nome: se a mensagem anterior já chamou pelo nome, esta não chama
   if (nome && normalizar(ultima).includes(normalizar(nome))) {
-    const n = nome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const n = escapa(nome)
     t = t.replace(new RegExp(`,\\s*${n}(?=[!.,?\\s])`, 'u'), '').replace(new RegExp(`^${n},\\s*`, 'u'), '')
-    t = t[0] ? t[0].toUpperCase() + t.slice(1) : t
+  }
+  // Cadastro com nome de empresa ("MOTOS TD"): tira o vocativo com essas palavras
+  if (nomeCadastro && !primeiroNomeDe(nomeCadastro)) {
+    const partes = nomeCadastro.split(/[\s\-|/]+/).filter(p => p.length >= 2).map(escapa)
+    if (partes.length) t = t.replace(new RegExp(`,\\s*(?:${partes.join('|')})(?:\\s+(?:${partes.join('|')}))*(?=\\s*[!.,?])`, 'giu'), '')
   }
   // Reação: não repete a da mensagem anterior e "Perfeito" só uma vez na conversa
   const m = t.match(REACAO_INICIO)
   if (m) {
     const r = normalizar(m[1])
     const repetiu = normalizar(ultima).startsWith(r) || (r === 'perfeito' && anteriores.some(a => /\bperfeito\b/i.test(a)))
-    if (repetiu) {
-      const usadas = anteriores.slice(-3).map(a => normalizar(a).slice(0, 12))
-      const nova = REACOES.find(x => !usadas.some(u => u.startsWith(normalizar(x))) && normalizar(x) !== r) || 'Entendi'
-      t = nova + t.slice(m[0].length)
+    let resto = t.slice(m[0].length)
+    for (const n of [nome, ...(nomeCadastro ? [primeiroNomeDe(nomeCadastro)] : [])].filter(Boolean)) {
+      resto = resto.replace(new RegExp(`^${escapa(n)}[,.!]\\s*`, 'u'), '')
     }
+    if (repetiu && resto.length >= 12) t = resto
   }
-  return t
+  return t[0] ? t[0].toUpperCase() + t.slice(1) : t
+}
+
+/** "No jurídico é bem comum...", "isso acontece bastante em clínica...", "costuma virar..." */
+const GENERALIZACAO = /(?<!\p{L})(?:(?:e|é) (?:bem |muito |super |bastante )?(?:comum|t[ií]pico)|costumam? (?:acontecer|ser|virar|dar|pesar|esfriar)|acontece (?:bastante|muito|direto|sempre|demais|com frequ[eê]ncia)|isso pesa|pesa bastante)(?!\p{L})/iu
+
+/**
+ * Generalização sobre o nicho só UMA vez na conversa (pedido do comercial: repetir
+ * "no jurídico é comum..." a cada mensagem cansa). Da segunda em diante a frase sai;
+ * a pergunta sempre fica.
+ */
+export function semGeneralizacaoRepetida(texto: string, anteriores: string[]): string {
+  if (!anteriores.some(a => GENERALIZACAO.test(a)) || !GENERALIZACAO.test(texto)) return texto
+  const linhas = texto.split('\n').map(linha => {
+    const frases = linha.split(/(?<=[.!])\s+/)
+    const ficam = frases.filter(f => f.includes('?') || !GENERALIZACAO.test(f))
+    return ficam.join(' ')
+  }).filter(l => l.trim())
+  const out = linhas.join('\n').trim()
+  if (out.length < 12) return texto
+  return out[0].toUpperCase() + out.slice(1)
+}
+
+/** "Aqui é a Lara, da Control Gestão..." só na primeira mensagem: nas outras a frase sai. */
+export function tirarApresentacao(texto: string): string {
+  const out = texto.replace(/(^|[\n.!?]\s*)(?:oi,?\s*|ol[aá],?\s*)?aqui (?:é|e) a lara\b[^.!?\n]*[.!]?\s*/giu, '$1').trim()
+  if (out.length < 12) return texto
+  return out[0].toUpperCase() + out.slice(1)
+}
+
+/**
+ * A pergunta 1 do roteiro é SEMPRE dupla (onde organizam + quantos vendedores). Se o
+ * modelo perguntou só "onde" e o nº de vendedores ainda falta, completa a pergunta.
+ */
+export function completarPergunta1(texto: string, faltaVendedores: boolean): string {
+  if (!faltaVendedores) return texto
+  const perguntas = texto.split('?').length - 1
+  if (perguntas !== 1 || !/\?\s*$/.test(texto)) return texto
+  const ultima = texto.slice(0, texto.lastIndexOf('?')).split(/[.!\n]/).pop() || ''
+  if (!/\b(onde|organizam|whats(app)?, planilha|planilha ou|outro crm|ferramenta)\b/i.test(ultima) || /\bquant[oa]s?\b/i.test(ultima)) return texto
+  return `${texto.trimEnd()} E quantos vendedores usariam o sistema?`
+}
+
+const REACOES_VOC = 'perfeito|[óo]timo|show|boa|bacana|entendi|faz sentido|ahh?,? legal|legal|certo|certinho|beleza|fechado|combinado|claro|obrigad[oa]|prazer'
+
+/**
+ * Vocativo só com o nome do LEAD: "Perfeito, Kleber" quando Kleber é o sócio (decisor)
+ * vira "Perfeito". Sem nome conhecido do lead, nenhum vocativo passa.
+ */
+export function vocativoCerto(texto: string, nomeLead: string): string {
+  const alvo = normalizar(nomeLead)
+  // Sem a flag "i": com ela, \\p{Lu} aceita minúscula e "Boa tarde!" virava "Boa!"
+  const reacaoOk = new RegExp(`^(?:${REACOES_VOC})$`, 'i')
+  let t = texto.trim().replace(/^(\p{L}+(?:,? \p{L}+)?)([,!]?)\s+(\p{Lu}\p{Ll}+)(?=[.!,])/u, (m, reacao: string, _p: string, nome: string) =>
+    reacaoOk.test(reacao) && normalizar(nome) !== alvo ? reacao : m)
+  // "Kleber. Tenho amanhã..." (sobra de reação cortada): nome solto no começo que não é o do lead
+  t = t.replace(/^(\p{Lu}\p{Ll}+)\.\s+/u, (m, nome: string) => (normalizar(nome) === alvo || /^(Então|Hoje|Isso|Olha|Show|Boa|Certo|Fechado|Entendi|Perfeito|Ótimo|Legal|Beleza|Combinado|Claro)$/u.test(nome) ? m : ''))
+  return t[0] ? t[0].toUpperCase() + t.slice(1) : t
+}
+
+/**
+ * Nome do lead desconhecido nas primeiras mensagens: pede o nome (sem interrogação,
+ * antes da pergunta final, para não virar duas perguntas).
+ */
+export function pedirNomeSeFalta(texto: string, nomeConhecido: boolean, mensagensDaLara: number): string {
+  if (nomeConhecido || mensagensDaLara > 1 || /\bnome\b/i.test(texto)) return texto
+  const pedido = 'Ah, me diz seu nome pra eu te chamar direitinho.'
+  const i = texto.lastIndexOf('?')
+  if (i < 0) return `${texto.trimEnd()} ${pedido}`
+  // início da última frase (a pergunta)
+  const antes = texto.slice(0, i)
+  const corte = Math.max(antes.lastIndexOf('. '), antes.lastIndexOf('! '), antes.lastIndexOf('\n'))
+  if (corte < 0) return `${pedido} ${texto}`
+  const sep = texto[corte] === '\n' ? '\n' : ' '
+  return `${texto.slice(0, corte + 1).trimEnd()}${sep === '\n' ? '\n' : ' '}${pedido} ${texto.slice(corte + 1).trimStart()}`
+}
+
+const SOLUCAO = ['etapa', 'responsavel', 'lembrete', 'retorno', 'funil', 'relatorio', 'centraliz', 'automatic', 'alerta', 'distribui', 'historico', 'caixa de entrada']
+const temas = (t: string) => { const n = normalizar(t); return new Set(SOLUCAO.filter(k => n.includes(k))) }
+
+/**
+ * A solução ("funil com etapa, responsável e lembrete") não se repete em mensagens
+ * seguidas: se a mensagem anterior da Lara já descreveu, a frase repetida sai
+ * (a pergunta sempre fica).
+ */
+export function semSolucaoRepetida(texto: string, anteriores: string[]): string {
+  const ultima = temas(anteriores[anteriores.length - 1] || '')
+  if (ultima.size < 2) return texto
+  const linhas = texto.split('\n').map(linha => linha.split(/(?<=[.!])\s+/).filter(f => {
+    if (f.includes('?')) return true
+    const comum = [...temas(f)].filter(k => ultima.has(k))
+    return comum.length < 2
+  }).join(' ')).filter(l => l.trim())
+  const out = linhas.join('\n').trim()
+  if (out.length < 12) return texto
+  return out[0].toUpperCase() + out.slice(1)
+}
+
+/** O lead já disse quantas pessoas usariam ("8 vendedores", "somos 7", "só eu")? */
+export function mencionaQuantidade(texto: string): boolean {
+  return /\b\d+\s*(vendedor|pessoa|usu[aá]rio|atendente|corretor|consultor|colaborador|funcion[aá]rio|agente|operador)|\b(somos|temos|tenho|son|tenemos)\s+\d+|\b(um|uma|dois|duas|tr[eê]s|quatro|cinco|seis|sete|oito|nove|dez|doze|quinze|vinte)\s+(vendedor|pessoa|usu|atendente|corretor|consultor|colaborador|funcion)|\bs[oó] eu\b|\b\d+\s*(vendedores|vendedoras)\b/i.test(texto || '')
 }

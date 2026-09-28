@@ -32,8 +32,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const body = (typeof req.body === 'string' ? tryJson(req.body) : req.body) || {}
   const ev = parseEntrada(body)
-  // Diagnóstico (1h): último payload de lead alterado, para conferir o formato que a Kommo manda
-  if (doWebhook && Object.keys(achatar(body)).some(k => k.startsWith('leads['))) await redis.set(k('diag', 'webhook-lead'), JSON.stringify(achatar(body)).slice(0, 4000), { ex: 3600 }).catch(() => undefined)
   if (ev.accountId && ev.accountId !== CONFIG.kommoAccountId) return res.status(200).json({ ok: false, reason: 'outra conta' })
 
   waitUntil((async () => {

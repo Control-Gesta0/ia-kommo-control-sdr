@@ -1,5 +1,5 @@
 import crypto from 'crypto'
-import { brain } from './agent'
+import { brain, processLead } from './agent'
 import { CONFIG } from './config'
 import { CRM_MAP, portaById } from './crm-map'
 import { logExec } from './execlog'
@@ -15,7 +15,7 @@ import { avancar } from './etapas'
 import { agendarFollowup } from './followup'
 import { kommoPort } from './port'
 import { k, redis } from './redis'
-import { saudacao } from './saudacao'
+import { completarPergunta1, mencionaQuantidade, saudacao } from './saudacao'
 import { getState, patchState } from './state'
 import { sendReply } from './transport'
 
@@ -109,7 +109,7 @@ async function lerIndicacao(lead: KommoLead, informado?: string | null): Promise
 
 export interface ResultadoInicio { ok: boolean; acao: string; detalhe: string }
 
-export async function iniciarConversa(leadId: number, origem: string, comentarioInformado?: string | null, opts: { manual?: boolean } = {}): Promise<ResultadoInicio> {
+export async function iniciarConversa(leadId: number, origem: string, comentarioInformado?: string | null, opts: { manual?: boolean; responder?: boolean } = {}): Promise<ResultadoInicio> {
   const t0 = Date.now()
   const chave = k('inicio', leadId)
   if ((await redis.set(chave, origem, { nx: true, ex: 30 * 86400 })) !== 'OK') {
@@ -174,7 +174,7 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
 
     // Tag à mão num lead sem indicação: abertura de contato direto (sem falar de indicação)
     if (opts.manual) await redis.del(k('humano', leadId)) // o time passou o lead para a Lara
-    if (opts.manual && !comentario) return await iniciarDireto(leadId, lead, nome, origem, t0)
+    if (opts.manual && !comentario) return await iniciarDireto(leadId, nome, origem, t0, !!opts.responder)
 
     const porta = portaById(CRM_MAP.menu.portaUnica)!
     const segmento = segmentoPt(contexto.segmento)
@@ -192,6 +192,9 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
       if (ab) { texto = ab.text; guard = ab.guard; usage = ab.usage }
     } catch (e) { console.error(`[iniciar] abertura pelo modelo falhou no lead ${leadId}:`, e) }
     if (!texto) { texto = aberturaFixa(nome); guard = [...guard, 'abertura fixa (modelo falhou ou reprovou na trava)'] }
+    // Pergunta 1 sempre dupla (onde + quantos vendedores), também na abertura
+    const stAb = await getState(leadId)
+    texto = completarPergunta1(texto, !stAb.respostas?.vendedores && !(stAb.semResposta || []).includes('vendedores') && !mencionaQuantidade(comentario || ''))
 
     const detalhe = await sendReply(leadId, texto)
     await appendMessage(leadId, { id: crypto.randomUUID(), dir: 'out', text: texto, ts: Date.now() })
@@ -226,9 +229,14 @@ export function aberturaDireta(nome: string, agora = Date.now()): string {
   return CRM_MAP.aberturaDireta.replace('{saudacao}', saudacao(agora)).replace('{nome}', n ? `, ${n}` : '')
 }
 
-async function iniciarDireto(leadId: number, lead: KommoLead, nome: string, origem: string, t0: number): Promise<ResultadoInicio> {
+async function iniciarDireto(leadId: number, nome: string, origem: string, t0: number, responder: boolean): Promise<ResultadoInicio> {
   const porta = portaById('direto')!
-  await patchState(leadId, { porta: porta.id, portaEm: t0 - 1, iniciadoEm: new Date().toISOString(), iniciadoPor: origem })
+  await patchState(leadId, { porta: porta.id, portaEm: 0, iniciadoEm: new Date().toISOString(), iniciadoPor: origem })
+  // O lead escreveu e ninguém respondeu: a Lara responde a mensagem dele (melhor que abertura genérica)
+  if (responder) {
+    await processLead(leadId, `tag:${leadId}:${t0}`)
+    return { ok: true, acao: 'respondeu', detalhe: 'contato direto: respondeu a mensagem que estava sem resposta' }
+  }
   const texto = aberturaDireta(nome)
   const detalhe = await sendReply(leadId, texto)
   await appendMessage(leadId, { id: crypto.randomUUID(), dir: 'out', text: texto, ts: Date.now() })
@@ -237,7 +245,6 @@ async function iniciarDireto(leadId: number, lead: KommoLead, nome: string, orig
   const moveu = await avancar(kommoPort(leadId), 'emContato', linhas).catch(() => false)
   if (!moveu) await addLeadNote(leadId, nota('Primeira mensagem enviada (tag colocada pelo time)', linhas.slice(1))).catch(() => undefined)
   await logExec({ tipo: 'inicio', leadId, nome, porta: porta.id, ms: Date.now() - t0, detalhe: `${detalhe} · contato direto · via ${origem}` })
-  void lead
   return { ok: true, acao: 'iniciou', detalhe: `contato direto · ${detalhe}` }
 }
 
@@ -248,9 +255,17 @@ async function iniciarDireto(leadId: number, lead: KommoLead, nome: string, orig
  * quando o lead responder.
  */
 export async function iniciarPorTag(leadId: number, origem = 'tag-manual'): Promise<ResultadoInicio> {
+  await redis.del(k('humano', leadId)) // o time passou o lead para a Lara: sem pausa de humano
   const hist = await getHistory(leadId).catch(() => [])
-  if (hist.some(m => m.dir === 'out')) return { ok: true, acao: 'ja-conversando', detalhe: 'a Lara já falou com esse lead: segue quando ele responder' }
-  return iniciarConversa(leadId, origem, null, { manual: true })
+  // Mensagens do time também ficam no histórico como saída (id "kommo:..."): só conta o que a Lara mandou
+  const laraFalou = hist.some(m => m.dir === 'out' && !String(m.id).startsWith('kommo:'))
+  const esperando = hist[hist.length - 1]?.dir === 'in' // o lead escreveu e ninguém respondeu
+  if (laraFalou) {
+    if (!esperando) return { ok: true, acao: 'ja-conversando', detalhe: 'a Lara já falou com esse lead: segue quando ele responder' }
+    await processLead(leadId, `tag:${leadId}:${Date.now()}`)
+    return { ok: true, acao: 'respondeu', detalhe: 'respondeu a última mensagem do lead' }
+  }
+  return iniciarConversa(leadId, origem, null, { manual: true, responder: esperando })
 }
 
 /**

@@ -106,4 +106,20 @@ export function keepLastQuestion(text: string, lastLead = ''): string | null {
   return frases.filter((f, i) => !f.includes('?') || i === ultima).join(' ').replace(/\s{2,}/g, ' ').trim()
 }
 
-export const DISSE_NAO_SEI = /n[aã]o sei|sei l[aá]|n[aã]o lembro|n[aã]o fa[cç]o ideia|n[aã]o tenho certeza/i
+// "não sei" como RESPOSTA ("não sei", "não sei dizer", "não sei quantos"); "não sei a fase de cada atendimento" é dor, não "não sabe"
+export const DISSE_NAO_SEI = /(?:^|[\s,.;!?])(?:n[aã]o sei(?=\s*(?:[.,;!?]|$|dizer|responder|informar|te dizer|ao certo|exatamente|direito|quant|quem|qual|ainda))|sei l[aá]|n[aã]o lembro|n[aã]o fa[cç]o ideia|n[aã]o tenho certeza)/i
+
+/** Palavras em espanhol que o modelo às vezes copia de um Comment em espanhol (só atendemos em português). */
+const ESPANHOL: Array<[RegExp, string]> = [
+  [/(?<!\p{L})embudos(?!\p{L})/giu, 'funis'], [/(?<!\p{L})embudo(?!\p{L})/giu, 'funil'],
+  [/(?<!\p{L})ventas(?!\p{L})/giu, 'vendas'], [/(?<!\p{L})equipo(?!\p{L})/giu, 'equipe'],
+  [/(?<!\p{L})necesitamos(?!\p{L})/giu, 'precisamos'], [/(?<!\p{L})necesita(?!\p{L})/giu, 'precisa'],
+  [/(?<!\p{L})nuestro(?!\p{L})/giu, 'nosso'], [/(?<!\p{L})nuestra(?!\p{L})/giu, 'nossa'],
+  [/(?<!\p{L})configuraci[oó]n(?!\p{L})/giu, 'configuração'], [/(?<!\p{L})automatizaci[oó]n(?!\p{L})/giu, 'automação'],
+  [/(?<!\p{L})integraci[oó]n(?!\p{L})/giu, 'integração'],
+]
+export function semEspanhol(text: string): string {
+  let t = text
+  for (const [re, pt] of ESPANHOL) t = t.replace(re, m => (m[0] === m[0].toUpperCase() ? pt[0].toUpperCase() + pt.slice(1) : pt))
+  return t
+}

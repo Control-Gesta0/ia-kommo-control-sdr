@@ -29,7 +29,11 @@ async function download(url: string): Promise<{ data: ArrayBuffer; type: string 
 async function transcribe(url: string): Promise<string | null> {
   const file = await download(url)
   if (!file) return null
-  const ext = (url.split('?')[0].split('.').pop() || 'ogg').slice(0, 5)
+  // Extensão pelo content-type (link sem extensão virava "audio.abc12" e a OpenAI recusava)
+  const porTipo: Record<string, string> = { ogg: 'ogg', opus: 'ogg', mpeg: 'mp3', mp3: 'mp3', mp4: 'm4a', m4a: 'm4a', aac: 'm4a', wav: 'wav', webm: 'webm', amr: 'ogg' }
+  const doTipo = Object.entries(porTipo).find(([t]) => file.type.toLowerCase().includes(t))?.[1]
+  const doLink = (url.split('?')[0].split('.').pop() || '').toLowerCase()
+  const ext = doTipo || (/^(ogg|oga|opus|mp3|m4a|wav|webm|mpga|mpeg|mp4|flac)$/.test(doLink) ? (doLink === 'oga' || doLink === 'opus' ? 'ogg' : doLink) : 'ogg')
   const r = await openai.audio.transcriptions.create({
     file: await toFile(Buffer.from(file.data), `audio.${ext}`),
     model: CONFIG.sttModel,
@@ -56,8 +60,17 @@ async function describe(url: string, kind: 'image' | 'document'): Promise<string
 
 export type MediaKind = 'audio' | 'image' | 'document'
 
+/** Tipo pela extensão do link (a Kommo nem sempre manda o tipo do anexo). */
+export function tipoPeloLink(url: string): MediaKind | null {
+  const u = (url || '').split('?')[0].toLowerCase()
+  if (/\.(ogg|oga|opus|mp3|m4a|wav|aac|amr|webm|mpga|mpeg)$/.test(u)) return 'audio'
+  if (/\.(jpe?g|png|webp|gif|heic)$/.test(u)) return 'image'
+  if (/\.pdf$/.test(u)) return 'document'
+  return null
+}
+
 export function mediaKind(attachType: string): MediaKind | null {
-  if (/voice|audio/i.test(attachType)) return 'audio'
+  if (/voice|audio|ptt|ogg|opus/i.test(attachType)) return 'audio'
   if (/picture|image|photo/i.test(attachType)) return 'image'
   if (/file|document/i.test(attachType)) return 'document'
   return null

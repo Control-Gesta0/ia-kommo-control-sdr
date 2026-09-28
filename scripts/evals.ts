@@ -1,3 +1,5 @@
+import { ajustarResposta } from '../lib/tom'
+import { completarPergunta1, mencionaQuantidade } from '../lib/saudacao'
 /**
  * O EXAME DO CÉREBRO — roda os prompts LOCAIS com as tools REAIS numa porta em
  * memória (zero efeito no CRM). Cenários em evals/cenarios.ts (patch do cliente).
@@ -109,7 +111,7 @@ async function main() {
       mundoAtual = w
       if (c.abertura) {
         const ab = await brain.generateOpening({ port: memoryPort(w), porta, gateTag: GATE, leadText: c.comentario || '', lastLeadText: '', lastAgentText: '', agora }, { nomeContato: c.nomeContato || '', primeiroContatoDaPorta: true })
-        const texto = ab?.text || '(abertura reprovada: cairia na abertura fixa)'
+        const texto = ab?.text ? completarPergunta1(ab.text, !w.state.respostas?.vendedores && !(w.state.semResposta || []).includes('vendedores') && !mencionaQuantidade(c.comentario || '')) : '(abertura reprovada: cairia na abertura fixa)'
         custo += ab ? costUsd(MODEL, ab.usage) || 0 : 0
         turnos.push({ lead: '(a IA inicia a conversa)', resposta: texto, tools: [], guard: ab?.guard || ['fallback'], handoff: false })
         history.push({ id: 'abertura', dir: 'out', text: texto, ts: history.length + 1 })
@@ -119,6 +121,7 @@ async function main() {
         history.push({ id: `m${history.length}`, dir: 'in', text: msg, ts: history.length + 1 })
         const iOut = history.map(m => m.dir).lastIndexOf('out')
         const bloco = history.slice(iOut + 1).map(m => m.text).join('\n')
+        const dorAntes = !!w.state.respostas?.dor
         const reply = await brain.generateReply({
           port: memoryPort(w), porta, gateTag: GATE,
           leadText: [c.comentario || '', ...history.filter(m => m.dir === 'in').map(m => m.text)].join('\n'),
@@ -126,14 +129,24 @@ async function main() {
           lastAgentText: iOut >= 0 ? history[iOut].text : '',
           agora,
         }, { nomeContato: c.nomeContato || '', primeiroContatoDaPorta: !history.some(m => m.dir === 'out') }, history)
-        const resposta = reply?.text || ''
+        // Mesmo acabamento de produção (lib/tom.ts): o exame avalia o que o lead recebe
+        const resposta = reply?.text ? ajustarResposta(reply.text, {
+          primeiro: !history.some(m => m.dir === 'out'),
+          nomeCadastro: c.nomeContato || '',
+          respondenteNome: w.state.respondenteNome,
+          anteriores: history.filter(m => m.dir === 'out').map(m => m.text),
+          faltaVendedores: !w.state.respostas?.vendedores && !(w.state.semResposta || []).includes('vendedores') && !mencionaQuantidade([c.comentario || '', ...history.filter(m => m.dir === 'in').map(m => m.text)].join('\n')),
+          handoff: !!reply.handoff,
+          agora,
+          protegerSolucao: (!dorAntes && !!w.state.respostas?.dor) || bloco.includes('?'),
+        }) : ''
         custo += reply ? costUsd(MODEL, reply.usage) || 0 : 0
         turnos.push({ lead: msg, resposta, tools: reply?.toolsUsed || [], guard: reply?.guard || [], handoff: !!reply?.handoff })
         history.push({ id: `r${history.length}`, dir: 'out', text: resposta, ts: history.length + 1 })
       }
 
       const falhasCodigo = c.checks.filter(ch => { try { return !ch.fn(w, turnos) } catch { return true } }).map(ch => ch.nome)
-      const transcript = turnos.map(t => `LEAD: ${t.lead}\nIA: ${t.resposta}`).join('\n\n')
+      const transcript = (c.comentario ? `(Comment que o lead escreveu na indicação da Kommo: "${c.comentario}")\n\n` : '') + turnos.map(t => `LEAD: ${t.lead}\nIA: ${t.resposta}`).join('\n\n')
       const juiz = await openai.chat.completions.create({
         model: JUDGE,
         response_format: { type: 'json_object' },

@@ -59,7 +59,9 @@ async function main() {
 
   // Parser do webhook (formato plano e aninhado — kommo §5)
   const plano = parseKommoWebhook({ 'account[id]': '9', 'message[add][0][id]': 'm1', 'message[add][0][entity_id]': '77', 'message[add][0][text]': 'oi', 'message[add][0][attachment][type]': 'voice', 'message[add][0][attachment][link]': 'https://x/a.ogg' })
-  eq('webhook plano', plano?.msgs[0], { id: 'm1', leadId: 77, text: 'oi', attachType: 'voice', attachLink: 'https://x/a.ogg', direction: '' })
+  eq('webhook plano', (({ bruto: _b, ...resto }) => resto)(plano!.msgs[0]), { id: 'm1', leadId: 77, text: 'oi', attachType: 'voice', attachLink: 'https://x/a.ogg', direction: '' })
+  const semTipo = parseKommoWebhook({ 'message[add][0][id]': 'm2', 'message[add][0][entity_id]': '79', 'message[add][0][text]': '', 'message[add][0][media][link]': 'https://drive.kommo.com/x/voz.oga' })
+  eq('webhook: áudio sem tipo de anexo acha o link mesmo assim', [semTipo?.msgs[0].attachLink], ['https://drive.kommo.com/x/voz.oga'])
   const aninhado = parseKommoWebhook({ account: { id: '9' }, message: { add: [{ id: 'm2', entity_id: '78', text: 'olá', type: 'incoming' }] } })
   eq('webhook aninhado', [aninhado?.accountId, aninhado?.msgs[0].leadId, aninhado?.msgs[0].direction], ['9', 78, 'incoming'])
 

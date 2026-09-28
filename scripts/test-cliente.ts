@@ -101,14 +101,70 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   eq('início: humano assumiu', decidirInicio({ ...base, tags: ['Atendimento-Humano'] }, cfg).acao, 'humano')
   eq('início: rampagem só TEST_LEAD_IDS', [decidirInicio(base, { ...cfg, modoInicio: 'teste' }).acao, decidirInicio({ ...base, leadId: 7 }, { ...cfg, modoInicio: 'teste' }).acao], ['rampagem', 'iniciar'])
   eq('nome de gente', [primeiroNome('ana souza'), primeiroNome('Lead #123'), primeiroNome('Empresa XPTO'), primeiroNome(''), primeiroNome('Dr. Darci Duarte'), primeiroNome('dra maria')], ['Ana', '', '', '', 'Dr. Darci', 'Dra. Maria'])
-  eq('nome de empresa não vira nome de pessoa', [primeiroNome('Control Gestão - CRM'), primeiroNome('MOTOS TD'), primeiroNome('CAROLINE AZEVEDO'), primeiroNome('rodrigo campeoti'), primeiroNome('Loja do Zé')], ['', '', 'Caroline', 'Rodrigo', ''])
+  eq('nome de empresa (ou saudação) não vira nome de pessoa', [primeiroNome('Control Gestão - CRM'), primeiroNome('MOTOS TD'), primeiroNome('CAROLINE AZEVEDO'), primeiroNome('rodrigo campeoti'), primeiroNome('Loja do Zé'), primeiroNome('Olá'), primeiroNome('ola'), primeiroNome('Lara')], ['', '', 'Caroline', 'Rodrigo', '', '', '', ''])
   const { tirarSaudacao } = await import('../lib/saudacao')
   const { naturalizar } = await import('../lib/saudacao')
-  eq('nome de vez em quando e reação variada', [
+  eq('nome de vez em quando; reação repetida sai (nunca vira "Ahh, legal")', [
     naturalizar('Entendi, Rodrigo. Com 7 pessoas dá pra organizar.', 'Rodrigo', ['Boa, Rodrigo. Dá pra sair do Trello.']),
-    naturalizar('Perfeito, então o Kleber participa.', 'Rodrigo', ['Perfeito, anotado.', 'Show.']),
+    naturalizar('Perfeito, então o Kleber participa da reunião.', 'Rodrigo', ['Perfeito, anotado.', 'Show.']),
     naturalizar('Show, Rodrigo. Pelo que você contou...', 'Rodrigo', ['Entendi. Com 7 pessoas.']),
-  ], ['Entendi. Com 7 pessoas dá pra organizar.', 'Ahh, legal, então o Kleber participa.', 'Show, Rodrigo. Pelo que você contou...'])
+    naturalizar('Entendi, faz sentido, às vezes esse contato cai pra quem não pediu mesmo.', '', ['Entendi, obrigado por avisar.']),
+  ], ['Entendi. Com 7 pessoas dá pra organizar.', 'Então o Kleber participa da reunião.', 'Show, Rodrigo. Pelo que você contou...', 'Faz sentido, às vezes esse contato cai pra quem não pediu mesmo.'])
+  eq('nome de empresa não vira vocativo', naturalizar('Certinho, TD MOTOS. Hoje vocês organizam os leads onde?', '', [], 'MOTOS TD'), 'Certinho. Hoje vocês organizam os leads onde?')
+  const { semGeneralizacaoRepetida } = await import('../lib/saudacao')
+  const jaFalou = ['Ahh, legal, no jurídico é bem comum o cliente chamar no WhatsApp e a etapa do caso ficar solta.\nQuantos vendedores usariam o sistema?']
+  eq('generalização sobre o nicho só uma vez (a pergunta fica)', [
+    semGeneralizacaoRepetida('Entendi. No jurídico isso pesa bastante quando a consulta entra e ninguém sabe a fase.\nO que mais te incomoda hoje?', jaFalou),
+    semGeneralizacaoRepetida('Faz sentido, em escritório de advocacia isso costuma virar perda de lead.\nA escolha do CRM é sua ou passa por mais alguém?', jaFalou),
+    semGeneralizacaoRepetida('No jurídico é bem comum o caso esfriar. Dá pra resolver com funil.', []),
+  ], ['Entendi.\nO que mais te incomoda hoje?', 'A escolha do CRM é sua ou passa por mais alguém?', 'No jurídico é bem comum o caso esfriar. Dá pra resolver com funil.'])
+  const { tirarApresentacao } = await import('../lib/saudacao')
+  eq('apresentação só na 1ª mensagem', [tirarApresentacao('Aqui é a Lara, da Control Gestão, parceira oficial da Kommo.\nHoje vocês organizam os leads onde?'), tirarApresentacao('Show. Hoje vocês organizam os leads onde?')], ['Hoje vocês organizam os leads onde?', 'Show. Hoje vocês organizam os leads onde?'])
+  eq('reação repetida + nome solto somem juntos', naturalizar('Boa, Rodrigo. Dá pra deixar isso redondo com funil e lembrete.', 'Rodrigo', ['Boa, Rodrigo. Vocês querem começar este mês?']), 'Dá pra deixar isso redondo com funil e lembrete.')
+  const { completarPergunta1 } = await import('../lib/saudacao')
+  eq('pergunta 1 sempre dupla (onde + quantos)', [
+    completarPergunta1('Me diz seu nome. Hoje vocês organizam os leads onde: WhatsApp, planilha ou outro CRM?', true),
+    completarPergunta1('Hoje vocês organizam os leads onde: WhatsApp, planilha ou outro CRM?', false),
+    completarPergunta1('O que mais te incomoda hoje?', true),
+  ], ['Me diz seu nome. Hoje vocês organizam os leads onde: WhatsApp, planilha ou outro CRM? E quantos vendedores usariam o sistema?', 'Hoje vocês organizam os leads onde: WhatsApp, planilha ou outro CRM?', 'O que mais te incomoda hoje?'])
+  const { decisorSemNome } = await import('../lib/tools')
+  eq('decisor pelo cargo sem nome → pede o nome', [decisorSemNome('Meu sócio decide.'), decisorSemNome('o dono da empresa'), decisorSemNome('é o meu gestor, kleber'), decisorSemNome('eu mesmo'), decisorSemNome('eu e minha sócia Juliana decidimos')], [true, true, false, false, false])
+  const { vocativoCerto, pedirNomeSeFalta } = await import('../lib/saudacao')
+  eq('vocativo só com o nome do lead', [
+    vocativoCerto('Perfeito, Kleber, com esse cenário dá pra organizar.', 'Rodrigo'),
+    vocativoCerto('Boa, Rodrigo. Dá pra organizar.', 'Rodrigo'),
+    vocativoCerto('Kleber. Tenho amanhã às 10h ou às 14h.', 'Rodrigo'),
+    vocativoCerto('Então, dá pra organizar.', ''),
+    vocativoCerto('Boa tarde! Aqui é a Lara, da Control Gestão.', ''),
+  ], ['Perfeito, com esse cenário dá pra organizar.', 'Boa, Rodrigo. Dá pra organizar.', 'Tenho amanhã às 10h ou às 14h.', 'Então, dá pra organizar.', 'Boa tarde! Aqui é a Lara, da Control Gestão.'])
+  eq('pede o nome no começo se não souber (antes da pergunta)', [
+    pedirNomeSeFalta('Boa tarde! Aqui é a Lara. Dá pra organizar sim. O que mais tá travando hoje?', false, 0),
+    pedirNomeSeFalta('Show. O que mais tá travando hoje?', true, 0),
+    pedirNomeSeFalta('Show. O que mais tá travando hoje?', false, 3),
+  ], ['Boa tarde! Aqui é a Lara. Dá pra organizar sim. Ah, me diz seu nome pra eu te chamar direitinho. O que mais tá travando hoje?', 'Show. O que mais tá travando hoje?', 'Show. O que mais tá travando hoje?'])
+  const { semSolucaoRepetida } = await import('../lib/saudacao')
+  eq('solução não se repete em mensagens seguidas', [
+    semSolucaoRepetida('Faz sentido. No Kommo dá pra separar cada lead por etapa, com responsável e lembrete.\nA escolha do CRM é sua ou passa por mais alguém?', ['Entendi. Dá pra deixar cada atendimento com etapa, responsável e lembrete de retorno.\nO que mais te incomoda?']),
+    semSolucaoRepetida('Faz sentido. No Kommo dá pra separar cada lead por etapa, com responsável e lembrete.\nA escolha do CRM é sua?', ['Show. A escolha do CRM é sua?']),
+  ], ['Faz sentido.\nA escolha do CRM é sua ou passa por mais alguém?', 'Faz sentido. No Kommo dá pra separar cada lead por etapa, com responsável e lembrete.\nA escolha do CRM é sua?'])
+  const { DISSE_NAO_SEI } = await import('../lib/guards')
+  eq('"não sei" só como resposta (não no meio da dor)', ['não sei', 'Não sei dizer', 'não sei quantos seriam', 'sei lá', 'perco cliente, não sei a fase de cada atendimento', 'não sei mexer no kommo'].map(x => DISSE_NAO_SEI.test(x)), [true, true, true, true, false, false])
+  const { semEspanhol } = await import('../lib/guards')
+  eq('palavra em espanhol vira português', semEspanhol('Dá pra configurar o embudo de ventas e o equipo.'), 'Dá pra configurar o funil de vendas e o equipe.')
+  const { mencionaQuantidade } = await import('../lib/saudacao')
+  eq('lead já disse quantos são', ['Necesitamos configurar el embudo para 8 vendedores', 'somos 7 pessoas', 'só eu', 'temos 12 corretores', 'quero organizar o funil'].map(mencionaQuantidade), [true, true, true, true, false])
+  const { tipoPeloLink, mediaKind } = await import('../lib/media')
+  eq('tipo da mídia pelo link ou pelo tipo', [tipoPeloLink('https://x/voz.oga'), tipoPeloLink('https://x/a.ogg?x=1'), tipoPeloLink('https://x/foto.jpg'), tipoPeloLink('https://x/abc'), mediaKind('ptt')], ['audio', 'audio', 'image', null, 'audio'])
+  const { ehRespostaAutomatica } = await import('../lib/automatica')
+  eq('resposta automática de empresa é ignorada; mensagem de gente não', [
+    ehRespostaAutomatica('TD MOTOS agradece seu contato. Em breve lhe atendenderemos.'),
+    ehRespostaAutomatica('Olá! Seja bem-vindo à Clínica Bella. Digite 1 para agendar'),
+    ehRespostaAutomatica('Obrigado pelo contato! Retornaremos o mais breve possível.'),
+    ehRespostaAutomatica('Estamos fora do horário de atendimento'),
+    ehRespostaAutomatica('uso o trello e somos 7 pessoas'),
+    ehRespostaAutomatica('Eu não sou essa pessoa'),
+    ehRespostaAutomatica('obrigado, em breve eu vejo isso com meu sócio'),
+  ], [true, true, true, true, false, false, false])
   eq('só a 1ª mensagem cumprimenta', [tirarSaudacao('Boa tarde! Perfeito, já consigo te passar os horários.'), tirarSaudacao('Oi, bom dia, Ana! Show.'), tirarSaudacao('Ótimo! Boa tarde pra você também.')], ['Perfeito, já consigo te passar os horários.', 'Show.', 'Ótimo! Boa tarde pra você também.'])
   const manha = Date.parse('2026-09-28T13:00:00Z') // 10h em Brasília
   eq('abertura fixa: saudação do horário + Lara + passa nas travas', [regras(aberturaFixa('Ana Souza', manha)), aberturaFixa('Ana', manha).startsWith('Bom dia, Ana! Aqui é a Lara'), aberturaFixa('Lead #9', manha).startsWith('Bom dia! Aqui é a Lara')], [[], true, true])
