@@ -58,6 +58,9 @@
     LIBERACAO_MS: 5 * 60 * 1000,
     // Folga depois do limite seguro. Sobe sozinha 300 ms se algum aceite sair cedo.
     MARGEM_MS: 40,
+    // Dispara X ms ANTES do limite calculado (pedido do Rodrigo, 29/09: parceiros ganham no mesmo segundo).
+    // Se um aceite sair cedo demais ("no longer available"), a margem aprendida sobe 0,5 s e corrige sozinha.
+    ANTECIPAR_MS: 2000,
     AJUSTAR_MARGEM: true,
     MARGEM_MIN_MS: 0,
     MARGEM_MAX_MS: 5000,
@@ -86,7 +89,7 @@
   var pageFetch = W.fetch.bind(W)
   var STORE_KEY = 'cg-indicacoes-v3'
   var DIAG_KEY = 'cg-indicacoes-v3-diag'
-  var VERSAO = '3.5.0'
+  var VERSAO = '3.6.0'
 
   if (W.__INDICACOES__ && W.__INDICACOES__.stop) {
     console.warn('[INDICAÇÕES] já ativo, reiniciando...')
@@ -445,7 +448,7 @@
     if (criado && relogioLo !== null) limites.push(criado + 1000 + CFG.LIBERACAO_MS - relogioLo)
     // sem os dois: hora em que o script viu o lead (API) + 300s, também nunca cedo
     if (!limites.length && m.visto) limites.push(m.visto + CFG.LIBERACAO_MS)
-    return limites.length ? Math.min.apply(null, limites) + margem() : null
+    return limites.length ? Math.min.apply(null, limites) + margem() - CFG.ANTECIPAR_MS : null
   }
   function baseDe(id) {
     var m = memo[id] || {}
@@ -457,7 +460,7 @@
     aprendizado.historico = (aprendizado.historico || []).concat([{ id: id, resultado: resultado, offsetMs: offset, margemMs: margem(), em: new Date().toISOString() }]).slice(-30)
     if (CFG.AJUSTAR_MARGEM) {
       if (resultado === 'cedo') {
-        aprendizado.margem = Math.min(CFG.MARGEM_MAX_MS, aprendizado.margem + 300)
+        aprendizado.margem = Math.min(CFG.MARGEM_MAX_MS, aprendizado.margem + 500)
         aprendizado.validosSeguidos = 0
         log('📈', 'aceite saiu CEDO: margem sobe para ' + seg(aprendizado.margem))
       } else if (resultado === 'valido') {

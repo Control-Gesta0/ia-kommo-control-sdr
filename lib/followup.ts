@@ -6,6 +6,7 @@ import { appendMessage, getHistory, humanSpokeRecently } from './history'
 import { addLeadNote, addLeadTags, createTask, getContact, getLead, getTask, kommoGet, leadTags, patchLead, removeLeadTags, updateLeadFields } from './kommo'
 import { lerEventoGoogle } from './google'
 import { nota, quando } from './notas'
+import { overlap } from './guards'
 import { despertar } from './qstash'
 import { primeiroNomeDe } from './saudacao'
 import { k, redis } from './redis'
@@ -127,28 +128,62 @@ export async function cancelarFollowup(leadId: number, tipos: Array<'sdr' | 'neg
 
 export type Gerador = (leadId: number, instrucao: string) => Promise<string | null>
 
+/**
+ * Cada passo da cadência tem um TIPO diferente (pedido do comercial, 29/09): repetir a
+ * última pergunta em todo follow-up cansava. Dados de mercado: SÓ os desta lista.
+ */
+const DADOS_MERCADO = [
+  'Um estudo da Harvard Business Review mostrou que empresas que respondem o lead em até 1 hora têm cerca de 7 vezes mais chance de qualificar a venda do que quem demora mais.',
+  'Um estudo do MIT com a InsideSales mostrou que responder em até 5 minutos, em vez de 30, aumenta em até 21 vezes a chance de qualificar o lead.',
+  'Na prática, muita venda só sai depois de vários contatos, e sem lembrete no CRM a equipe desiste no primeiro ou no segundo.',
+  'A Control Gestão já fez mais de 400 implantações de Kommo, e o ganho mais comum é parar de perder lead por falta de retorno.',
+]
+
+const TIPOS_SDR = [
+  { tipo: 'educativo', como: 'Follow-up EDUCATIVO: compartilhe UMA dica prática e curta ligada ao problema que ele contou (ex.: separar os leads por etapa, lembrete de retorno, resposta rápida no WhatsApp), do jeito de quem ajuda de graça. Termine com uma pergunta leve sobre a rotina dele, diferente das anteriores.' },
+  { tipo: 'valor', como: `Follow-up de VALOR: traga UM dado de mercado desta lista (use só um, com a fonte de forma simples, sem inventar número): ${DADOS_MERCADO.join(' | ')} Ligue o dado ao que ele contou e ofereça a análise gratuita com o especialista.` },
+  { tipo: 'checar', como: 'Follow-up de CHECAR: pergunte com naturalidade como está aquela situação que ele contou (o atendimento, os leads, o processo) e se ainda faz sentido olhar isso com o especialista numa análise gratuita.' },
+  { tipo: 'retomada', como: 'Follow-up de RETOMADA (último): mensagem leve deixando a porta aberta, com uma novidade útil (ex.: agente de IA da Kommo que responde na hora e qualifica, ou automação de follow-up), sem pressão e SEM pergunta.' },
+]
+
+const TIPOS_NEG = [
+  { tipo: 'agradecimento', como: 'Follow-up de AGRADECIMENTO: agradeça em uma frase o tempo dele na reunião com o especialista e pergunte se ficou alguma dúvida sobre a proposta.' },
+  { tipo: 'valor', como: `Follow-up de VALOR: traga UM dado de mercado desta lista (só um, fonte simples, sem inventar número): ${DADOS_MERCADO.join(' | ')} Ligue ao que ele contou e à proposta.` },
+  { tipo: 'educativo', como: 'Follow-up EDUCATIVO: tire uma dúvida comum de quem está decidindo (implantação em até 30 dias, acompanhamento de 6 meses depois, treinamento da equipe e suporte por WhatsApp), para dar segurança. Termine com uma pergunta simples.' },
+  { tipo: 'checar', como: 'Follow-up de CHECAR: pergunte como está a decisão por aí (se já conversou com quem decide junto) e se pode ajudar com alguma informação.' },
+  { tipo: 'retomada', como: 'Follow-up de RETOMADA (último): deixe a proposta em aberto com leveza, sem pressão e SEM pergunta.' },
+]
+
 const FIXOS_SDR = [
-  'Oi! Passando só pra ver se ficou alguma dúvida do que conversamos. Sigo por aqui.',
-  'Oi, tudo bem? Quando puder, me responde que eu te ajudo a destravar essa parte do Kommo.',
-  'Oi! Imagino que a rotina esteja corrida. Se ainda fizer sentido organizar o Kommo, me chama por aqui.',
-  'Vou deixar a conversa em pausa por aqui. Quando quiser retomar a implantação do Kommo, é só me mandar uma mensagem.',
+  'Uma dica rápida: só de separar os contatos por etapa e colocar lembrete de retorno, já para de escapar muita venda. Hoje vocês conseguem ver quem ficou sem resposta?',
+  'Um estudo da Harvard Business Review mostrou que responder o lead em até 1 hora aumenta em cerca de 7 vezes a chance de qualificar. Se quiser, o especialista te mostra numa análise gratuita como deixar isso automático aí.',
+  'E aí, como tá a organização dos atendimentos por aí? Se ainda fizer sentido, marco uma análise gratuita com o especialista pra você ver como ficaria.',
+  'Vou deixar a conversa em pausa por aqui. Quando quiser organizar o atendimento no Kommo, com agente de IA respondendo na hora e lembrete de retorno, é só me chamar.',
 ]
 const FIXOS_NEG = [
-  'Oi! Conseguiu dar uma olhada na proposta? Se tiver qualquer ponto pra ajustar, me fala.',
-  'Oi, tudo bem? Passando pra saber se ficou alguma dúvida sobre a proposta da implantação.',
-  'Oi! Posso te ajudar com alguma informação pra decidir sobre a proposta?',
-  'Oi! Sigo à disposição pra ajustar a proposta ao que faz sentido pra vocês agora.',
-  'Oi! Vou deixar a proposta em aberto por aqui. Se quiser retomar, é só me chamar.',
+  'Obrigada pelo tempo na reunião com o especialista! Ficou alguma dúvida sobre a proposta?',
+  'Um estudo da Harvard Business Review mostrou que quem responde o lead em até 1 hora tem cerca de 7 vezes mais chance de qualificar. É bem isso que a implantação deixa rodando pra vocês.',
+  'Uma dúvida comum de quem está decidindo: a implantação sai em até 30 dias e depois tem 6 meses de acompanhamento, com suporte por WhatsApp. Quer que eu detalhe alguma parte?',
+  'Como está a decisão por aí? Se precisar de alguma informação pra conversar com quem decide junto, me fala.',
+  'Vou deixar a proposta em aberto por aqui. Quando quiser retomar, é só me chamar.',
 ]
 
-function instrucaoSdr(passo: number, total: number): string {
+export function instrucaoSdr(passo: number, total: number): string {
+  const t = TIPOS_SDR[Math.min(passo, TIPOS_SDR.length - 1)]
   const ultimo = passo === total - 1
-  return `[FOLLOW-UP ${passo + 1} de ${total}] O lead parou de responder. Escreva UMA mensagem curta de WhatsApp (até 2 linhas) retomando exatamente de onde a conversa parou: relembre em poucas palavras o último assunto ou a última pergunta que ficou sem resposta, sem copiar a mensagem anterior e sem cobrar ("vi que você não respondeu" é proibido). Não cumprimente com "bom dia/boa tarde" de novo e não se apresente.${ultimo ? ' É a ÚLTIMA tentativa: deixe a porta aberta com leveza, sem pergunta.' : ' Termine com UMA pergunta simples e fácil de responder.'} Responda só com o texto.`
+  return `[FOLLOW-UP ${passo + 1} de ${total} · tipo ${t.tipo}] O lead parou de responder. Escreva UMA mensagem curta de WhatsApp (até 3 linhas). ${t.como} NÃO repita a pergunta nem a frase das mensagens anteriores (leia o histórico e mude de assunto conforme o tipo). Sem cobrar ("vi que você não respondeu" é proibido), sem "bom dia/boa tarde" e sem se apresentar. Use o primeiro nome dele se souber.${ultimo ? ' É a ÚLTIMA tentativa: sem pergunta.' : ''} Responda só com o texto.`
 }
 
-function instrucaoNeg(passo: number, total: number): string {
+export function instrucaoNeg(passo: number, total: number): string {
+  const t = TIPOS_NEG[Math.min(passo, TIPOS_NEG.length - 1)]
   const ultimo = passo === total - 1
-  return `[FOLLOW-UP DE PROPOSTA ${passo + 1} de ${total}] Este cliente já fez a reunião e recebeu a proposta da implantação (etapa de negociação). Escreva UMA mensagem curta de WhatsApp (até 2 linhas), em nome da equipe comercial da Control Gestão, retomando a proposta com naturalidade${passo ? ' e com um ângulo diferente das mensagens anteriores (ex.: prazo de implantação, dúvida comum, benefício ligado ao que ele contou)' : ''}. Não cite valores. Não se apresente como Lara e não cobre.${ultimo ? ' É a última: deixe a porta aberta, sem pergunta.' : ' Termine com UMA pergunta simples.'} Responda só com o texto.`
+  return `[FOLLOW-UP DE PROPOSTA ${passo + 1} de ${total} · tipo ${t.tipo}] Este cliente já fez a reunião e recebeu a proposta da implantação (etapa de negociação). Escreva UMA mensagem curta de WhatsApp (até 3 linhas), em nome da equipe comercial da Control Gestão. ${t.como} NÃO repita frases das mensagens anteriores. Não cite valores. Não se apresente como Lara e não cobre.${ultimo ? ' É a última: sem pergunta.' : ''} Responda só com o texto.`
+}
+
+/** Saiu parecido com a última mensagem da Lara? Então vai o texto fixo do tipo deste passo. */
+function semRepetir(texto: string | null, ultimaLara: string, fixo: string): string {
+  if (!texto) return fixo
+  return ultimaLara && overlap(texto, ultimaLara) >= 0.6 ? fixo : texto
 }
 
 async function enviarFollowup(leadId: number, texto: string, tipo: string, passo: number): Promise<void> {
@@ -186,7 +221,8 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
       await campoProximo(leadId, novo)
       return `adiado para ${new Date(novo).toISOString()} (intervalo mínimo desde o último envio)`
     }
-    const texto = (await gerar(leadId, instrucaoSdr(est.passo, total)).catch(() => null)) || FIXOS_SDR[Math.min(est.passo, FIXOS_SDR.length - 1)]
+    const ultimaLara = (await getHistory(leadId).catch(() => [])).filter(m => m.dir === 'out').pop()?.text || ''
+    const texto = semRepetir(await gerar(leadId, instrucaoSdr(est.passo, total)).catch(() => null), ultimaLara, FIXOS_SDR[Math.min(est.passo, FIXOS_SDR.length - 1)])
     await enviarFollowup(leadId, texto, 'sdr', est.passo)
     const passo = est.passo + 1
     let linhaProx: string
@@ -243,7 +279,8 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
         return `adiado para ${new Date(novo).toISOString()} (intervalo mínimo desde o último envio)`
       }
     }
-    const texto = (await gerar(leadId, instrucaoNeg(est.passo, n.dias.length)).catch(() => null)) || FIXOS_NEG[Math.min(est.passo, FIXOS_NEG.length - 1)]
+    const ultimaLara = (await getHistory(leadId).catch(() => [])).filter(m => m.dir === 'out').pop()?.text || ''
+    const texto = semRepetir(await gerar(leadId, instrucaoNeg(est.passo, n.dias.length)).catch(() => null), ultimaLara, FIXOS_NEG[Math.min(est.passo, FIXOS_NEG.length - 1)])
     await enviarFollowup(leadId, texto, 'neg', est.passo)
     const passo = est.passo + 1
     await redis.set(chaveEstado('neg', leadId), { ...est, passo }, { ex: 60 * 86400 })
