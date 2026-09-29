@@ -58,9 +58,10 @@
     LIBERACAO_MS: 5 * 60 * 1000,
     // Folga depois do limite seguro. Sobe sozinha 300 ms se algum aceite sair cedo.
     MARGEM_MS: 40,
-    // Dispara X ms ANTES do limite calculado (pedido do Rodrigo, 29/09: parceiros ganham no mesmo segundo).
-    // Se um aceite sair cedo demais ("no longer available"), a margem aprendida sobe 0,5 s e corrige sozinha.
-    ANTECIPAR_MS: 2000,
+    // Dispara X ms ANTES do limite calculado. ATENÇÃO: o created_at vem em segundos inteiros e a liberação
+    // cai entre +300s e +301s dele; o limite já é o mais cedo SEGURO. Antecipar 1000 ms ou mais = queima
+    // TODO lead (29/09). Valores pequenos (ex.: 300) arriscam uma parte. Se sair cedo, a margem sobe 0,5 s.
+    ANTECIPAR_MS: 0,
     AJUSTAR_MARGEM: true,
     MARGEM_MIN_MS: 0,
     MARGEM_MAX_MS: 5000,
@@ -89,7 +90,7 @@
   var pageFetch = W.fetch.bind(W)
   var STORE_KEY = 'cg-indicacoes-v3'
   var DIAG_KEY = 'cg-indicacoes-v3-diag'
-  var VERSAO = '3.6.0'
+  var VERSAO = '3.6.1'
 
   if (W.__INDICACOES__ && W.__INDICACOES__.stop) {
     console.warn('[INDICAÇÕES] já ativo, reiniciando...')
