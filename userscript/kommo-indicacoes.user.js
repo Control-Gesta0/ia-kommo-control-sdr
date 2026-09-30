@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kommo · Indicações de parceiro (Control Gestão)
 // @namespace    https://controlgestao.com.br/
-// @version      3.7.0
+// @version      3.7.1
 // @description  Filtra indicações de TESTE pelo "Comment:", aceita no tempo certo (ou avisa, no modo assistido) aciona o agente de IA SDR e entrega à Lara os áudios do WhatsApp Lite.
 // @match        https://*.kommo.com/*
 // @run-at       document-idle
@@ -233,10 +233,9 @@ var FiltroIndicacao = (function () {
     LIBERACAO_MS: 5 * 60 * 1000,
     // Folga depois do limite seguro. Sobe sozinha 300 ms se algum aceite sair cedo.
     MARGEM_MS: 40,
-    // Dispara X ms ANTES do limite calculado. ATENÇÃO: o created_at vem em segundos inteiros e a liberação
-    // cai entre +300s e +301s dele; o limite já é o mais cedo SEGURO. Antecipar 1000 ms ou mais = queima
-    // TODO lead (29/09). Valores pequenos (ex.: 300) arriscam uma parte. Se sair cedo, a margem sobe 0,5 s.
-    ANTECIPAR_MS: 0,
+    // Dispara X ms ANTES do limite calculado. 2000 ms validado em 30/09 (v3.6.0): 6 de 6 leads aceitos
+    // entre +299s e +300s, todos válidos (com contato). Se algum sair cedo, a margem sobe 0,5 s sozinha.
+    ANTECIPAR_MS: 2000,
     AJUSTAR_MARGEM: true,
     MARGEM_MIN_MS: 0,
     MARGEM_MAX_MS: 5000,
@@ -265,7 +264,7 @@ var FiltroIndicacao = (function () {
   var pageFetch = W.fetch.bind(W)
   var STORE_KEY = 'cg-indicacoes-v3'
   var DIAG_KEY = 'cg-indicacoes-v3-diag'
-  var VERSAO = '3.7.0'
+  var VERSAO = '3.7.1'
 
   if (W.__INDICACOES__ && W.__INDICACOES__.stop) {
     console.warn('[INDICAÇÕES] já ativo, reiniciando...')

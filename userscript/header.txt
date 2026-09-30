@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kommo · Indicações de parceiro (Control Gestão)
 // @namespace    https://controlgestao.com.br/
-// @version      3.7.0
+// @version      3.7.1
 // @description  Filtra indicações de TESTE pelo "Comment:", aceita no tempo certo (ou avisa, no modo assistido) aciona o agente de IA SDR e entrega à Lara os áudios do WhatsApp Lite.
 // @match        https://*.kommo.com/*
 // @run-at       document-idle
