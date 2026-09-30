@@ -45,6 +45,8 @@ export async function transcreverBuffer(data: Buffer, type: string, url = ''): P
     file: await toFile(file.data, `audio.${ext}`),
     model: CONFIG.sttModel,
     language: 'pt',
+    // Vocabulário do assunto: sem isso "Kommo" vira "combo" e "Lara" vira "Sani"
+    prompt: 'Conversa de WhatsApp com a Lara, da Control Gestão, sobre o CRM Kommo: funil, leads, vendedores, WhatsApp, Meta, API oficial, automação, Salesbot.',
   })
   return (r.text || '').trim() || null
 }

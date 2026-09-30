@@ -100,9 +100,9 @@ export function createBrain(opts: LlmOptions) {
       state.outroAssunto ? `Outro assunto já registrado: ${state.outroAssunto}` : '',
       state.oferta?.length ? `Horários já oferecidos (só estes valem): ${state.oferta.map(o => o.label).join(' · ')}. O FOCO AGORA é ele escolher um deles: não volte a fazer perguntas do roteiro.` : '',
       state.reuniao ? `REUNIÃO JÁ MARCADA: ${state.reuniao.label}. Não marque outra.` : '',
-      ...CRM_MAP.alertas.filter(a => a.re.test(ctx.lastLeadText)).map(a => `⚠️ ALERTA DO SISTEMA (${a.nome}): ${a.aviso}`),
+      ...CRM_MAP.alertas.filter(a => alertaAtivo(a, ctx.lastLeadText)).map(a => `⚠️ ALERTA DO SISTEMA (${a.nome}): ${a.aviso}`),
       // Perguntou preço: a próxima pergunta é o TAMANHO (código, não sugestão)
-      describeOpen(ctx.porta, snap, CRM_MAP.alertas.some(a => a.nome === 'perguntou preço' && a.re.test(ctx.lastLeadText)) ? ['vendedores', 'faturamento'] : []),
+      describeOpen(ctx.porta, snap, CRM_MAP.alertas.some(a => a.nome === 'perguntou preço' && alertaAtivo(a, ctx.lastLeadText)) ? ['vendedores', 'faturamento'] : []),
     ].filter(Boolean)
     return [
       { role: 'system', content: promptOf(ctx.porta) },
@@ -200,7 +200,7 @@ export function createBrain(opts: LlmOptions) {
         }
       }
       if (!handoff) {
-        const alerta = CRM_MAP.alertas.find(a => a.finaliza && a.re.test(ctx.lastLeadText) && a.finaliza.seResposta.test(safe.text))
+        const alerta = CRM_MAP.alertas.find(a => a.finaliza && alertaAtivo(a, ctx.lastLeadText) && a.finaliza.seResposta.test(safe.text))
         if (alerta?.finaliza) {
           await aplicarFinalizacao(ctx, alerta.finaliza.motivo, `Finalizado pelo código (alerta: ${alerta.nome}). Última mensagem do lead: ${ctx.lastLeadText.slice(0, 300)}`, alerta.finaliza.motivo === 'urgencia')
           handoff = true
@@ -284,9 +284,13 @@ export function createBrain(opts: LlmOptions) {
 
 const PERGUNTA_TAMANHO = /vendedor|usu[aá]rio|pessoas|faturamento|fatura|equipe|time|tamanho/i
 const ultimaPergunta = (t: string) => (t.split(/(?<=[.!?])\s+/).filter(f => f.includes('?')).pop() || '')
+export function alertaAtivo(a: { re: RegExp; exceto?: RegExp }, texto: string): boolean {
+  return a.re.test(texto) && !(a.exceto && a.exceto.test(texto))
+}
+
 function precisaPerguntarTamanho(ctx: ToolCtx, state: { respostas?: Record<string, string> }): boolean {
   const alerta = CRM_MAP.alertas.find(a => a.nome === 'perguntou preço')
-  if (!alerta || !alerta.re.test(ctx.lastLeadText)) return false
+  if (!alerta || !alertaAtivo(alerta, ctx.lastLeadText)) return false
   if (/licen[cç]a|plano|por usu[aá]rio|mensalidade da kommo/i.test(ctx.lastLeadText)) return false // preço da licença pode responder
   return !state.respostas?.vendedores && !state.respostas?.faturamento
 }

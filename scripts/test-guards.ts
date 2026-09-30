@@ -109,6 +109,15 @@ async function main() {
   out = await runTool(ctx('oi'), 'finalizar_atendimento', { motivo: 'agendado', resumo: 'x' })
   eq('modelo NÃO pode finalizar como "agendado" (só a tool de agenda)', out.isError, true)
 
+  // Custo da Meta por mensagem não é pergunta de preço do serviço (Larissa, 30/09)
+  {
+    const { CRM_MAP } = await import('../lib/crm-map')
+    const { alertaAtivo } = await import('../lib/llm')
+    const ativos = (t: string) => CRM_MAP.alertas.filter(a => alertaAtivo(a, t)).map(a => a.nome).filter(n => /pre[cç]o|meta|whatsapp/i.test(n))
+    eq('cobrança da Meta por mensagem → alerta do WhatsApp oficial, sem trava de preço', ativos('a gente tinha que pagar o meta, o meta tem que aprovar as mensagens e a gente tem que pagar um valor por mensagem'), ['custo do WhatsApp oficial'])
+    eq('preço do serviço continua com a trava de preço', ativos('quanto custa a implantação de vocês?'), ['perguntou preço'])
+  }
+
   const extra = await import('./test-cliente').catch(() => null)
   if (extra?.default) { const extras = await extra.default(eq); falhas += extras }
 

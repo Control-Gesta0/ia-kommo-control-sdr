@@ -77,6 +77,9 @@ const AGENDA: AgendaConfig = {
   folgaMin: 0,               // horários de 1h em sequência (10h e 11h) precisam caber um depois do outro
 }
 
+/** Dúvida sobre a cobrança da Meta por mensagem (API oficial do WhatsApp) */
+const CUSTO_META = /\bmeta\b.{0,80}(pag|cobr|valor|custo|aprov)|(pag|cobr|valor|custo).{0,80}\bmeta\b|por mensagem|api oficial.{0,60}(pag|cobr|custo)|templates?.{0,40}(pag|cobr|aprov)/i
+
 export const CRM_MAP = {
   /** textarea que o Salesbot envia (Desenho A) */
   respostaFieldId: 1048615, // "Resposta IA (Lara)" (criado em 25/09/2026)
@@ -225,7 +228,13 @@ export const CRM_MAP = {
     {
       nome: 'perguntou preço',
       re: /quanto custa|quanto fica|quanto [ée]|pre[cç]o|valor|investimento|or[cç]amento|mensalidade|cobram|custo/i,
+      exceto: CUSTO_META,
       aviso: 'O lead perguntou PREÇO. Se for da LICENÇA/plano da Kommo, pode responder em REAIS com os planos do contexto. Se for da implantação/configuração/suporte/IA (nosso serviço), NÃO cite valor: "Depende do tamanho da operação, por isso quero te passar o valor certo." (ou do tamanho do projeto/escopo). E a pergunta desta resposta é sobre o TAMANHO (quantos vendedores vão usar, ou o faturamento mensal).',
+    },
+    {
+      nome: 'custo do WhatsApp oficial',
+      re: CUSTO_META,
+      aviso: 'O lead está perguntando da COBRANÇA DA META por mensagem no WhatsApp (API oficial), não do preço do nosso serviço. Responda a dúvida de verdade, curto e sem citar valores: (1) essa cobrança é da Meta, não da Kommo, e vale para qualquer CRM que use a API oficial; (2) responder o cliente dentro de 24h depois que ele manda mensagem não é cobrado; o que a Meta cobra são os disparos de modelos aprovados (templates) que a empresa inicia, como campanhas e lembretes fora dessa janela; (3) dá pra reduzir bastante o custo desenhando as automações para rodar dentro da janela de 24h, e há a opção do WhatsApp Lite (número atual pelo QR code), sem cobrança por mensagem, mas com limites para disparo e robôs. Acolha a frustração em meia frase e convide para o especialista mostrar na reunião qual desenho sai mais barato para a operação dela.',
     },
     {
       nome: 'dificuldade',

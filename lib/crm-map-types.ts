@@ -47,6 +47,8 @@ export interface Porta {
 export interface Alerta {
   nome: string
   re: RegExp
+  /** Não dispara se o turno casar com isto (ex.: custo da Meta por mensagem não é preço do nosso serviço) */
+  exceto?: RegExp
   aviso: string
   /**
    * Finalização garantida em código: se o alerta disparou, a resposta final casa com
