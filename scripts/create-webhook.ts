@@ -1,7 +1,7 @@
 /**
  * Cria os webhooks VIA API (no UI é onde se erra o filtro e nasce o eco).
  *   npx tsx scripts/create-webhook.ts            → só LISTA os webhooks atuais
- *   npx tsx scripts/create-webhook.ts --criar    → cria DEPLOY_URL/api/inbound ← add_message
+ *   npx tsx scripts/create-webhook.ts --criar    → cria DEPLOY_URL/api/inbound ← add_message + add_outgoing_message (mensagem do time pausa a Lara)
  *       (é só assim que a IA ESCUTA o lead responder; não aceita nem mexe em lead)
  *   ... --criar --reserva-indicacao              → também cria /api/novo-lead ← status_lead
  *       (reserva opcional para iniciar a conversa se o aviso do userscript falhar.
@@ -21,7 +21,7 @@ async function main() {
   for (const h of atual._embedded?.webhooks || []) console.log(`${h.id} · ${h.destination} · ${JSON.stringify(h.settings)}`)
   if (!process.argv.includes('--criar')) return
   const base = (process.env.DEPLOY_URL || '').replace(/\/+$/, '')
-  const alvos: Array<[string, string[]]> = [[`${base}/api/inbound?secret=${process.env.WEBHOOK_SECRET}`, ['add_message']]]
+  const alvos: Array<[string, string[]]> = [[`${base}/api/inbound?secret=${process.env.WEBHOOK_SECRET}`, ['add_message', 'add_outgoing_message']]]
   if (process.argv.includes('--reserva-indicacao')) alvos.push([`${base}/api/novo-lead?secret=${process.env.WEBHOOK_SECRET}`, ['status_lead']])
   for (const [destination, settings] of alvos) {
     const r = await fetch(`${domain}/api/v4/webhooks`, { method: 'POST', headers, body: JSON.stringify({ destination, settings }) })

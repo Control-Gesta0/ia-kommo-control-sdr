@@ -139,7 +139,14 @@ async function ingest(msgs: InboundMsg[], webhookId: string): Promise<void> {
       if (!text) continue
 
       // Eco do que o NOSSO bot enviou: já está no histórico
-      if (await isEchoOfSent(m.leadId, text)) continue
+      const eco = await isEchoOfSent(m.leadId, text)
+      if (outgoing) {
+        // Diagnóstico (7 dias): confere se as saídas da Lara são reconhecidas como eco e as do time não
+        await redis.lpush(k('diag', 'saida'), JSON.stringify({ em: new Date().toISOString(), leadId: m.leadId, eco, texto: text.slice(0, 120), bruto: m.bruto })).catch(() => 0)
+        await redis.ltrim(k('diag', 'saida'), 0, 49).catch(() => undefined)
+        await redis.expire(k('diag', 'saida'), 7 * 86400).catch(() => undefined)
+      }
+      if (eco) continue
       if (outgoing) {
         // Saída que não é nossa = humano (ou outra automação) falando: registra e recua
         await appendMessage(m.leadId, { id: `kommo:${m.id}`, dir: 'out', text, ts: Date.now() })
