@@ -89,7 +89,7 @@
   var pageFetch = W.fetch.bind(W)
   var STORE_KEY = 'cg-indicacoes-v3'
   var DIAG_KEY = 'cg-indicacoes-v3-diag'
-  var VERSAO = '3.7.1'
+  var VERSAO = '3.7.2'
 
   if (W.__INDICACOES__ && W.__INDICACOES__.stop) {
     console.warn('[INDICAÇÕES] já ativo, reiniciando...')
@@ -844,12 +844,6 @@
     })
   }
 
-  function paraBase64(buf) {
-    var bytes = new Uint8Array(buf), partes = [], passo = 0x8000
-    for (var i = 0; i < bytes.length; i += passo) partes.push(String.fromCharCode.apply(null, bytes.subarray(i, i + passo)))
-    return btoa(partes.join(''))
-  }
-
   function entregar(p, amojoId) {
     if (ponte.emAndamento[p.id]) return Promise.resolve()
     ponte.emAndamento[p.id] = true
@@ -873,15 +867,8 @@
       diag.mensagem = JSON.stringify(alvo).slice(0, 2500)
       if (!link && !transcricao) throw Object.assign(new Error('mídia ainda não carregou no chat'), { diag: diag, esperar: true })
       var tipo = String(corpo.type || alvo.type || '')
-      if (!link) return postarAgente('/api/midia', { id: p.id, transcricao: transcricao, tipo: tipo, versao: VERSAO }, 110000)
-      return gm({ method: 'GET', url: link, responseType: 'arraybuffer', headers: { 'X-Auth-Token': ponte.token || '' }, timeout: 30000 }).then(function (r) {
-        var mime = ((String(r.responseHeaders || '').match(/content-type:\s*([^\r\n;]+)/i) || [])[1] || '').trim()
-        if (r.status < 200 || r.status >= 300 || !r.response || !r.response.byteLength) {
-          diag.download = { status: r.status, mime: mime }
-          return postarAgente('/api/midia', { id: p.id, link: link, transcricao: transcricao, tipo: tipo, versao: VERSAO, diag: diag }, 110000)
-        }
-        return postarAgente('/api/midia', { id: p.id, b64: paraBase64(r.response), mime: mime, link: link, tipo: tipo, transcricao: transcricao, versao: VERSAO }, 110000)
-      })
+      // O link do drive da Kommo é público (redireciona pro Google Storage): quem baixa é o servidor da Lara
+      return postarAgente('/api/midia', { id: p.id, link: link || '', transcricao: transcricao, tipo: tipo, versao: VERSAO }, 110000)
     }).then(function (r) {
       if (r && r.ok) { ponte.entregues++; log('🎧', 'áudio do lead ' + p.leadId + ' entregue à Lara' + (r.texto ? ': "' + r.texto.slice(0, 80) + '"' : '')) }
       else if (r) { ponte.ultimoErro = r.motivo || 'não lido'; log('⚠️', 'Lara não leu a mídia do lead ' + p.leadId + ': ' + ponte.ultimoErro) }

@@ -25,12 +25,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' })
 
   const body = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body) || {}
-  const id = String(body.id || '')
+  const id = String(body.id || body.diag?.id || '')
   if (body.diag) await registrarDiagPonte({ id, diag: body.diag, versao: body.versao })
   if (!id) return res.status(200).json({ ok: true, diag: true })
   const p = await lerPendente(id)
   if (!p) return res.status(200).json({ ok: false, motivo: 'não está mais pendente' })
+  // O navegador achou a mensagem mas não conseguiu baixar (o link redireciona pro Google Storage):
+  // o link do drive da Kommo é público, então o servidor baixa.
+  if (!body.b64 && !body.link && body.diag?.mensagem) {
+    const achado = linkDaMensagem(String(body.diag.mensagem))
+    if (achado.link) { body.link = achado.link; body.tipo = body.tipo || achado.tipo }
+  }
 
+  // Só baixa do drive da Kommo (nunca de um link qualquer)
+  if (body.link && !LINK_KOMMO.test(String(body.link))) body.link = ''
   const mime = String(body.mime || '')
   const tipo = mediaKind(String(body.tipo || '')) || mediaKind(mime) || tipoPeloLink(String(body.link || '')) || 'audio'
   const rotulo = tipo === 'audio' ? 'áudio' : tipo === 'image' ? 'imagem' : 'documento'
@@ -55,6 +63,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const ok = await resolverPendente(id, texto, crypto.randomUUID())
   if (ok) await logExec({ tipo: 'midia', leadId: p.leadId, detalhe: `${rotulo} via navegador: ${lido.slice(0, 120)}` }).catch(() => undefined)
   return res.status(200).json({ ok, texto: lido.slice(0, 300) })
+}
+
+const LINK_KOMMO = /^https:\/\/[\w.-]+\.(kommo|amocrm)\.(com|ru)\//
+
+/** Link e tipo da mídia no JSON da mensagem do chat (message.attachment.media ou message.media). */
+export function linkDaMensagem(json: string): { link: string; tipo: string } {
+  try {
+    const m = JSON.parse(json) as { message?: { media?: string; type?: string; attachment?: { media?: string; type?: string } } }
+    const msg = m.message || {}
+    const link = msg.attachment?.media || msg.media || ''
+    return { link: LINK_KOMMO.test(link) ? link : '', tipo: msg.attachment?.type || msg.type || '' }
+  } catch {
+    // JSON cortado (o navegador manda no máximo 2.500 caracteres): pega o link pelo texto
+    const link = (json.match(/"media":"(https:\/\/[\w.-]+\.(?:kommo|amocrm)\.(?:com|ru)\/[^"\\]+)"/) || [])[1] || ''
+    return { link, tipo: (json.match(/"type":"(voice|audio|picture|image|file|video)"/) || [])[1] || '' }
+  }
 }
 
 function safeEq(a: string, b: string): boolean {
