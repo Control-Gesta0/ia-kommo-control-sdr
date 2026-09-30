@@ -7,6 +7,8 @@ import { logExec } from '../lib/execlog'
 import { appendMessage, isEchoOfSent, markHumanSpoke, seenMessage } from '../lib/history'
 import { mediaKind, mediaToText, tipoPeloLink } from '../lib/media'
 import { k, redis } from '../lib/redis'
+import { getContact, getLead, sleep } from '../lib/kommo'
+import { CRM_MAP } from '../lib/crm-map'
 import { podeResetar, resetLead } from '../lib/reset'
 import { ehRespostaAutomatica } from '../lib/automatica'
 import { cancelarFollowup } from '../lib/followup'
@@ -36,6 +38,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 function safeEq(a: string, b: string): boolean {
   return crypto.timingSafeEqual(crypto.createHash('sha256').update(a).digest(), crypto.createHash('sha256').update(b).digest())
 }
+
+/** Aviso da Kommo quando o WhatsApp Lite ainda não entregou a mídia */
+export const MIDIA_PENDENTE = /mensagem de m[ií]dia|media message|aguarde o carregamento|wait for the media/i
 
 export interface InboundMsg { id: string; leadId: number; text: string; attachType: string; attachLink: string; direction: string; bruto?: Record<string, string> }
 
@@ -95,13 +100,29 @@ export function parseKommoWebhook(raw: unknown): { accountId: string; msgs: Inbo
 
 async function ingest(msgs: InboundMsg[], webhookId: string): Promise<void> {
   const leads = new Set<number>()
+  const pendentes: InboundMsg[] = []
   for (const m of msgs) {
     try {
-      if (await seenMessage(`kommo:${m.id}`)) continue
       let text = (m.text || '').trim()
+      // Mídia que o WhatsApp Lite ainda não liberou: a Kommo manda só um aviso ("Você recebeu uma
+      // mensagem de mídia... Aguarde o carregamento"). Se depois vier o MESMO id com o arquivo, processa.
+      const avisoMidia = MIDIA_PENDENTE.test(text) && !m.attachLink
+      const repetida = await seenMessage(`kommo:${m.id}`)
+      if (repetida && !(m.attachLink && (await redis.get(k('midia-pendente', m.id))))) continue
+      if (avisoMidia || (repetida && m.attachLink)) {
+        await redis.lpush(k('diag', 'midia-aviso'), JSON.stringify({ em: new Date().toISOString(), leadId: m.leadId, id: m.id, repetida, attachType: m.attachType, attachLink: m.attachLink ? m.attachLink.slice(0, 120) : '', texto: text.slice(0, 100), bruto: m.bruto })).catch(() => 0)
+        await redis.ltrim(k('diag', 'midia-aviso'), 0, 29).catch(() => undefined)
+        await redis.expire(k('diag', 'midia-aviso'), 7 * 86400).catch(() => undefined)
+      }
+      if (avisoMidia && m.direction !== 'outgoing') {
+        await redis.set(k('midia-pendente', m.id), String(m.leadId), { ex: 3600 })
+        pendentes.push(m)
+        continue
+      }
       const outgoing = m.direction === 'outgoing'
       const kind = mediaKind(m.attachType) || tipoPeloLink(m.attachLink) || (!text && m.attachLink ? 'audio' : null)
       if (kind && !outgoing) text = await mediaToText(kind, m.attachLink, text)
+      if (m.attachLink) await redis.del(k('midia-pendente', m.id))
       if (!outgoing && (kind || !text)) {
         // Guarda o formato que a Kommo mandou (24h) para conferir mídia que não abriu
         await redis.lpush(k('diag', 'inbound-midia'), JSON.stringify({ em: new Date().toISOString(), leadId: m.leadId, attachType: m.attachType, attachLink: m.attachLink ? m.attachLink.slice(0, 120) : '', texto: text.slice(0, 120), bruto: m.bruto })).catch(() => 0)
@@ -143,5 +164,29 @@ async function ingest(msgs: InboundMsg[], webhookId: string): Promise<void> {
       console.error(`[inbound] erro ingerindo msg ${m.id}:`, e)
     }
   }
+  // Aviso de mídia: espera a mídia carregar (a Kommo pode mandar o arquivo depois com o mesmo id).
+  // Não chegou? Registra que o áudio não veio e a Lara trata (pede pra escrever ou chama o time).
+  if (pendentes.length) {
+    await sleep(45_000)
+    for (const m of pendentes) {
+      if (!(await redis.get(k('midia-pendente', m.id)))) continue // chegou com o arquivo e já foi processada
+      await redis.del(k('midia-pendente', m.id))
+      await appendMessage(m.leadId, { id: `kommo:${m.id}`, dir: 'in', text: '[o lead mandou um áudio ou outra mídia, mas o WhatsApp não liberou o arquivo pra mim]', ts: Date.now() })
+      await cancelarFollowup(m.leadId).catch(() => undefined)
+      await avisarTimeAudio(m.leadId).catch(e => console.warn('[aviso áudio]', e))
+      leads.add(m.leadId)
+    }
+  }
   await Promise.all([...leads].map(leadId => processLead(leadId, webhookId)))
+}
+
+/** Áudio que a Lara não consegue ouvir: avisa o Rodrigo no WhatsApp pessoal (1 vez a cada 2h por lead). */
+async function avisarTimeAudio(leadId: number): Promise<void> {
+  const alvo = CRM_MAP.avisoCloser.leadId
+  if (!alvo || alvo === leadId) return
+  if ((await redis.set(k('aviso-audio', leadId), 1, { nx: true, ex: 7200 })) !== 'OK') return
+  const lead = await getLead(leadId).catch(() => null)
+  const contatoId = (lead?._embedded?.contacts || []).find(c => c.is_main)?.id
+  const nome = (contatoId ? (await getContact(contatoId).catch(() => null))?.name : '') || lead?.name || `Lead #${leadId}`
+  await sendReply(alvo, `✉️ *Áudio que a Lara não consegue ouvir*\n\n${nome} mandou um áudio e o WhatsApp não liberou o arquivo pra Lara.\nOuça no card e responda se precisar:\n\n➡️ https://controlgestao.kommo.com/leads/detail/${leadId}`)
 }
