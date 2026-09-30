@@ -26,6 +26,10 @@
     "api/cron.ts": {
       "maxDuration": 300,
       "includeFiles": "{prompts/**,userscript/filtro-indicacao.js}"
+    },
+    "api/midia.ts": {
+      "maxDuration": 120,
+      "includeFiles": "{prompts/**,userscript/filtro-indicacao.js}"
     }
   },
   "crons": [

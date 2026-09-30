@@ -7,8 +7,8 @@ import { logExec } from '../lib/execlog'
 import { appendMessage, isEchoOfSent, markHumanSpoke, seenMessage } from '../lib/history'
 import { mediaKind, mediaToText, tipoPeloLink } from '../lib/media'
 import { k, redis } from '../lib/redis'
-import { getContact, getLead, sleep } from '../lib/kommo'
-import { CRM_MAP } from '../lib/crm-map'
+import { sleep } from '../lib/kommo'
+import { ESPERA_PONTE_MS, esgotarPendente, lerPendente, registrarPendente } from '../lib/ponte-midia'
 import { podeResetar, resetLead } from '../lib/reset'
 import { ehRespostaAutomatica } from '../lib/automatica'
 import { cancelarFollowup } from '../lib/followup'
@@ -116,13 +116,18 @@ async function ingest(msgs: InboundMsg[], webhookId: string): Promise<void> {
       }
       if (avisoMidia && m.direction !== 'outgoing') {
         await redis.set(k('midia-pendente', m.id), String(m.leadId), { ex: 3600 })
+        // Ponte: o navegador logado (userscript) busca o arquivo no chat da Kommo e manda pra transcrever
+        const b = m.bruto || {}
+        const campo = (nome: string) => Object.entries(b).find(([c]) => c.endsWith(`[${nome}]`))?.[1] || ''
+        await registrarPendente({ id: m.id, leadId: m.leadId, chatId: campo('chat_id'), talkId: campo('talk_id'), criadoEm: Number(campo('created_at')) || Math.floor(Date.now() / 1000), registradaEm: Date.now() })
+        await cancelarFollowup(m.leadId).catch(() => undefined)
         pendentes.push(m)
         continue
       }
       const outgoing = m.direction === 'outgoing'
       const kind = mediaKind(m.attachType) || tipoPeloLink(m.attachLink) || (!text && m.attachLink ? 'audio' : null)
       if (kind && !outgoing) text = await mediaToText(kind, m.attachLink, text)
-      if (m.attachLink) await redis.del(k('midia-pendente', m.id))
+      if (m.attachLink) await redis.del(k('midia-pendente', m.id), k('midia-pend', m.id))
       if (!outgoing && (kind || !text)) {
         // Guarda o formato que a Kommo mandou (24h) para conferir mídia que não abriu
         await redis.lpush(k('diag', 'inbound-midia'), JSON.stringify({ em: new Date().toISOString(), leadId: m.leadId, attachType: m.attachType, attachLink: m.attachLink ? m.attachLink.slice(0, 120) : '', texto: text.slice(0, 120), bruto: m.bruto })).catch(() => 0)
@@ -164,29 +169,17 @@ async function ingest(msgs: InboundMsg[], webhookId: string): Promise<void> {
       console.error(`[inbound] erro ingerindo msg ${m.id}:`, e)
     }
   }
-  // Aviso de mídia: espera a mídia carregar (a Kommo pode mandar o arquivo depois com o mesmo id).
-  // Não chegou? Registra que o áudio não veio e a Lara trata (pede pra escrever ou chama o time).
-  if (pendentes.length) {
-    await sleep(45_000)
-    for (const m of pendentes) {
-      if (!(await redis.get(k('midia-pendente', m.id)))) continue // chegou com o arquivo e já foi processada
-      await redis.del(k('midia-pendente', m.id))
-      await appendMessage(m.leadId, { id: `kommo:${m.id}`, dir: 'in', text: '[o lead mandou um áudio ou outra mídia, mas o WhatsApp não liberou o arquivo pra mim]', ts: Date.now() })
-      await cancelarFollowup(m.leadId).catch(() => undefined)
-      await avisarTimeAudio(m.leadId).catch(e => console.warn('[aviso áudio]', e))
-      leads.add(m.leadId)
+  // Mídia pendente: os outros leads seguem; esta espera o navegador entregar o arquivo (api/midia).
+  // Não chegou a tempo (navegador fechado)? A Lara não responde e o Rodrigo é avisado.
+  const esperas = pendentes.map(async m => {
+    const limite = Date.now() + ESPERA_PONTE_MS
+    while (Date.now() < limite) {
+      await sleep(5000)
+      if (!(await lerPendente(m.id))) return
     }
-  }
-  await Promise.all([...leads].map(leadId => processLead(leadId, webhookId)))
-}
-
-/** Áudio que a Lara não consegue ouvir: avisa o Rodrigo no WhatsApp pessoal (1 vez a cada 2h por lead). */
-async function avisarTimeAudio(leadId: number): Promise<void> {
-  const alvo = CRM_MAP.avisoCloser.leadId
-  if (!alvo || alvo === leadId) return
-  if ((await redis.set(k('aviso-audio', leadId), 1, { nx: true, ex: 7200 })) !== 'OK') return
-  const lead = await getLead(leadId).catch(() => null)
-  const contatoId = (lead?._embedded?.contacts || []).find(c => c.is_main)?.id
-  const nome = (contatoId ? (await getContact(contatoId).catch(() => null))?.name : '') || lead?.name || `Lead #${leadId}`
-  await sendReply(alvo, `✉️ *Áudio que a Lara não consegue ouvir*\n\n${nome} mandou um áudio e o WhatsApp não liberou o arquivo pra Lara.\nOuça no card e responda se precisar:\n\n➡️ https://controlgestao.kommo.com/leads/detail/${leadId}`)
+    await redis.del(k('midia-pendente', m.id))
+    const esgotou = await esgotarPendente(m.id, 'o navegador com o script não entregou o arquivo a tempo')
+    if (esgotou) await logExec({ tipo: 'midia', leadId: m.leadId, detalhe: 'áudio não entregue pelo navegador: time avisado' }).catch(() => undefined)
+  })
+  await Promise.all([...[...leads].map(leadId => processLead(leadId, webhookId)), ...esperas])
 }
