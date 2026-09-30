@@ -116,6 +116,8 @@ export function createBrain(opts: LlmOptions) {
       max_completion_tokens: maxTokens,
       messages,
       ...(tools && tools.length ? { tools, tool_choice: 'auto' as const } : {}),
+      // gpt-5.6 no /v1/chat/completions só aceita ferramentas sem raciocínio
+      ...(tools && tools.length && /^gpt-5\.6/.test(opts.model) ? { reasoning_effort: 'none' as unknown as 'low' } : {}),
     })
     addUsage(usage, r.usage)
     return r.choices[0]
