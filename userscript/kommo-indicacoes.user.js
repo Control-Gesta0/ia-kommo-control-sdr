@@ -1,14 +1,16 @@
 // ==UserScript==
 // @name         Kommo · Indicações de parceiro (Control Gestão)
 // @namespace    https://controlgestao.com.br/
-// @version      3.6.1
-// @description  Filtra indicações de TESTE pelo "Comment:", aceita no tempo certo (ou avisa, no modo assistido) e aciona o agente de IA SDR.
+// @version      3.7.0
+// @description  Filtra indicações de TESTE pelo "Comment:", aceita no tempo certo (ou avisa, no modo assistido) aciona o agente de IA SDR e entrega à Lara os áudios do WhatsApp Lite.
 // @match        https://*.kommo.com/*
 // @run-at       document-idle
 // @grant        unsafeWindow
 // @grant        GM_xmlhttpRequest
 // @grant        GM_notification
 // @connect      vercel.app
+// @connect      kommo.com
+// @connect      amocrm.com
 // @noframes
 // ==/UserScript==
 //
@@ -263,7 +265,7 @@ var FiltroIndicacao = (function () {
   var pageFetch = W.fetch.bind(W)
   var STORE_KEY = 'cg-indicacoes-v3'
   var DIAG_KEY = 'cg-indicacoes-v3-diag'
-  var VERSAO = '3.6.1'
+  var VERSAO = '3.7.0'
 
   if (W.__INDICACOES__ && W.__INDICACOES__.stop) {
     console.warn('[INDICAÇÕES] já ativo, reiniciando...')
@@ -895,6 +897,188 @@ var FiltroIndicacao = (function () {
     if (document.hidden && Object.keys(emAndamento).length) dbg('aba em segundo plano com leads em andamento: o relógio do worker segue')
   })
 
+  // ---------------- PONTE DE MÍDIA (áudio do WhatsApp Lite para a Lara) ----------------
+  // O webhook do WhatsApp Lite chega sem o arquivo do áudio e a API oficial não lê o chat.
+  // Esta aba (logada) pergunta à Lara se há mídia pendente, acha a mensagem no chat da Kommo,
+  // baixa o arquivo e manda para ela transcrever e responder. Só UMA aba faz isso por vez.
+  var PONTE_MS = 8000
+  var PONTE_LOCK = 'cg-ponte-midia-lock'
+  var abaId = Math.random().toString(36).slice(2)
+  var ponte = { token: null, tokenEm: 0, host: null, emAndamento: {}, tentativas: {}, ultimoErro: '', entregues: 0 }
+  var ponteTimer = null
+
+  function souAbaDaPonte() {
+    var l = ler(PONTE_LOCK, null)
+    if (!l || l.aba === abaId || now() - l.em > 3 * PONTE_MS) { gravar(PONTE_LOCK, { aba: abaId, em: now() }); return true }
+    return false
+  }
+
+  function gm(opts) {
+    return new Promise(function (resolve, reject) {
+      if (typeof GM_xmlhttpRequest !== 'function') return reject(new Error('GM_xmlhttpRequest indisponível'))
+      opts.onload = function (r) { resolve(r) }
+      opts.onerror = function () { reject(new Error('rede: ' + String(opts.url).split('?')[0].slice(0, 80))) }
+      opts.ontimeout = function () { reject(new Error('timeout: ' + String(opts.url).split('?')[0].slice(0, 80))) }
+      opts.timeout = opts.timeout || 20000
+      GM_xmlhttpRequest(opts)
+    })
+  }
+
+  function urlAgente(caminho) { return CFG.AGENTE_URL.replace(/\/+$/, '') + caminho + '?secret=' + encodeURIComponent(CFG.AGENTE_SECRET) }
+
+  function constanteKommo(nome) {
+    try { var a = W.AMOCRM || W.APP; return a && typeof a.constant === 'function' ? a.constant(nome) : undefined } catch (_) { return undefined }
+  }
+
+  function hostAmojo() {
+    if (ponte.host) return ponte.host
+    var c = constanteKommo('amojo_server') || constanteKommo('amojo_url') || constanteKommo('amojo')
+    var h = typeof c === 'string' && /^https?:\/\//.test(c) ? c : (c && typeof c === 'object' && (c.url || c.server || c.host)) || ''
+    ponte.host = String(h || 'https://amojo.kommo.com').replace(/\/+$/, '')
+    return ponte.host
+  }
+
+  // Token do chat (amojo) com a sessão do navegador: o mesmo que a tela de chats usa
+  function tokenAmojo() {
+    if (ponte.token && now() - ponte.tokenEm < 10 * 60 * 1000) return Promise.resolve(ponte.token)
+    return pageFetch('/ajax/v1/chats/session', {
+      method: 'POST', credentials: 'include',
+      headers: { 'content-type': 'application/x-www-form-urlencoded; charset=UTF-8', 'x-requested-with': 'XMLHttpRequest', accept: 'application/json' },
+      body: 'request%5Bchats%5D%5Bsession%5D%5Baction%5D=create',
+    }).then(function (r) { return r.text().then(function (t) { return { status: r.status, t: t } }) }).then(function (x) {
+      var j = null
+      try { j = JSON.parse(x.t) } catch (_) { /* html */ }
+      var tok = j && j.response && j.response.chats && j.response.chats.session && j.response.chats.session.access_token
+      if (!tok && j) tok = acharCampo(j, /access_token|^token$/i)
+      if (!tok) throw new Error('sessão do chat sem token (HTTP ' + x.status + ')')
+      ponte.token = tok; ponte.tokenEm = now()
+      return tok
+    })
+  }
+
+  function acharCampo(o, re, prof) {
+    prof = prof || 0
+    if (!o || typeof o !== 'object' || prof > 6) return null
+    for (var ch in o) {
+      if (typeof o[ch] === 'string' && re.test(ch) && o[ch].length > 3) return o[ch]
+      var r = acharCampo(o[ch], re, prof + 1)
+      if (r) return r
+    }
+    return null
+  }
+
+  // Todos os objetos que parecem mensagem (têm id) dentro da resposta do chat
+  function mensagensDe(o, out, prof) {
+    out = out || []; prof = prof || 0
+    if (!o || typeof o !== 'object' || prof > 8) return out
+    if (!Array.isArray(o) && (o.id || o.msgid) && (o.message || o.text !== undefined || o.type || o.created_at)) out.push(o)
+    for (var ch in o) if (o[ch] && typeof o[ch] === 'object') mensagensDe(o[ch], out, prof + 1)
+    return out
+  }
+
+  function contem(o, valor, prof) {
+    prof = prof || 0
+    if (o === valor) return true
+    if (!o || typeof o !== 'object' || prof > 6) return false
+    for (var ch in o) if (contem(o[ch], valor, prof + 1)) return true
+    return false
+  }
+
+  // Link da mídia dentro da mensagem (ignora miniatura e avatar)
+  function linkMidia(o, chave, prof) {
+    prof = prof || 0
+    if (typeof o === 'string') return /^https?:\/\//.test(o) && !/thumb|avatar|preview|userpic/i.test(chave || '') && !/thumb|avatar|userpic/i.test(o) && !/\/leads\/detail\//.test(o) ? o : null
+    if (!o || typeof o !== 'object' || prof > 6) return null
+    var prefer = ['media', 'link', 'url', 'file', 'src', 'download', 'attachment']
+    for (var i = 0; i < prefer.length; i++) if (o[prefer[i]] !== undefined) { var r0 = linkMidia(o[prefer[i]], prefer[i], prof + 1); if (r0) return r0 }
+    for (var ch in o) { if (/author|sender|receiver|user|contact/i.test(ch)) continue; var r = linkMidia(o[ch], ch, prof + 1); if (r) return r }
+    return null
+  }
+
+  function criadoDe(o) { var v = o.created_at || o.timestamp || (o.message && o.message.created_at) || 0; v = Number(v) || 0; return v > 1e12 ? Math.floor(v / 1000) : v }
+
+  function lerChat(p, amojoId) {
+    return tokenAmojo().then(function (tok) {
+      var h = hostAmojo()
+      var urls = [
+        h + '/messages/' + amojoId + '/merge?stand=v16&offset=0&limit=30&chat_id%5B%5D=' + encodeURIComponent(p.chatId) + '&get_tags=true&lang=pt',
+        h + '/v1/chats/' + amojoId + '/' + encodeURIComponent(p.chatId) + '/messages?stand=v16&offset=0&limit=30',
+      ]
+      var respostas = []
+      function tentar(i) {
+        if (i >= urls.length) { var e = new Error('chat não respondeu'); e.respostas = respostas; throw e }
+        return gm({ method: 'GET', url: urls[i], headers: { 'X-Auth-Token': tok, accept: 'application/json' } }).then(function (r) {
+          respostas.push({ url: urls[i].split('?')[0].replace(amojoId, '{conta}').replace(p.chatId, '{chat}'), status: r.status, corpo: String(r.responseText || '').slice(0, 1500) })
+          if (r.status === 401 || r.status === 403) ponte.token = null
+          var j = null
+          try { j = JSON.parse(r.responseText) } catch (_) { /* não-JSON */ }
+          if (r.status >= 200 && r.status < 300 && j) return { json: j, respostas: respostas }
+          return tentar(i + 1)
+        })
+      }
+      return tentar(0)
+    })
+  }
+
+  function paraBase64(buf) {
+    var bytes = new Uint8Array(buf), partes = [], passo = 0x8000
+    for (var i = 0; i < bytes.length; i += passo) partes.push(String.fromCharCode.apply(null, bytes.subarray(i, i + passo)))
+    return btoa(partes.join(''))
+  }
+
+  function entregar(p, amojoId) {
+    if (ponte.emAndamento[p.id]) return Promise.resolve()
+    ponte.emAndamento[p.id] = true
+    var n = ponte.tentativas[p.id] = (ponte.tentativas[p.id] || 0) + 1
+    var diag = { tentativa: n, host: hostAmojo() }
+    return lerChat(p, amojoId).then(function (x) {
+      var msgs = mensagensDe(x.json)
+      diag.mensagens = msgs.length
+      var alvo = msgs.filter(function (m) { return contem(m, p.id) })[0]
+      if (!alvo) {
+        // Sem o mesmo id: a mensagem recebida mais perto do horário do aviso que tenha mídia
+        var perto = msgs.filter(function (m) { return Math.abs(criadoDe(m) - p.criadoEm) <= 180 && linkMidia(m.message || m) })
+        perto.sort(function (a, b) { return Math.abs(criadoDe(a) - p.criadoEm) - Math.abs(criadoDe(b) - p.criadoEm) })
+        alvo = perto[0]
+        diag.porHorario = !!alvo
+      }
+      if (!alvo) { diag.respostas = x.respostas; throw Object.assign(new Error('mensagem não achada no chat'), { diag: diag }) }
+      var corpo = alvo.message || alvo
+      var link = linkMidia(corpo) || linkMidia(alvo)
+      var transcricao = acharCampo(alvo, /transcri/i) || ''
+      diag.mensagem = JSON.stringify(alvo).slice(0, 2500)
+      if (!link && !transcricao) throw Object.assign(new Error('mídia ainda não carregou no chat'), { diag: diag, esperar: true })
+      var tipo = String(corpo.type || alvo.type || '')
+      if (!link) return postarAgente('/api/midia', { id: p.id, transcricao: transcricao, tipo: tipo, versao: VERSAO }, 110000)
+      return gm({ method: 'GET', url: link, responseType: 'arraybuffer', headers: { 'X-Auth-Token': ponte.token || '' }, timeout: 30000 }).then(function (r) {
+        var mime = ((String(r.responseHeaders || '').match(/content-type:\s*([^\r\n;]+)/i) || [])[1] || '').trim()
+        if (r.status < 200 || r.status >= 300 || !r.response || !r.response.byteLength) {
+          diag.download = { status: r.status, mime: mime }
+          return postarAgente('/api/midia', { id: p.id, link: link, transcricao: transcricao, tipo: tipo, versao: VERSAO, diag: diag }, 110000)
+        }
+        return postarAgente('/api/midia', { id: p.id, b64: paraBase64(r.response), mime: mime, link: link, tipo: tipo, transcricao: transcricao, versao: VERSAO }, 110000)
+      })
+    }).then(function (r) {
+      if (r && r.ok) { ponte.entregues++; log('🎧', 'áudio do lead ' + p.leadId + ' entregue à Lara' + (r.texto ? ': "' + r.texto.slice(0, 80) + '"' : '')) }
+      else if (r) { ponte.ultimoErro = r.motivo || 'não lido'; log('⚠️', 'Lara não leu a mídia do lead ' + p.leadId + ': ' + ponte.ultimoErro) }
+    }, function (e) {
+      ponte.ultimoErro = e.message
+      if (!e.esperar || n % 4 === 1) log(e.esperar ? '⏳' : '⚠️', 'mídia do lead ' + p.leadId + ': ' + e.message)
+      // Manda o que viu para depuração (1ª tentativa e depois a cada 5)
+      if (n === 1 || n % 5 === 0) postarAgente('/api/midia', { diag: Object.assign({ id: p.id, erro: e.message, respostas: e.respostas }, e.diag || diag), versao: VERSAO }, 15000).catch(function () {})
+    }).then(function () { delete ponte.emAndamento[p.id] })
+  }
+
+  function passoPonte() {
+    if (!CFG.AGENTE_URL || !CFG.AGENTE_SECRET || !souAbaDaPonte()) return
+    gm({ method: 'GET', url: urlAgente('/api/midia'), headers: { accept: 'application/json' }, timeout: 10000 }).then(function (r) {
+      if (r.status !== 200) { dbg('ponte: HTTP ' + r.status); return }
+      var j = JSON.parse(r.responseText || '{}')
+      ;(j.pendentes || []).forEach(function (p) { entregar(p, j.amojoId) })
+    }).catch(function (e) { dbg('ponte: ' + e.message) })
+  }
+  if (CFG.AGENTE_SECRET) { passoPonte(); ponteTimer = setInterval(passoPonte, PONTE_MS) }
+
   // ---------------- CONTROLE ----------------
   W.__INDICACOES__ = {
     versao: VERSAO,
@@ -904,6 +1088,7 @@ var FiltroIndicacao = (function () {
     stop: function () {
       observer.disconnect()
       if (pollTimer) clearInterval(pollTimer)
+      if (ponteTimer) clearInterval(ponteTimer)
       if (fallbackTimer) clearInterval(fallbackTimer)
       if (worker) worker.terminate()
       tarefas = []
@@ -917,7 +1102,7 @@ var FiltroIndicacao = (function () {
     },
     /** copy(__INDICACOES__.relatorio()) e cole para o suporte */
     relatorio: function () {
-      return JSON.stringify({ versao: VERSAO, gerado: new Date().toISOString(), url: location.pathname, apiSessaoOk: apiSessaoOk, difServidorMs: Math.round(difServidor()), relogioIntervaloMs: relogioLo === null ? null : [Math.round(relogioLo), Math.round(relogioHi)], amostrasRelogio: amostrasRelogio.length, margemMs: margem(), aprendizado: aprendizado, cfg: CFG, leads: memo, diag: diag }, null, 1)
+      return JSON.stringify({ versao: VERSAO, gerado: new Date().toISOString(), url: location.pathname, apiSessaoOk: apiSessaoOk, difServidorMs: Math.round(difServidor()), relogioIntervaloMs: relogioLo === null ? null : [Math.round(relogioLo), Math.round(relogioHi)], amostrasRelogio: amostrasRelogio.length, margemMs: margem(), aprendizado: aprendizado, ponte: { entregues: ponte.entregues, ultimoErro: ponte.ultimoErro, host: ponte.host, tentativas: ponte.tentativas }, cfg: CFG, leads: memo, diag: diag }, null, 1)
     },
     esquecer: function (id) { delete memo[id]; delete diag[id]; salvar(); gravar(DIAG_KEY, diag) },
     zerarMargem: function () { aprendizado = { margem: CFG.MARGEM_MS, validosSeguidos: 0, historico: [] }; salvar() },
