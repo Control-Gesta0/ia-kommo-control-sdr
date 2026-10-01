@@ -35,7 +35,7 @@ Relógio: Vercel Cron a cada 15 min (`/api/cron`, `CRON_SECRET`). Fila em `/api/
 | Agenda: **Google Agenda integrado ao Kommo** | Mestre, 25/09 |
 | Aceite liberado por volta de **5 min**, mas não cravado; outros parceiros podem levar antes | Mestre, 25/09 (a página pública ainda diz 15 min) |
 | Antes da liberação a Kommo responde "The leads is no longer available"; se outro parceiro já aceitou, "The leads has already been accepted by other partners" | Mestre, 25/09 |
-| Aceite por API/webhook invalida a indicação: o aceite é **só no navegador** (`/ajax/unsorted/accept`) | Mestre, operação atual |
+| Aceite por API/webhook/automação invalida a indicação: o aceite é **só no navegador** (`/ajax/unsorted/accept`). Provado 01/10/2026 com a API oficial: `POST /api/v4/leads/unsorted/{uid}/accept` a +298,3 s respondeu 200, mas a Kommo gravou a nota "Automated acceptance isn't allowed, as a consequence the lead was accepted without contact details" (lead 20772765, sem contato) | Mestre (webhook e automação nativa) + teste `scripts/teste-aceite-api.ts` (API v4) |
 | Salesbot inicia conversa pelo WhatsApp Lite com lead sem chat | Mestre, 25/09 |
 | Liberação da indicação: **exatamente 300s** depois da chegada. Aceites aos 299s: 11 de 16 queimados; aos 300 a 301s: válidos, 8 perdidos para outros parceiros | Eventos de 62 indicações do funil 4338500, 25/09 |
 | O Comment fica numa nota "common" com Country / Cluster / Languages / Industry / Comment | Notas das indicações, 25/09 |
