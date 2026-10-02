@@ -187,8 +187,23 @@ export function createBrain(opts: LlmOptions) {
         const tRep = (cRep.message?.content || '').trim()
         if (tRep) safe = await enforce(fixRep, tRep, usage, handoff, ctx.lastLeadText)
       }
-      // Bateu na mesma tecla: pergunta que ela JÁ fez antes (igual ou com outras palavras) → refaz uma vez
       const estado = await ctx.port.getState()
+      // Mesma lista de horários em mensagens seguidas, sem o lead falar de horário: refaz sem repetir a lista
+      if (!handoff && estado.oferta?.length) {
+        const horas = estado.oferta.map(o => (o.label.match(/\d{1,2}h(?:\d{2})?/) || [''])[0]).filter(Boolean)
+        const citaHoras = (t: string) => horas.some(h => new RegExp(`\\b${h}\\b`).test(t))
+        const ultimasIa = history.filter(m => m.dir === 'out').slice(-2).map(m => m.text)
+        if (ultimasIa.some(citaHoras) && citaHoras(safe.text) && !FALA_DE_HORARIO.test(ctx.lastLeadText)) {
+          const fixH: Msg[] = [...messages, { role: 'assistant', content: safe.text }, { role: 'system', content: '[TRAVA DO SISTEMA] Você já mandou esses horários na mensagem anterior e ele falou de outra coisa. Responda o que ele trouxe SEM repetir os horários (eles continuam valendo). Se você ainda não perguntou se ele quer seguir com um deles, pode perguntar uma vez, sem citar dia e hora; se já perguntou, não pergunte de novo. Responda só com o texto do WhatsApp.' }]
+          const cH = await call(fixH, null, usage)
+          const tH = (cH.message?.content || '').trim()
+          if (tH) {
+            const sH = await enforce(fixH, tH, usage, handoff, ctx.lastLeadText)
+            if (!sH.guard.includes('fallback') && !citaHoras(sH.text)) safe = { text: sH.text, guard: [...sH.guard, 'horários repetidos: refeita'] }
+          }
+        }
+      }
+      // Bateu na mesma tecla: pergunta que ela JÁ fez antes (igual ou com outras palavras) → refaz uma vez
       const jaFeitas = history.filter(m => m.dir === 'out').flatMap(m => perguntasDe(m.text))
       const repetidaEm = (t: string) => perguntasDe(t).find(p => jaFeitas.some(q => parecidas(p, q)))
       if (!handoff && (!estado.oferta?.length || !(FALA_DE_HORARIO.test(ctx.lastLeadText) || ehAceite(ctx.lastLeadText)))) {
@@ -238,21 +253,6 @@ export function createBrain(opts: LlmOptions) {
         if (frases.some(eConvite)) {
           const sem = frases.filter(f => !eConvite(f)).join(' ').replace(/\s{2,}/g, ' ').trim()
           if (sem.replace(/[^\p{L}]/gu, '').length >= 20) safe = { text: sem, guard: [...safe.guard, 'convite repetido: cortado'] }
-        }
-      }
-      // Mesma lista de horários em mensagens seguidas, sem o lead falar de horário: refaz sem repetir a lista
-      if (!handoff && estado.oferta?.length) {
-        const horas = estado.oferta.map(o => (o.label.match(/\d{1,2}h(?:\d{2})?/) || [''])[0]).filter(Boolean)
-        const citaHoras = (t: string) => horas.some(h => new RegExp(`\\b${h}\\b`).test(t))
-        const ultimasIa = history.filter(m => m.dir === 'out').slice(-2).map(m => m.text)
-        if (ultimasIa.some(citaHoras) && citaHoras(safe.text) && !FALA_DE_HORARIO.test(ctx.lastLeadText)) {
-          const fixH: Msg[] = [...messages, { role: 'assistant', content: safe.text }, { role: 'system', content: '[TRAVA DO SISTEMA] Você já mandou esses horários na mensagem anterior e ele falou de outra coisa. Responda o que ele trouxe SEM repetir os horários (eles continuam valendo). No máximo, termine perguntando se ele quer seguir com um deles, sem citar dia e hora de novo. Responda só com o texto do WhatsApp.' }]
-          const cH = await call(fixH, null, usage)
-          const tH = (cH.message?.content || '').trim()
-          if (tH) {
-            const sH = await enforce(fixH, tH, usage, handoff, ctx.lastLeadText)
-            if (!sH.guard.includes('fallback') && !citaHoras(sH.text)) safe = { text: sH.text, guard: [...sH.guard, 'horários repetidos: refeita'] }
-          }
         }
       }
       // Prometeu buscar horário e não buscou: volta ao loop (com ferramentas) para buscar de verdade
@@ -365,9 +365,13 @@ export function createBrain(opts: LlmOptions) {
       }
     }
     // 2) A abertura, com o contexto já atualizado (o "Já respondido" inclui o que veio do Comment)
+    // Comment longo e detalhado (Davis, 02/10: fluxo inteiro, canais e objetivos) já é o pedido: a abertura convida
+    const pedidoCompleto = ((await ctx.port.getState()).comentario || '').trim().length >= 200
     const messages: Msg[] = [
       ...(await buildSystem(ctx, lead)),
-      { role: 'system', content: '[ABERTURA ATIVA] O lead ainda não escreveu nada: a Kommo indicou este cliente e VOCÊ começa a conversa agora. Escreva só a primeira mensagem de WhatsApp, seguindo a seção "Abertura" do prompt: saudação, "aqui é a Lara, da Control Gestão, parceira oficial da Kommo", rapport com o Comment e UMA pergunta de contexto que parta do Comment (nunca algo que o Comment já disse, nunca lista pronta de opções). Separe a pergunta num parágrafo próprio. Responda só com o texto.' },
+      { role: 'system', content: `[ABERTURA ATIVA] O lead ainda não escreveu nada: a Kommo indicou este cliente e VOCÊ começa a conversa agora. Escreva só a primeira mensagem de WhatsApp, seguindo a seção "Abertura" do prompt: saudação, "aqui é a Lara, da Control Gestão, parceira oficial da Kommo", rapport com o Comment e ${pedidoCompleto
+        ? 'um convite para ver isso desenhado com o especialista (análise gratuita de 30 a 45 minutos). O Comment já é um pedido completo e detalhado: NÃO faça pergunta de qualificação'
+        : 'UMA pergunta de contexto que parta do Comment (como atendem hoje, se já usam o Kommo; nunca quem decide nem faturamento na abertura, nunca algo que o Comment já disse, nunca lista pronta de opções)'}. Separe a pergunta num parágrafo próprio. Responda só com o texto.` },
     ]
     const c = await call(messages, null, usage, 600)
     const bruto = (c.message?.content || '').trim()

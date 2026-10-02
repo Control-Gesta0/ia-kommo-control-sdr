@@ -475,7 +475,7 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
         }
         await port.patchState({ oferta: opcoes, ofertaEm: agora })
         const lista = opcoes.map((o, i) => `${i + 1}) ${o.label}`).join(' · ')
-        return ok(`${respeitouPreferencia ? '' : 'Não há horário livre na preferência do lead; diga isso e ofereça estes. '}Horários livres (ofereça exatamente estes, sem inventar outros): ${lista}. Reunião de ${cfg.duracaoMin} minutos. Pergunte qual fica melhor.`)
+        return ok(`${respeitouPreferencia ? '' : 'Não há horário livre na preferência do lead; diga isso e ofereça estes. '}Horários livres (ofereça exatamente estes, sem inventar outros): ${lista}. Reunião de ${cfg.duracaoMin} minutos. Se nesta mensagem ele contou um problema ou perguntou algo, responda isso em uma frase ANTES das opções (com as palavras dele). Pergunte qual fica melhor.`)
       }
 
       case 'agendar_reuniao': {
