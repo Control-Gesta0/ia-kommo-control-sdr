@@ -6,7 +6,8 @@ import { addUsage, emptyUsage, type Usage } from './execlog'
 import { checkReply, keepLastQuestion, overlap, semEspanhol, semTravessao, type Violation } from './guards'
 import { abreComPergunta, garantirSaudacao, primeiroNomeDe, saudacao, SO_CUMPRIMENTO } from './saudacao'
 import type { ChatMsg } from './history'
-import { aplicarFinalizacao, buildTools, describeOpen, lacunasDeQualificacao, prontoParaReuniao, runTool, snapshot, temasPerguntados, type ToolCtx } from './tools'
+import { aplicarFinalizacao, buildTools, describeOpen, lacunasDeQualificacao, pediuReuniao, prontoParaReuniao, runTool, snapshot, temasPerguntados, type ToolCtx } from './tools'
+export { pediuReuniao, PEDIU_REUNIAO } from './tools'
 
 /**
  * Cérebro: GPT-5.4 Mini (Chat Completions, reasoning none) com loop próprio de
@@ -111,8 +112,9 @@ export function createBrain(opts: LlmOptions) {
           : '',
       state.reuniao ? `REUNIÃO JÁ MARCADA: ${state.reuniao.label}. Não marque outra.` : '',
       ...CRM_MAP.alertas.filter(a => alertaAtivo(a, ctx.lastLeadText)).map(a => `⚠️ ALERTA DO SISTEMA (${a.nome}): ${a.aviso}`),
+      ganchoFollowup(ctx.lastLeadText, historico),
       `Perguntas que você já fez nesta conversa: ${ctx.perguntasFeitas ?? 0} (teto de 3 a 4 na conversa inteira)`,
-      describeOpen(ctx.porta, snap, ctx.perguntasFeitas ?? 0, ctx.temasPerguntados),
+      describeOpen(ctx.porta, snap, ctx.perguntasFeitas ?? 0, ctx.temasPerguntados, pediuReuniao(ctx.lastLeadText, state.comentario)),
     ].filter(Boolean)
     return [
       { role: 'system', content: promptOf(ctx.porta) },
@@ -427,15 +429,27 @@ export function createBrain(opts: LlmOptions) {
 }
 
 const FALA_DE_HORARIO = /hor[aá]rio|agenda|\bdia\b|semana|hoje|amanh|segunda|ter[cç]a|quarta|quinta|sexta|manh[aã]|tarde|noite|\d{1,2}\s*h\b|\d{1,2}:\d{2}|marc|agend|pode ser|\bs[oó] depois\b/i
-/** O lead pediu a reunião ou o que só a reunião dá: aí pode convidar antes de qualificar */
-export const PEDIU_REUNIAO = /reuni[aã]o|apresenta|demonstra[cç]|me mostr|mostrar (a|o|como)|conhecer (a |melhor a |o )?(ferramenta|plataforma|sistema)|como funciona|proposta|liga[cç][aã]o|me liga|(falar|conversar) com (algu[eé]m|uma pessoa|um especialista|o especialista|um humano|um atendente|um consultor|um vendedor)|atendimento humano|hor[aá]rio|agenda|marcar|agendar|\bmeet\b|\bcall\b|videochamada/i
-/** Pedido explícito de conversa no Comment ("Gostaria de conversar com um vendedor") */
-const PEDIU_NO_COMMENT = /(falar|conversar) com (um|uma|o|a) (vendedor|consultor|especialista|pessoa|atendente)|reuni[aã]o|apresenta[cç][aã]o|demonstra[cç][aã]o|liga[cç][aã]o|me liguem/i
-/** Pediu reunião, preço de verdade (o alerta de preço, sem o "orçamento que a gente manda"), tem pressa ou pediu no Comment */
-export function pediuReuniao(textoLead: string, comentario = ''): boolean {
-  const preco = CRM_MAP.alertas.find(a => a.nome === 'perguntou preço')
-  return PEDIU_REUNIAO.test(textoLead) || QUER_LOGO.test(textoLead) || (!!preco && alertaAtivo(preco, textoLead)) || PEDIU_NO_COMMENT.test(comentario)
+/** Lead falou de retorno, orçamento parado, cliente que some, perda (comercial, 02/10: argumento de follow-up) */
+const DOR_FOLLOWUP = /retorn|follow|sum(iu|ir|indo|ido|indo)\b|\bsome(m)?\b|esfri|n[aã]o (responde|respondem|retorna|volta)|ningu[eé]m (responde|retorna)|perd(e|emos|endo|i|eu|em)\w* (a |o |os |as )?(venda|cliente|lead|oportunidade)|esquec|parad[oa]s?|sem resposta|inadimpl|renova/i
+
+/** Volume alto: uns 20 leads por dia ou mais (ou ~400+ por mês) */
+export function volumeAlto(t: string): boolean {
+  const dia = [...(t || '').matchAll(/(\d+)\s*(?:leads?|contatos?|mensagens|clientes|pessoas|atendimentos)?\s*(?:por|ao|\/|num|no)\s*dia/gi)].some(m => Number(m[1]) >= 20)
+  const mes = [...(t || '').matchAll(/(\d+(?:[.,]\d+)?)\s*(mil)?\s*(?:leads?|contatos?|mensagens|clientes|atendimentos)?\s*(?:por|ao|\/|no)\s*m[eê]s/gi)].some(m => Number(m[1].replace(',', '.')) * (m[2] ? 1000 : 1) >= 400)
+  return dia || mes
 }
+
+/**
+ * Argumento de organização e cadência de follow-up na hora certa (comercial, 02/10). O dado
+ * "o follow-up pode aumentar as respostas em até 49%" sai no máximo uma vez na conversa.
+ */
+export function ganchoFollowup(lastLeadText: string, historico: Array<{ dir: string; text: string }> = []): string {
+  const alto = volumeAlto(lastLeadText)
+  if (!alto && !DOR_FOLLOWUP.test(lastLeadText || '')) return ''
+  const jaUsouDado = historico.some(m => m.dir === 'out' && /49\s*%/.test(m.text))
+  return `GANCHO DE FOLLOW-UP: ele ${alto ? 'contou um volume alto de leads' : 'falou de retorno que não acontece, cliente que some ou venda perdida'}. Nesta resposta, toque nessa dor e mostre, em uma ou duas frases, como organização e cadência de follow-up (sequência de mensagens e lembretes no tempo certo para cada lead) aumentam as vendas e a taxa de resposta${jaUsouDado ? ' (o dado dos 49% você já usou: não repita)' : ', usando o dado: "o follow-up pode aumentar as respostas em até 49%"'}.`
+}
+
 /** Frase que convida para a reunião/análise ("Quer marcar?", "Posso te colocar numa análise gratuita...") */
 export function temConvite(t: string): boolean {
   return t.split(/(?<=[.!?])\s+|\n+/).some(f => (/\?/.test(f) && (/\b(marc|agend)\w*/i.test(f) || /\b(posso|quer)\b[^?]{0,40}\bhor[aá]rios?\b/i.test(f)))

@@ -239,6 +239,19 @@ export function snapshot(porta: Porta, state: LeadState): Snapshot {
   return { preenchidos, abertos }
 }
 
+/** O lead pediu a reunião ou o que só a reunião dá: aí pode convidar antes de qualificar */
+export const PEDIU_REUNIAO = /reuni[aã]o|apresenta|demonstra[cç]|me mostr|mostrar (a|o|como)|conhecer (a |melhor a |o )?(ferramenta|plataforma|sistema)|como funciona|proposta|liga[cç][aã]o|me liga|(falar|conversar) com (algu[eé]m|uma pessoa|um especialista|o especialista|um humano|um atendente|um consultor|um vendedor)|atendimento humano|hor[aá]rio|agenda|marcar|agendar|\bmeet\b|\bcall\b|videochamada/i
+/** Pedido explícito de conversa no Comment ("Gostaria de conversar com um vendedor") */
+const PEDIU_NO_COMMENT = /(falar|conversar) com (um|uma|o|a) (vendedor|consultor|especialista|pessoa|atendente)|reuni[aã]o|apresenta[cç][aã]o|demonstra[cç][aã]o|liga[cç][aã]o|me liguem/i
+/** Pediu reunião, preço de verdade (o alerta de preço, sem o "orçamento que a gente manda"), tem pressa ou pediu no Comment */
+export function pediuReuniao(textoLead: string, comentario = ''): boolean {
+  const preco = CRM_MAP.alertas.find(a => a.nome === 'perguntou preço')
+  const pediuPreco = !!preco && preco.re.test(textoLead) && !(preco.exceto && preco.exceto.test(textoLead))
+  return PEDIU_REUNIAO.test(textoLead) || PRESSA.test(textoLead) || pediuPreco || PEDIU_NO_COMMENT.test(comentario || '')
+}
+/** Pressa ("hoje", "o quanto antes"): não segura o convite */
+const PRESSA = /\b(hoje|logo|urgente|o quanto antes|r[aá]pido|essa semana|esta semana|amanh[aã])\b/i
+
 /**
  * Qualificação antes do convite (comercial, 02/10: "está chamando para a reunião logo de cara").
  * Exemplos do que vale saber, NÃO roteiro: o problema, quantas pessoas vão usar o CRM e se fazem
@@ -271,13 +284,16 @@ export function prontoParaReuniao(snap0: Snapshot, perguntasFeitas = 0, pergunta
 }
 
 /** O que ainda falta saber, como raciocínio (não roteiro), e se já é hora de vender a reunião. */
-export function describeOpen(porta: Porta, snap0: Snapshot, perguntasFeitas = 0, perguntados: string[] = []): string {
+export function describeOpen(porta: Porta, snap0: Snapshot, perguntasFeitas = 0, perguntados: string[] = [], pediu = false): string {
   if (!porta.roteiro.length) return ''
   const nicho = snap0.abertos.some(c => c.key === 'segmento') ? ' Ramo da empresa ainda não identificado: se ele já contou (ex.: "sou advogado", "minha clínica"), grave em segmento. Não pergunte só para descobrir o ramo.' : ''
   const sabe = (k: string) => snap0.preenchidos.some(p => p.campo.key === k)
   const gravar = ' Grave com salvar_respostas o que o Comment ou as mensagens já contam.'
   const bomSaber = [!sabe('decisor') && 'quem decide junto (se for outra pessoa, ela vai para a reunião)', !sabe('prioridade') && 'se há pressa'].filter(Boolean)
   const extra = bomSaber.length ? ` Bom saber se aparecer na conversa, sem perguntar só por isso: ${bomSaber.join('; ')}.` : ''
+  if (pediu && !prontoParaReuniao(snap0, perguntasFeitas, perguntados)) {
+    return `Ele pediu a reunião, uma apresentação, a proposta/preço ou falar com alguém (ou tem pressa): não segure. Responda o que ele trouxe e ofereça a reunião com o especialista (no máximo uma pergunta essencial antes, se faltar algo importante).${gravar}${extra}${nicho}`
+  }
   if (prontoParaReuniao(snap0, perguntasFeitas, perguntados)) {
     return `Você já entendeu o cenário: agora VENDA a reunião, sem mais perguntas de qualificação (ligue o que ele contou ao que a implantação resolve e ofereça a análise gratuita com o especialista). Só chame consultar_horarios depois que ele topar ou se ele já pediu horário.${gravar}${extra}${nicho}`
   }
@@ -419,7 +435,7 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
           isError: erros.length > 0 && salvos.length === 0,
           content: [salvos.length ? `Salvo: ${salvos.join(' · ')}.` : '',
             pedirNomeDecisor ? 'O decisor foi citado só pelo cargo: NESTA resposta, peça o nome dele sem ponto de interrogação ("Me passa o nome dele que eu já deixo no convite da reunião.") e diga que ele precisa participar. Depois use o nome.' : '',
-            convidarDecisor ? 'O decisor é outra pessoa: NESTA resposta, em meia frase, diga que vale ele participar da reunião com o nosso especialista (é quem aprova), usando o nome dele.' : '', erros.length ? `Não salvo: ${erros.join(' · ')}.` : '', describeOpen(porta, snapshot(porta, next), ctx.perguntasFeitas ?? 0, ctx.temasPerguntados)].filter(Boolean).join(' '),
+            convidarDecisor ? 'O decisor é outra pessoa: NESTA resposta, em meia frase, diga que vale ele participar da reunião com o nosso especialista (é quem aprova), usando o nome dele.' : '', erros.length ? `Não salvo: ${erros.join(' · ')}.` : '', describeOpen(porta, snapshot(porta, next), ctx.perguntasFeitas ?? 0, ctx.temasPerguntados, pediuReuniao(ctx.lastLeadText, next.comentario))].filter(Boolean).join(' '),
         }
       }
 

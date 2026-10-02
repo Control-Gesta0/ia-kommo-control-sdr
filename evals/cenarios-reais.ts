@@ -58,7 +58,8 @@ const semConviteDeCara = {
   fn: (_w: any, t: T[]) => t.slice(0, 2).every(x => PEDIU.test(x.lead) || !CONVIDA(x.resposta)),
 }
 const duracaoUmaVez = { nome: 'duração "30 a 45 minutos" no máximo uma vez na conversa', fn: (_w: any, t: T[]) => t.filter(x => /30\s*(a|-|–|ou)\s*45\s*min/i.test(x.resposta)).length <= 1 }
-const BASE = [ateDuas, naoRepetePergunta, naoRepeteHorarios, semListaPronta, semFallback, semTravessao, semConviteDeCara, duracaoUmaVez]
+const dado49UmaVez = { nome: 'dado dos 49% do follow-up no máximo uma vez na conversa', fn: (_w: any, t: T[]) => t.filter(x => /49\s*%/.test(x.resposta)).length <= 1 }
+const BASE = [ateDuas, naoRepetePergunta, naoRepeteHorarios, semListaPronta, semFallback, semTravessao, semConviteDeCara, duracaoUmaVez, dado49UmaVez]
 const ctx = (segmento: string) => ({ contexto: { pais: 'Brazil', idiomas: 'Portuguese', segmento } })
 
 export const CENARIOS_REAIS: Cenario[] = [

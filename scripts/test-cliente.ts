@@ -207,6 +207,12 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   const L = await import('../lib/llm')
   eq('convite detectado (para não convidar antes da hora)', ['Quer marcar uma análise gratuita com o especialista?', 'Na análise, o especialista mostra isso. Quer marcar?', 'Posso te colocar numa análise gratuita com um especialista.', 'Isso o especialista te mostra na análise.', 'Quantas pessoas vão usar o Kommo no dia a dia?'].map(L.temConvite), [true, true, true, false, false])
   eq('lead que pede reunião, apresentação ou preço libera o convite (orçamento do negócio dele não)', ['quero conhecer a ferramenta', 'quanto custa?', 'Você pode apresentar a ferramenta?', 'Quero saber sobre o kommo', 'somos 4 vendedores', 'O pior é orçamento que a gente manda e ninguém retorna'].map(t => L.pediuReuniao(t)), [true, true, true, false, false, false])
+  eq('volume alto: 20 por dia ou ~400 por mês', ['chegam uns 25 leads por dia', 'uns 600 leads por mês', 'uns 10 por dia', '1,5 mil contatos por mês', 'somos 4 vendedores'].map(L.volumeAlto), [true, true, false, true, false])
+  eq('gancho de follow-up: na dor de retorno e no volume alto, com o dado dos 49% uma vez só', [
+    /49%/.test(L.ganchoFollowup('O pior é orçamento que a gente manda e ninguém retorna')),
+    /não repita/.test(L.ganchoFollowup('chegam uns 25 leads por dia', [{ dir: 'out', text: 'O follow-up pode aumentar as respostas em até 49%.' }])),
+    L.ganchoFollowup('somos 4 vendedores'),
+  ], [true, true, ''])
   eq('pedido de conversa no Comment libera o convite', [L.pediuReuniao('somos 6 vendedores', 'Gostaria de conversar com um vendedor'), L.pediuReuniao('somos 6 vendedores', 'Implementação e estruturação do CRM')], [true, false])
   eq('tema já perguntado (sem resposta) não trava o convite nem é perguntado de novo', [
     T.temasPerguntados(['Bom dia! Quantas pessoas vão usar o CRM no dia a dia?', 'Entendi. Vocês fazem tráfego pago? Quantos leads chegam por mês?']),
