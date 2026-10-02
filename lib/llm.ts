@@ -264,6 +264,19 @@ export function createBrain(opts: LlmOptions) {
         messages.push({ role: 'assistant', content: safe.text }, { role: 'system', content: '[TRAVA DO SISTEMA] O lead aceitou ou tem pressa, e você só ofereceu ver horários (ou disse que ia ver e não viu). Chame consultar_horarios agora (com a preferência do lead, se ele disse dia ou turno) e reescreva a resposta: se ele perguntou algo nesta mensagem (preço, dúvida), responda isso PRIMEIRO, em uma ou duas frases; depois mande as opções de horário. Responda só com o texto do WhatsApp.' })
         return { ...safe, voltar: true }
       }
+      // Ofereceu horário sem consultar a agenda (Leandro, 02/10: "amanhã às 10h ou às 15h?" inventado):
+      // volta ao loop para buscar de verdade; sem como voltar, a frase com o horário sai
+      if (!handoff && !estado.oferta?.length && !toolsUsed.includes('consultar_horarios') && OFERECEU_HORA.test(safe.text)) {
+        if (!cobrouHorario && podeVoltar) {
+          cobrouHorario = true
+          messages.push({ role: 'assistant', content: safe.text }, { role: 'system', content: '[TRAVA DO SISTEMA] Você ofereceu horários sem consultar a agenda: eles podem não existir. Chame consultar_horarios agora (com a preferência do lead, se ele disse dia ou turno) e reescreva oferecendo SÓ as opções que ela devolver. Se ele perguntou algo nesta mensagem, responda isso primeiro. Responda só com o texto do WhatsApp.' })
+          return { ...safe, voltar: true }
+        }
+        const frases = safe.text.split(/(?<=[.!?])\s+|\n+/).filter(Boolean)
+        const sem = frases.filter(f => !OFERECEU_HORA.test(f)).join(' ').replace(/\s{2,}/g, ' ').trim()
+        const pergunta = 'Posso ver os horários livres do especialista pra você?'
+        safe = { text: sem.replace(/[^\p{L}]/gu, '').length >= 20 ? `${sem} ${pergunta}` : pergunta, guard: [...safe.guard, 'horário sem consultar: cortado'] }
+      }
       // Perguntou o preço da LICENÇA e a resposta veio sem valor em R$: refaz uma vez com o valor
       if (!handoff && PERGUNTA_LICENCA.test(ctx.lastLeadText) && /quanto|pre[cç]o|valor|custa|fica/i.test(ctx.lastLeadText) && !/R\$\s*\d/.test(safe.text)) {
         const fixL: Msg[] = [...messages, { role: 'assistant', content: safe.text }, { role: 'system', content: '[TRAVA DO SISTEMA] O lead perguntou o preço do plano/licença da Kommo. Informe nesta resposta o valor EM REAIS do "Contexto desta conversa" (por usuário/mês, contrato de 6 meses) e depois siga. Responda só com o texto do WhatsApp.' }]
@@ -388,7 +401,10 @@ export function createBrain(opts: LlmOptions) {
 const FALA_DE_HORARIO = /hor[aá]rio|agenda|\bdia\b|semana|hoje|amanh|segunda|ter[cç]a|quarta|quinta|sexta|manh[aã]|tarde|noite|\d{1,2}\s*h\b|\d{1,2}:\d{2}|marc|agend|pode ser|\bs[oó] depois\b/i
 /** Pergunta de cortesia ("tudo bem?", "como vai?"), não de qualificação */
 const RAPPORT = /^(?:\p{L}+,?\s+)?(?:e\s+)?(?:tudo (?:bem|bom|certo|tranquilo|joia)|como (?:vai|est[aá]|voc[eê] est[aá]))[^?]{0,20}\?$/iu
-const OFERECEU_VER_HORARIO =/\b(posso|quer que eu|consigo|vou|j[aá] vou|deixa eu)\b[^.?!\n]{0,30}\b(verificar|ver|veja|consultar|consulte|checar|buscar|busque|olhar|separar|verifique)\b[^.?!\n]{0,40}\b(hor[aá]rio|agenda)/i
+/** Oferta de horário concreto ("Qual fica melhor: amanhã às 10h ou às 15h?", "tenho segunda às 14h") */
+const HORA_CITADA = '(?:[àa]s?\\s+\\d{1,2}(?:h\\d{0,2}|:\\d{2})|\\d{1,2}h\\d{0,2}\\s+ou\\s+(?:[àa]s\\s+)?\\d{1,2}h)(?![\\p{L}\\d])'
+export const OFERECEU_HORA = new RegExp(`(?:tenho|consigo|posso|dispon[ií]ve(?:l|is)|livres?|que tal|fica melhor|prefere|qual|op[cç](?:[aã]o|[oõ]es))[^.!?\\n]{0,60}${HORA_CITADA}|${HORA_CITADA}[^.!\\n]{0,40}\\b(?:serve|fica bom|pode ser|melhor)\\b[^.!\\n]{0,20}\\?`, 'iu')
+const OFERECEU_VER_HORARIO = /\b(posso|quer que eu|consigo|vou|j[aá] vou|deixa eu)\b[^.?!\n]{0,30}\b(verificar|ver|veja|consultar|consulte|checar|buscar|busque|olhar|separar|verifique)\b[^.?!\n]{0,40}\b(hor[aá]rio|agenda)/i
 const QUER_LOGO = /\b(hoje|logo|urgente|o quanto antes|r[aá]pido|essa semana|esta semana|amanh[aã])\b/i
 const PROMETEU_HORARIO = /\b(vou|j[aá] vou|deixa eu|vou te)\b[^.?!\n]{0,40}\b(buscar|verificar|ver|consultar|checar|olhar|separar|mandar)\b[^.?!\n]{0,40}\b(hor[aá]rio|agenda|op[cç][oõ]es)/i
 const PERGUNTA_LICENCA = /\b(plano|planos|licen[cç]a|pro|b[aá]sico|avan[cç]ado|por usu[aá]rio|mensalidade da kommo)\b/i

@@ -97,6 +97,8 @@ async function main() {
 
   let reprovados = 0
   let custo = 0
+  const uso = { input: 0, cached: 0, output: 0, calls: 0 }
+  const somaUso = (u?: { input: number; cached: number; output: number; calls: number }) => { if (u) { uso.input += u.input; uso.cached += u.cached; uso.output += u.output; uso.calls += u.calls } }
   const lista = CENARIOS.filter(c => !filtros.length || filtros.some(f => c.id.includes(f)))
   for (const c of lista) {
     for (let rep = 1; rep <= REPS; rep++) {
@@ -115,6 +117,7 @@ async function main() {
         const ab = await brain.generateOpening({ port: memoryPort(w), porta, gateTag: GATE, leadText: c.comentario || '', lastLeadText: '', lastAgentText: '', agora }, { nomeContato: c.nomeContato || '', primeiroContatoDaPorta: true })
         const texto = ab?.text || '(abertura reprovada: cairia na abertura fixa)'
         custo += ab ? costUsd(MODEL, ab.usage) || 0 : 0
+        somaUso(ab?.usage)
         turnos.push({ lead: '(a IA inicia a conversa)', resposta: texto, tools: [], guard: ab?.guard || ['fallback'], handoff: false })
         history.push({ id: 'abertura', dir: 'out', text: texto, ts: history.length + 1 })
       }
@@ -146,6 +149,7 @@ async function main() {
         if (process.env.EVAL_BRUTO === '1' && reply?.text && reply.text !== resposta) console.log(`[bruto ${c.id}] ${reply.text}\n[ajustado] ${resposta}`)
         if (process.env.EVAL_TRAVAS === '1' && reply?.guard?.length) console.log(`[travas ${c.id}] ${JSON.stringify(msg.slice(0, 40))} → ${reply.guard.join(' | ')}`)
         custo += reply ? costUsd(MODEL, reply.usage) || 0 : 0
+        somaUso(reply?.usage)
         turnos.push({ lead: msg, resposta, tools: reply?.toolsUsed || [], guard: reply?.guard || [], handoff: !!reply?.handoff })
         history.push({ id: `r${history.length}`, dir: 'out', text: resposta, ts: history.length + 1 })
       }
@@ -177,7 +181,7 @@ async function main() {
       }
     }
   }
-  console.log(`\n${reprovados ? `❌ ${reprovados} reprovado(s)` : '✅ Todos aprovados'} · ${lista.length} cenário(s) × ${REPS} · custo do agente US$ ${custo.toFixed(4)} (juiz não incluso)`)
+  console.log(`\n${reprovados ? `❌ ${reprovados} reprovado(s)` : '✅ Todos aprovados'} · ${lista.length} cenário(s) × ${REPS} · custo do agente US$ ${custo.toFixed(4)} (juiz não incluso) · ${uso.calls} chamadas · entrada ${uso.input} tokens (${uso.input ? Math.round((uso.cached / uso.input) * 100) : 0}% em cache) · saída ${uso.output}`)
   process.exit(reprovados ? 1 : 0)
 }
 main().catch(e => { console.error(e); process.exit(1) })

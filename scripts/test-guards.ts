@@ -116,6 +116,8 @@ async function main() {
     const ativos = (t: string) => CRM_MAP.alertas.filter(a => alertaAtivo(a, t)).map(a => a.nome).filter(n => /pre[cç]o|meta|whatsapp/i.test(n))
     eq('cobrança da Meta por mensagem → alerta do WhatsApp oficial, sem trava de preço', ativos('a gente tinha que pagar o meta, o meta tem que aprovar as mensagens e a gente tem que pagar um valor por mensagem'), ['custo do WhatsApp oficial'])
     eq('preço do serviço continua com a trava de preço', ativos('quanto custa a implantação de vocês?'), ['perguntou preço'])
+    const { OFERECEU_HORA } = await import('../lib/llm')
+    eq('horário oferecido no texto (sem consultar a agenda vira trava)', ['Qual fica melhor: amanhã às 10h ou às 15h?', 'Qual fica melhor: 10h ou 15h?', 'Tenho segunda às 14h ou às 15h.', 'Que tal amanhã às 16h?', 'Atendemos das 8h às 18h', 'Vocês atendem até as 18h?', 'Posso te mandar a proposta em 24h', 'Quer que eu veja os horários livres?'].map(t => OFERECEU_HORA.test(t)), [true, true, true, true, false, false, false, false])
     eq('preço: só quando PEDE o preço (orçamento do negócio dele não é pergunta de preço)', [
       'Qual seria a média de valores?', 'Não posso agendar, quero saber uma média de valores', 'gostaria de ir primeiro ao seu orçamento', 'me passa um orçamento', 'Vocês fazem orçamento?', 'Precisamos de um orçamento', 'qual o investimento?', 'Preciso ter informações de tempo e valores para esse trabalho complementar', 'Perfeito, aguardo o orçamento',
       'O pior é orçamento que a gente manda e ninguém retorna', 'Mandei um orçamento pro cliente e ele sumiu', 'O valor do nosso ticket médio é 5 mil', 'o investimento em tráfego não volta', 'Hoje o custo com anúncio é alto',
