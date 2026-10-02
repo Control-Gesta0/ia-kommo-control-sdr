@@ -112,7 +112,7 @@ export function createBrain(opts: LlmOptions) {
       state.reuniao ? `REUNIÃO JÁ MARCADA: ${state.reuniao.label}. Não marque outra.` : '',
       ...CRM_MAP.alertas.filter(a => alertaAtivo(a, ctx.lastLeadText)).map(a => `⚠️ ALERTA DO SISTEMA (${a.nome}): ${a.aviso}`),
       `Perguntas que você já fez nesta conversa: ${ctx.perguntasFeitas ?? 0} (teto de 3 a 4 na conversa inteira)`,
-      describeOpen(ctx.porta, snap, ctx.perguntasFeitas ?? 0),
+      describeOpen(ctx.porta, snap, ctx.perguntasFeitas ?? 0, ctx.leadText),
     ].filter(Boolean)
     return [
       { role: 'system', content: promptOf(ctx.porta) },

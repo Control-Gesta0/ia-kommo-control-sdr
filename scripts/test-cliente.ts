@@ -183,6 +183,12 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   eq('acabamento: "Bom dia" depois da abertura volta com o cumprimento', ajustarResposta('Tudo bem? Fico por aqui pra te mostrar o Kommo.', { primeiro: false, nomeCadastro: 'Luiz', anteriores: ['Boa noite, Luiz! Aqui é a Lara...'], faltaVendedores: false, handoff: false, ...acabamentoDoTurno('Bom dia', false, false) }), 'Bom dia, Luiz! Tudo bem? Fico por aqui pra te mostrar o Kommo.')
   eq('acabamento: problema novo protege a solução (não corta como repetida)', [acabamentoDoTurno('O pior é orçamento que a gente manda e ninguém retorna', true, true).protegerSolucao, acabamentoDoTurno('somos 7 pessoas', true, true).protegerSolucao, acabamentoDoTurno('quanto custa?', true, true).protegerSolucao], [true, false, true])
   const { campoByKey } = await import('../lib/crm-map')
+  const { decisorSoCargo, pedirNomeDoDecisor } = await import('../lib/saudacao')
+  eq('decisor só pelo cargo: pede o nome dele/dela', ['quem decide é o dono da empresa', 'a decisão passa pela minha sócia', 'quem decide é o dono, Carlos', 'o dono pediu pra eu ver isso', 'quem aprova é a gerente'].map(decisorSoCargo), ['dele', 'dela', '', '', 'dela'])
+  eq('decisor só pelo cargo: o pedido entra antes da pergunta e não duplica', [
+    pedirNomeDoDecisor('Faz sentido ele participar da análise. Quer marcar?', 'dele'),
+    pedirNomeDoDecisor('Faz sentido ele participar. Me passa o nome dele?', 'dele'),
+  ], ['Faz sentido ele participar da análise. Me passa o nome dele que eu já deixo no convite da reunião. Quer marcar?', 'Faz sentido ele participar. Me passa o nome dele?'])
   eq('problema ou pedido: pedidos reais valem como evidência (antes eram recusados)', ['Implementação e estruturação do CRM', 'não consigo fazer os gatilhos funcionarem', 'Queria que disparasse a confirmação do agendamento e um lembrete no dia anterior', 'O pior é orçamento que a gente manda e ninguém retorna', 'Sou de Recife, quero conhecer melhor a plataforma', 'somos 4 vendedores'].map(t => !!campoByKey('dor')?.sinal?.test(t)), [true, true, true, true, true, false])
   eq('letra de outro alfabeto é texto corrompido', [regras('Tenho երկու opções na segunda').includes('texto corrompido'), regras('Ação, coração, São Paulo, nº 1 e 2ª opção').includes('texto corrompido')], [true, false])
   const manha = Date.parse('2026-09-28T13:00:00Z') // 10h em Brasília

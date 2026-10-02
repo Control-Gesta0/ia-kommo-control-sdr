@@ -202,7 +202,28 @@ export function vocativoCerto(texto: string, nomeLead: string): string {
  */
 export function pedirNomeSeFalta(texto: string, nomeConhecido: boolean, mensagensDaLara: number): string {
   if (nomeConhecido || mensagensDaLara > 1 || /\bnome\b/i.test(texto)) return texto
-  const pedido = 'Ah, me diz seu nome pra eu te chamar direitinho.'
+  return inserirAntesDaPergunta(texto, 'Ah, me diz seu nome pra eu te chamar direitinho.')
+}
+
+/** Decisor citado só pelo cargo nesta mensagem ("quem decide é o dono"): 'dele'/'dela', ou vazio. */
+export function decisorSoCargo(textoTurno: string): '' | 'dele' | 'dela' {
+  const t = textoTurno || ''
+  if (!/decid|decis[aã]o|aprova|bate o martelo|quem fecha|passa (?:pel[oa]|por)/i.test(t)) return ''
+  const m = t.match(/\b(?:(?:o|meu|nosso)\s+(dono|gestor|gerente|s[oó]cio|diretor|chefe|patr[aã]o|presidente|marido|pai)|(?:a|minha|nossa)\s+(dona|gestora|gerente|s[oó]cia|diretora|chefe|presidente|esposa|m[aã]e))\b/i)
+  if (!m) return ''
+  // Já disse o nome junto ("o dono, Carlos", "minha sócia Ana"): nada a pedir
+  if (new RegExp(`${m[0]}\\s*,?\\s+(?:o |a |é o |é a )?\\p{Lu}\\p{Ll}+`, 'u').test(t)) return ''
+  return m[2] ? 'dela' : 'dele'
+}
+
+/** Pede o nome do decisor citado só pelo cargo, sem interrogação (pedido do comercial, seção 2d do prompt). */
+export function pedirNomeDoDecisor(texto: string, pronome: '' | 'dele' | 'dela'): string {
+  if (!pronome || /\bnome\b/i.test(texto)) return texto
+  return inserirAntesDaPergunta(texto, `Me passa o nome ${pronome} que eu já deixo no convite da reunião.`)
+}
+
+/** Põe a frase antes da pergunta final (sem virar duas perguntas); sem pergunta, no fim. */
+function inserirAntesDaPergunta(texto: string, pedido: string): string {
   const i = texto.lastIndexOf('?')
   if (i < 0) return `${texto.trimEnd()} ${pedido}`
   // início da última frase (a pergunta)

@@ -237,7 +237,12 @@ export function snapshot(porta: Porta, state: LeadState): Snapshot {
   return { preenchidos, abertos }
 }
 
-export function describeOpen(porta: Porta, snap0: Snapshot, perguntasFeitas = 0): string {
+/**
+ * O que ainda falta saber, como raciocínio (não roteiro). Lead que já escreveu o pedido em detalhe
+ * (Davis, 02/10: Comment + mensagem com o fluxo inteiro, ~1.000 caracteres) já deu o suficiente:
+ * com o problema claro, a Lara para de sondar e vende a reunião.
+ */
+export function describeOpen(porta: Porta, snap0: Snapshot, perguntasFeitas = 0, textoLead = ''): string {
   if (!porta.roteiro.length) return ''
   const nicho = snap0.abertos.some(c => c.key === 'segmento') ? ' Ramo da empresa ainda não identificado: se ele já contou (ex.: "sou advogado", "minha clínica"), grave em segmento. Não pergunte só para descobrir o ramo.' : ''
   const sabe = (k: string) => snap0.preenchidos.some(p => p.campo.key === k)
@@ -249,7 +254,8 @@ export function describeOpen(porta: Porta, snap0: Snapshot, perguntasFeitas = 0)
     !sabe('decisor') && 'quem decide junto',
   ].filter(Boolean)
   const gravar = ' Grave com salvar_respostas o que o Comment ou as mensagens já contam.'
-  if (perguntasFeitas >= 3 || (temProblema && (lacunas.length <= 1 || perguntasFeitas >= 2))) {
+  const detalhado = textoLead.trim().length >= 400
+  if (perguntasFeitas >= 3 || (temProblema && (lacunas.length <= 1 || perguntasFeitas >= 2 || detalhado))) {
     return `Você já tem o suficiente: PARE de perguntar e VENDA a reunião (ligue o que ele contou ao que a implantação resolve e ofereça a análise gratuita com o especialista). Só chame consultar_horarios depois que ele topar ou se ele já pediu horário.${gravar}${nicho}`
   }
   const limite = perguntasFeitas >= 2 ? ' Você já fez 2 perguntas: no máximo mais UMA, e só se for essencial; senão, venda a reunião.' : ''
@@ -389,7 +395,7 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
           isError: erros.length > 0 && salvos.length === 0,
           content: [salvos.length ? `Salvo: ${salvos.join(' · ')}.` : '',
             pedirNomeDecisor ? 'O decisor foi citado só pelo cargo: NESTA resposta, peça o nome dele sem ponto de interrogação ("Me passa o nome dele que eu já deixo no convite da reunião.") e diga que ele precisa participar. Depois use o nome.' : '',
-            convidarDecisor ? 'O decisor é outra pessoa: NESTA resposta, em meia frase, diga que vale ele participar da reunião com o nosso especialista (é quem aprova), usando o nome dele.' : '', erros.length ? `Não salvo: ${erros.join(' · ')}.` : '', describeOpen(porta, snapshot(porta, next), ctx.perguntasFeitas ?? 0)].filter(Boolean).join(' '),
+            convidarDecisor ? 'O decisor é outra pessoa: NESTA resposta, em meia frase, diga que vale ele participar da reunião com o nosso especialista (é quem aprova), usando o nome dele.' : '', erros.length ? `Não salvo: ${erros.join(' · ')}.` : '', describeOpen(porta, snapshot(porta, next), ctx.perguntasFeitas ?? 0, ctx.leadText)].filter(Boolean).join(' '),
         }
       }
 

@@ -1,5 +1,5 @@
 import { campoByKey } from './crm-map'
-import { cumprimentarDeVolta, cumprimentoDoLead, garantirSaudacao, naturalizar, pedirNomeSeFalta, primeiroNomeDe, saudacao, semGeneralizacaoRepetida, semSolucaoRepetida, tirarApresentacao, tirarSaudacao, vocativoCerto } from './saudacao'
+import { cumprimentarDeVolta, cumprimentoDoLead, decisorSoCargo, garantirSaudacao, naturalizar, pedirNomeDoDecisor, pedirNomeSeFalta, primeiroNomeDe, saudacao, semGeneralizacaoRepetida, semSolucaoRepetida, tirarApresentacao, tirarSaudacao, vocativoCerto } from './saudacao'
 
 /**
  * Acabamento em código de TODA resposta da Lara (o que o comercial pediu e o
@@ -19,6 +19,8 @@ export function ajustarResposta(texto: string, o: {
   protegerSolucao?: boolean
   /** o lead só cumprimentou ("Bom dia"): a resposta devolve o cumprimento dele (cumprimentoDoLead) */
   cumprimento?: string
+  /** o lead citou o decisor só pelo cargo nesta mensagem ("quem decide é o dono"): pede o nome dele/dela */
+  decisor?: '' | 'dele' | 'dela'
 }): string {
   const nomeLead = primeiroNomeDe(o.nomeCadastro) || primeiroNomeDe(o.respondenteNome || '')
   let t = o.primeiro
@@ -30,6 +32,7 @@ export function ajustarResposta(texto: string, o: {
     })()
   t = vocativoCerto(t, nomeLead)
   if (!o.handoff) t = pedirNomeSeFalta(t, !!nomeLead, o.anteriores.length)
+  if (!o.handoff && o.decisor) t = pedirNomeDoDecisor(t, o.decisor)
   return t
 }
 
@@ -39,11 +42,11 @@ export function ajustarResposta(texto: string, o: {
  *   que ninguém retorna") ou perguntou algo: a solução/resposta desta mensagem não é cortada como repetida;
  * - cumprimento: ele só cumprimentou, a resposta devolve o cumprimento dele.
  */
-export function acabamentoDoTurno(textoTurno: string, dorAntes: boolean, dorDepois: boolean): { protegerSolucao: boolean; cumprimento: string } {
+export function acabamentoDoTurno(textoTurno: string, dorAntes: boolean, dorDepois: boolean): { protegerSolucao: boolean; cumprimento: string; decisor: '' | 'dele' | 'dela' } {
   const t = (textoTurno || '').trim()
   const cumprimento = cumprimentoDoLead(t)
   const contouProblema = !cumprimento && t.length >= 15 && !!campoByKey('dor')?.sinal?.test(t)
-  return { protegerSolucao: (!dorAntes && dorDepois) || t.includes('?') || contouProblema, cumprimento }
+  return { protegerSolucao: (!dorAntes && dorDepois) || t.includes('?') || contouProblema, cumprimento, decisor: decisorSoCargo(t) }
 }
 
 /**
