@@ -191,7 +191,8 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   eq('nunca volta (qualificado → em contato)', podeAvancar(4338500, 40438379, 'emContato'), false)
   eq('não mexe depois da reunião (PROPOSTA ENVIADA)', podeAvancar(4338500, 103456716, 'agendado'), false)
   eq('não mexe em outro funil', podeAvancar(7975447, 55438567, 'emContato'), false)
-  eq('CHAMP incompleto x completo', [champCompleto({ dor: 'x', decisor: 'eu', vendedores: '3' }), champCompleto({ dor: 'x', decisor: 'eu', vendedores: '3', prioridade: 'mês' }), champCompleto({ organizacao: 'planilha', decisor: 'eu', faturamento: '50 mil' }, ['prioridade'])], [false, true, false])
+  // 02/10: só o problema é condição para marcar (o resto ajuda, mas não trava a reunião)
+  eq('qualificado = problema claro', [champCompleto({ dor: 'x' }), champCompleto({ dor: 'x', decisor: 'eu', vendedores: '3', prioridade: 'mês' }), champCompleto({ organizacao: 'planilha', decisor: 'eu', faturamento: '50 mil' }, ['prioridade'])], [true, true, false])
 
   // ---------------- Follow-up só no expediente (seg a sex, 9h às 18h, Brasília) ----------------
   const { noExpediente } = await import('../lib/followup')
@@ -290,12 +291,10 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   const ctx = (lead: string, ia = '') => ({ port, porta, gateTag: 'gate', leadText: lead, lastLeadText: lead, lastAgentText: ia, agora }) as any
 
   let out = await runTool(ctx('quinta às 10'), 'agendar_reuniao', { horario: 'quinta 01/10 às 10h' })
-  eq('agendar antes do CHAMP é recusado', [out.isError, /CHAMP/.test(out.content)], [true, true])
-  w.state.respostas = { dor: 'perco lead', decisor: 'eu', vendedores: '5' }
+  eq('agendar sem problema gravado: não trava e usa o pedido do lead', [/falta entender/.test(out.content), !!w.state.respostas?.dor], [false, true])
+  w.state.respostas = { dor: 'perco lead' }
   out = await runTool(ctx('quinta às 10'), 'agendar_reuniao', { horario: 'quinta 01/10 às 10h' })
-  eq('CHAMP sem Prioridade ainda é recusado', [out.isError, /quando quer começar/i.test(out.content)], [true, true])
-  w.state.respostas.prioridade = 'este mês'
-  out = await runTool(ctx('quinta às 10'), 'agendar_reuniao', { horario: 'quinta 01/10 às 10h' })
+  eq('com o problema claro, não exige prioridade, decisor nem faturamento', /quando quer começar|decide|faturamento/i.test(out.content), false)
   eq('agendar sem oferta é recusado', [out.isError, /consultar_horarios/.test(out.content)], [true, true])
   out = await runTool(ctx('pode ser quinta de manhã'), 'consultar_horarios', { preferencia: 'quinta de manhã' })
   eq('consultar grava a oferta', [out.isError, w.state.oferta.map((s: any) => s.label)], [false, ['quinta 01/10 às 9h', 'quinta 01/10 às 9h30']])

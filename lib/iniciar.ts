@@ -1,5 +1,5 @@
 import crypto from 'crypto'
-import { brain, processLead } from './agent'
+import { brain, enviarResposta, processLead } from './agent'
 import { CONFIG } from './config'
 import { CRM_MAP, portaById } from './crm-map'
 import { logExec } from './execlog'
@@ -193,8 +193,7 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
     } catch (e) { console.error(`[iniciar] abertura pelo modelo falhou no lead ${leadId}:`, e) }
     if (!texto) { texto = aberturaFixa(nome); guard = [...guard, 'abertura fixa (modelo falhou ou reprovou na trava)'] }
 
-    const detalhe = await sendReply(leadId, texto)
-    await appendMessage(leadId, { id: crypto.randomUUID(), dir: 'out', text: texto, ts: Date.now() })
+    const detalhe = await enviarResposta(leadId, texto, true)
     const prox = await agendarFollowup(leadId, Date.now())
     const linhas = [
       '✉️ Lara enviou a primeira mensagem',

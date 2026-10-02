@@ -98,11 +98,17 @@ export function createBrain(opts: LlmOptions) {
       state.respondenteNome ? `Quem está digitando: ${state.respondenteNome} (${state.respondenteRelacao || 'relação não informada'})` : 'Quem está digitando: não confirmado',
       snap.preenchidos.length ? `Já respondido (NUNCA pergunte de novo): ${snap.preenchidos.map(p => `${p.campo.name} = ${p.valor}`).join(' · ')}` : 'Já respondido: nada ainda',
       state.outroAssunto ? `Outro assunto já registrado: ${state.outroAssunto}` : '',
-      state.oferta?.length ? `Horários já oferecidos (só estes valem): ${state.oferta.map(o => o.label).join(' · ')}. O FOCO AGORA é ele escolher um deles: não volte a fazer perguntas do roteiro.` : '',
+      state.oferta?.length ? `Horários já oferecidos (só estes valem): ${state.oferta.map(o => o.label).join(' · ')}. O foco agora é ele escolher um deles: não volte a qualificar. Se ele trouxe outra coisa, responda; NÃO repita a mesma lista de horários se você já a mandou na mensagem anterior (no máximo pergunte se algum serve ou se prefere outro dia).` : '',
+      SO_CUMPRIMENTO.test(ctx.lastLeadText.trim()) && ctx.lastAgentText
+        ? 'O lead SÓ cumprimentou (não respondeu sua pergunta). Cumprimente de volta em poucas palavras e siga SEM repetir a pergunta anterior, nem com outras palavras: traga um ponto de valor curto ligado ao pedido dele ou uma pergunta diferente.'
+        : '',
+      !state.oferta?.length && CONVITE.test(ctx.lastAgentText) && !ehAceite(ctx.lastLeadText)
+        ? 'Você JÁ convidou para a reunião na mensagem anterior e ele respondeu outra coisa: use o que ele trouxe e NÃO repita o convite igual. Se for convidar de novo, que seja diferente: mais concreto (chame consultar_horarios e já ofereça 2 horários) ou ligado ao que ele acabou de contar.'
+        : '',
       state.reuniao ? `REUNIÃO JÁ MARCADA: ${state.reuniao.label}. Não marque outra.` : '',
       ...CRM_MAP.alertas.filter(a => alertaAtivo(a, ctx.lastLeadText)).map(a => `⚠️ ALERTA DO SISTEMA (${a.nome}): ${a.aviso}`),
-      // Perguntou preço: a próxima pergunta é o TAMANHO (código, não sugestão)
-      describeOpen(ctx.porta, snap, CRM_MAP.alertas.some(a => a.nome === 'perguntou preço' && alertaAtivo(a, ctx.lastLeadText)) ? ['vendedores', 'faturamento'] : []),
+      `Perguntas que você já fez nesta conversa: ${ctx.perguntasFeitas ?? 0} (teto de 3 a 4 na conversa inteira)`,
+      describeOpen(ctx.porta, snap, ctx.perguntasFeitas ?? 0),
     ].filter(Boolean)
     return [
       { role: 'system', content: promptOf(ctx.porta) },
@@ -161,6 +167,7 @@ export function createBrain(opts: LlmOptions) {
     let urgente = false
     const tools = buildTools(ctx.porta)
     const messages: Msg[] = [...(await buildSystem(ctx, lead)), ...turns]
+    let cobrouHorario = false
 
     for (let step = 0; step < MAX_STEPS; step++) {
       const choice = await call(messages, handoff ? null : tools, usage)
@@ -191,14 +198,52 @@ export function createBrain(opts: LlmOptions) {
         const tRep = (cRep.message?.content || '').trim()
         if (tRep) safe = await enforce(fixRep, tRep, usage, handoff, ctx.lastLeadText)
       }
-      // Perguntou preço do serviço e ainda não sabemos o tamanho: a pergunta TEM que ser sobre o tamanho
-      if (!handoff && precisaPerguntarTamanho(ctx, await ctx.port.getState()) && !PERGUNTA_TAMANHO.test(ultimaPergunta(safe.text))) {
-        const fix: Msg[] = [...messages, { role: 'assistant', content: safe.text }, { role: 'system', content: '[TRAVA DO SISTEMA] O lead perguntou preço. Mantenha a resposta do preço ("Depende do tamanho da operação, por isso quero te passar o valor certo.") e troque a pergunta final por UMA pergunta sobre o tamanho: quantos vendedores vão usar o Kommo (ou o faturamento mensal). Responda só com o texto do WhatsApp.' }]
-        const c2 = await call(fix, null, usage)
-        const t2 = (c2.message?.content || '').trim()
-        if (t2) {
-          const s2 = await enforce(fix, t2, usage, handoff, ctx.lastLeadText)
-          if (PERGUNTA_TAMANHO.test(ultimaPergunta(s2.text)) && !s2.guard.includes('fallback')) safe = { text: s2.text, guard: [...s2.guard, 'preço: pergunta de tamanho forçada'] }
+      // Bateu na mesma tecla: pergunta que ela JÁ fez antes (igual ou com outras palavras) → refaz uma vez
+      const estado = await ctx.port.getState()
+      if (!handoff && !estado.oferta?.length) {
+        const jaFeitas = history.filter(m => m.dir === 'out').flatMap(m => perguntasDe(m.text))
+        const repetida = perguntasDe(safe.text).find(p => jaFeitas.some(q => parecidas(p, q)))
+        if (repetida) {
+          const fixQ: Msg[] = [...messages, { role: 'assistant', content: safe.text }, { role: 'system', content: `[TRAVA DO SISTEMA] Você repetiu uma pergunta que já fez antes nesta conversa ("${repetida.texto}"). Não pergunte isso de novo, nem com outras palavras. Responda o que ele trouxe e, se precisar perguntar, pergunte outra coisa que falte de verdade, ou venda a reunião de outro jeito (mais concreto). Responda só com o texto do WhatsApp.` }]
+          const cQ = await call(fixQ, null, usage)
+          const tQ = (cQ.message?.content || '').trim()
+          if (tQ) {
+            const sQ = await enforce(fixQ, tQ, usage, handoff, ctx.lastLeadText)
+            if (!sQ.guard.includes('fallback')) safe = { text: sQ.text, guard: [...sQ.guard, 'pergunta repetida: refeita'] }
+          }
+        }
+      }
+      // Mesma lista de horários em mensagens seguidas, sem o lead falar de horário: refaz sem repetir a lista
+      if (!handoff && estado.oferta?.length) {
+        const horas = estado.oferta.map(o => (o.label.match(/\d{1,2}h(?:\d{2})?/) || [''])[0]).filter(Boolean)
+        const citaHoras = (t: string) => horas.some(h => new RegExp(`\\b${h}\\b`).test(t))
+        if (citaHoras(ctx.lastAgentText) && citaHoras(safe.text) && !FALA_DE_HORARIO.test(ctx.lastLeadText)) {
+          const fixH: Msg[] = [...messages, { role: 'assistant', content: safe.text }, { role: 'system', content: '[TRAVA DO SISTEMA] Você já mandou esses horários na mensagem anterior e ele falou de outra coisa. Responda o que ele trouxe SEM repetir os horários (eles continuam valendo). No máximo, termine perguntando se ele quer seguir com um deles, sem citar dia e hora de novo. Responda só com o texto do WhatsApp.' }]
+          const cH = await call(fixH, null, usage)
+          const tH = (cH.message?.content || '').trim()
+          if (tH) {
+            const sH = await enforce(fixH, tH, usage, handoff, ctx.lastLeadText)
+            if (!sH.guard.includes('fallback') && !citaHoras(sH.text)) safe = { text: sH.text, guard: [...sH.guard, 'horários repetidos: refeita'] }
+          }
+        }
+      }
+      // Prometeu buscar horário e não buscou: volta ao loop (com ferramentas) para buscar de verdade
+      // Lead aceitou o convite ou tem pressa e a IA só OFERECEU ver horários: busca agora, sem perguntar de novo
+      const aceitouOuPressa = (CONVITE.test(ctx.lastAgentText) && ehAceite(ctx.lastLeadText)) || QUER_LOGO.test(ctx.lastLeadText)
+      const soOfereceuVer = OFERECEU_VER_HORARIO.test(safe.text) && aceitouOuPressa
+      if (!handoff && !cobrouHorario && step < MAX_STEPS - 1 && (PROMETEU_HORARIO.test(safe.text) || soOfereceuVer) && !toolsUsed.includes('consultar_horarios') && !estado.oferta?.length) {
+        cobrouHorario = true
+        messages.push({ role: 'assistant', content: safe.text }, { role: 'system', content: '[TRAVA DO SISTEMA] Você disse que ia ver os horários, mas não viu. Chame consultar_horarios agora (com a preferência do lead, se ele disse dia ou turno) e reescreva a resposta já com as opções. Responda só com o texto do WhatsApp.' })
+        continue
+      }
+      // Perguntou o preço da LICENÇA e a resposta veio sem valor em R$: refaz uma vez com o valor
+      if (!handoff && PERGUNTA_LICENCA.test(ctx.lastLeadText) && /quanto|pre[cç]o|valor|custa|fica/i.test(ctx.lastLeadText) && !/R\$\s*\d/.test(safe.text)) {
+        const fixL: Msg[] = [...messages, { role: 'assistant', content: safe.text }, { role: 'system', content: '[TRAVA DO SISTEMA] O lead perguntou o preço do plano/licença da Kommo. Informe nesta resposta o valor EM REAIS do "Contexto desta conversa" (por usuário/mês, contrato de 6 meses) e depois siga. Responda só com o texto do WhatsApp.' }]
+        const cL = await call(fixL, null, usage)
+        const tL = (cL.message?.content || '').trim()
+        if (tL) {
+          const sL = await enforce(fixL, tL, usage, handoff, ctx.lastLeadText)
+          if (/R\$\s*\d/.test(sL.text) && !sL.guard.includes('fallback')) safe = { text: sL.text, guard: [...sL.guard, 'preço da licença: incluído'] }
         }
       }
       if (!handoff) {
@@ -255,7 +300,7 @@ export function createBrain(opts: LlmOptions) {
     // 2) A abertura, com o contexto já atualizado (o "Já respondido" inclui o que veio do Comment)
     const messages: Msg[] = [
       ...(await buildSystem(ctx, lead)),
-      { role: 'system', content: '[ABERTURA ATIVA] O lead ainda não escreveu nada: a Kommo indicou este cliente e VOCÊ começa a conversa agora. Escreva só a primeira mensagem de WhatsApp, seguindo a seção "Abertura" do prompt, criando rapport com o Comment. A pergunta do fim é sobre o próximo item que FALTA (nunca algo que o Comment já disse). Responda só com o texto.' },
+      { role: 'system', content: '[ABERTURA ATIVA] O lead ainda não escreveu nada: a Kommo indicou este cliente e VOCÊ começa a conversa agora. Escreva só a primeira mensagem de WhatsApp, seguindo a seção "Abertura" do prompt: saudação, "aqui é a Lara, da Control Gestão, parceira oficial da Kommo", rapport com o Comment e UMA pergunta de contexto que parta do Comment (nunca algo que o Comment já disse, nunca lista pronta de opções). Separe a pergunta num parágrafo próprio. Responda só com o texto.' },
     ]
     const c = await call(messages, null, usage, 600)
     const bruto = (c.message?.content || '').trim()
@@ -264,8 +309,10 @@ export function createBrain(opts: LlmOptions) {
     if (safe.guard.includes('fallback')) return null
     // Regra do comercial em código: começa com a saudação certa do horário, nunca com pergunta
     const s = saudacao(ctx.agora ?? Date.now())
-    const text = garantirSaudacao(safe.text, s, primeiroNomeDe(lead.nomeContato))
-    const guard = text !== safe.text ? [...safe.guard, `saudação: ajustada em código (${s})`] : safe.guard
+    const saudado = garantirSaudacao(safe.text, s, primeiroNomeDe(lead.nomeContato))
+    // A abertura SEMPRE se apresenta (o modelo às vezes pula direto para a pergunta)
+    const text = /\bLara\b/.test(saudado) ? saudado : saudado.replace(/^([^!.\n]*[!.])\s*/, `$1 Aqui é a Lara, da Control Gestão, parceira oficial da Kommo${ctx.porta.id === 'indicacao' ? ', e a Kommo me passou o seu pedido' : ''}.\n\n`)
+    const guard = text !== safe.text ? [...safe.guard, `saudação/apresentação: ajustada em código (${s})`] : safe.guard
     if (abreComPergunta(text)) return null
     return { text, guard, usage, toolsUsed }
   }
@@ -284,17 +331,29 @@ export function createBrain(opts: LlmOptions) {
   return { generateReply, generateOpening, generateFollowup }
 }
 
-const PERGUNTA_TAMANHO = /vendedor|usu[aá]rio|pessoas|faturamento|fatura|equipe|time|tamanho/i
-const ultimaPergunta = (t: string) => (t.split(/(?<=[.!?])\s+/).filter(f => f.includes('?')).pop() || '')
-export function alertaAtivo(a: { re: RegExp; exceto?: RegExp }, texto: string): boolean {
-  return a.re.test(texto) && !(a.exceto && a.exceto.test(texto))
+const FALA_DE_HORARIO = /hor[aá]rio|agenda|\bdia\b|semana|hoje|amanh|segunda|ter[cç]a|quarta|quinta|sexta|manh[aã]|tarde|noite|\d{1,2}\s*h\b|\d{1,2}:\d{2}|marc|agend|pode ser|serve|qual|esse|essa|primeir|segund/i
+const SO_CUMPRIMENTO = /^(?:(?:oi+|ol[aá]|opa|e a[ií]|bom dia|boa tarde|boa noite|tudo bem|tudo bom|como vai|lara)[\s,!.?]*)+$/i
+const OFERECEU_VER_HORARIO = /\b(posso|quer que eu|consigo|vou|j[aá] vou|deixa eu)\b[^.?!\n]{0,30}\b(verificar|ver|veja|consultar|consulte|checar|buscar|busque|olhar|separar|verifique)\b[^.?!\n]{0,40}\b(hor[aá]rio|agenda)/i
+const QUER_LOGO = /\b(hoje|logo|urgente|o quanto antes|r[aá]pido|essa semana|esta semana|amanh[aã])\b/i
+const PROMETEU_HORARIO = /\b(vou|j[aá] vou|deixa eu|vou te)\b[^.?!\n]{0,40}\b(buscar|verificar|ver|consultar|checar|olhar|separar|mandar)\b[^.?!\n]{0,40}\b(hor[aá]rio|agenda|op[cç][oõ]es)/i
+const PERGUNTA_LICENCA = /\b(plano|planos|licen[cç]a|pro|b[aá]sico|avan[cç]ado|por usu[aá]rio|mensalidade da kommo)\b/i
+const CONVITE = /(an[aá]lise|reuni[aã]o|conversa|especialista)[^?]{0,140}\?|\b(quer|vamos|bora|posso)\b[^?]{0,60}\b(marcar|agendar|reservar)\b[^?]*\?/i
+const ehAceite = (t: string) => /\b(sim|pode ser|bora|vamos|quero|claro|fechado|ok|beleza|marca|agenda|pode marcar|topo)\b/i.test(t || '')
+
+/** Perguntas de uma mensagem como conjunto de palavras (> 3 letras, sem acento) para comparar repetição. */
+export function perguntasDe(t: string): Array<{ texto: string; palavras: string[] }> {
+  return (t.match(/[^.!?\n]*\?/g) || []).map(texto => ({
+    texto: texto.trim(),
+    palavras: texto.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length > 3),
+  })).filter(p => p.palavras.length >= 2)
+}
+export function parecidas(a: { palavras: string[] }, b: { palavras: string[] }): boolean {
+  const sb = new Set(b.palavras)
+  return a.palavras.filter(w => sb.has(w)).length / Math.min(a.palavras.length, b.palavras.length) >= 0.6
 }
 
-function precisaPerguntarTamanho(ctx: ToolCtx, state: { respostas?: Record<string, string> }): boolean {
-  const alerta = CRM_MAP.alertas.find(a => a.nome === 'perguntou preço')
-  if (!alerta || !alertaAtivo(alerta, ctx.lastLeadText)) return false
-  if (/licen[cç]a|plano|por usu[aá]rio|mensalidade da kommo/i.test(ctx.lastLeadText)) return false // preço da licença pode responder
-  return !state.respostas?.vendedores && !state.respostas?.faturamento
+export function alertaAtivo(a: { re: RegExp; exceto?: RegExp }, texto: string): boolean {
+  return a.re.test(texto) && !(a.exceto && a.exceto.test(texto))
 }
 
 /** Primeiro nome "de gente" (nome de empresa ou apelido estranho vira vazio). */

@@ -1,4 +1,4 @@
-import { ajustarResposta } from '../lib/tom'
+import { ajustarResposta, dividirMensagem } from '../lib/tom'
 /**
  * O EXAME DO CÉREBRO — roda os prompts LOCAIS com as tools REAIS numa porta em
  * memória (zero efeito no CRM). Cenários em evals/cenarios.ts (patch do cliente).
@@ -59,7 +59,10 @@ async function main() {
   if (CRM_MAP.agenda.ativa && !CRM_MAP.agenda.responsavelId) CRM_MAP.agenda.responsavelId = 999
   const { costUsd } = await import('../lib/execlog')
   const OpenAI = (await import('openai')).default
-  const { CENARIOS } = await import('../evals/cenarios')
+  const { CENARIOS: CENARIOS_BASE } = await import('../evals/cenarios')
+  const { CENARIOS_REAIS } = await import('../evals/cenarios-reais')
+  const CENARIOS = [...CENARIOS_BASE, ...CENARIOS_REAIS]
+  const MOSTRAR = process.env.EVAL_MOSTRAR === '1'
   type LeadPort = import('../lib/tools').LeadPort
   type ChatMsg = import('../lib/history').ChatMsg
 
@@ -127,6 +130,7 @@ async function main() {
           lastLeadText: bloco,
           lastAgentText: iOut >= 0 ? history[iOut].text : '',
           agora,
+          perguntasFeitas: history.filter(m => m.dir === 'out' && m.text.includes('?')).length,
         }, { nomeContato: c.nomeContato || '', primeiroContatoDaPorta: !history.some(m => m.dir === 'out') }, history)
         // Mesmo acabamento de produção (lib/tom.ts): o exame avalia o que o lead recebe
         const resposta = reply?.text ? ajustarResposta(reply.text, {
@@ -139,13 +143,17 @@ async function main() {
           agora,
           protegerSolucao: (!dorAntes && !!w.state.respostas?.dor) || bloco.includes('?'),
         }) : ''
+        if (process.env.EVAL_BRUTO === '1' && reply?.text && reply.text !== resposta) console.log(`[bruto ${c.id}] ${reply.text}\n[ajustado] ${resposta}`)
         custo += reply ? costUsd(MODEL, reply.usage) || 0 : 0
         turnos.push({ lead: msg, resposta, tools: reply?.toolsUsed || [], guard: reply?.guard || [], handoff: !!reply?.handoff })
         history.push({ id: `r${history.length}`, dir: 'out', text: resposta, ts: history.length + 1 })
       }
 
       const falhasCodigo = c.checks.filter(ch => { try { return !ch.fn(w, turnos) } catch { return true } }).map(ch => ch.nome)
-      const transcript = (c.comentario ? `(Comment que o lead escreveu na indicação da Kommo: "${c.comentario}")\n\n` : '') + turnos.map(t => `LEAD: ${t.lead}\nIA: ${t.resposta}`).join('\n\n')
+      // Como o lead recebe: resposta e pergunta podem sair em duas mensagens (lib/tom.ts dividirMensagem)
+      const iaTexto = (r: string) => dividirMensagem(r).map((p, i) => `${i ? 'IA (2ª mensagem)' : 'IA'}: ${p}`).join('\n')
+      const anterior = (c.historico || []).map(([d, t]) => `${d === 'in' ? 'LEAD' : 'IA'} (antes): ${t}`).join('\n')
+      const transcript = (c.comentario ? `(Comment que o lead escreveu na indicação da Kommo: "${c.comentario}")\n\n` : '') + (anterior ? `${anterior}\n\n` : '') + turnos.map(t => `LEAD: ${t.lead}\n${iaTexto(t.resposta)}`).join('\n\n')
       const juiz = await openai.chat.completions.create({
         model: JUDGE,
         response_format: { type: 'json_object' },
@@ -160,7 +168,7 @@ async function main() {
       const passou = !falhasCodigo.length && !falhasJuiz.length && (veredito.criterios || []).length >= c.criterios.length
       if (!passou) reprovados++
       console.log(`\n${passou ? '✅' : '❌'} ${c.id} [${rep}/${REPS}] nota ${nota}/10`)
-      if (!passou) {
+      if (!passou || MOSTRAR) {
         console.log(transcript.split('\n').map(l => `   ${l}`).join('\n'))
         for (const f of falhasCodigo) console.log(`   ⛔ código: ${f}`)
         for (const f of falhasJuiz) console.log(`   ⛔ juiz: ${f.criterio} — ${f.porque}`)

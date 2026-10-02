@@ -28,3 +28,18 @@ export function ajustarResposta(texto: string, o: {
   if (!o.handoff) t = pedirNomeSeFalta(t, !!nomeLead, o.anteriores.length)
   return t
 }
+
+/**
+ * Resposta + pergunta em DUAS mensagens (pedido do comercial, 02/10): parece gente digitando.
+ * Só divide quando há um parágrafo de resposta/solução SEM pergunta seguido do(s) parágrafo(s)
+ * com a pergunta. Resposta sem pergunta, ou que já começa perguntando, sai inteira.
+ */
+export function dividirMensagem(texto: string): string[] {
+  const partes = (texto || '').trim().split(/\n\s*\n/).map(p => p.trim()).filter(Boolean)
+  const q = partes.findIndex(p => p.includes('?'))
+  if (q < 1) return [texto.trim()]
+  const antes = partes.slice(0, q).join('\n\n')
+  const depois = partes.slice(q).join('\n\n')
+  if (antes.length < 40 || /https?:\/\/|meet\.google/.test(depois)) return [texto.trim()]
+  return [antes, depois]
+}

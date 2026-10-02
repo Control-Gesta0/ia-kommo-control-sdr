@@ -5,8 +5,8 @@ import { logExec } from './execlog'
 import {
   alreadyAnswered, appendMessage, getHistory, humanSpokeRecently, lastInbound, markAnswered, type ChatMsg,
 } from './history'
-import { getContact, getLead, leadTags } from './kommo'
-import { ajustarResposta } from './tom'
+import { getContact, getLead, leadTags, sleep } from './kommo'
+import { ajustarResposta, dividirMensagem } from './tom'
 import { createBrain } from './llm'
 import { kommoPort } from './port'
 import { rotear } from './router'
@@ -34,13 +34,20 @@ function blocoAtual(history: ChatMsg[]): ChatMsg[] {
   return history.slice(i + 1).filter(m => m.dir === 'in')
 }
 
-async function enviar(leadId: number, text: string): Promise<string> {
-  const detail = await sendReply(leadId, text)
+async function enviar(leadId: number, text: string, dividir = false): Promise<string> {
+  // Resposta e pergunta em mensagens separadas: o Salesbot entrega uma por vez, então espera
+  // a primeira sair antes de trocar o campo (senão a segunda atropela a primeira)
+  const partes = dividir ? dividirMensagem(text) : [text]
+  let detail = ''
+  for (let i = 0; i < partes.length; i++) {
+    if (i) await sleep(7000)
+    detail = await sendReply(leadId, partes[i])
+  }
   await appendMessage(leadId, { id: crypto.randomUUID(), dir: 'out', text, ts: Date.now() })
-  return detail
+  return partes.length > 1 ? `${detail} · ${partes.length} mensagens` : detail
 }
 
-export { brain }
+export { brain, enviar as enviarResposta }
 
 export async function processLead(leadId: number, webhookId: string): Promise<void> {
   const t0 = Date.now()
@@ -115,6 +122,7 @@ export async function processLead(leadId: number, webhookId: string): Promise<vo
         leadText: [(await getState(leadId)).comentario || '', ...conversa.filter(m => m.dir === 'in').map(m => m.text)].join('\n'),
         lastLeadText: textoTurno,
         lastAgentText: [...conversa.slice(0, Math.max(iLast, 0))].reverse().find(m => m.dir === 'out')?.text || '',
+        perguntasFeitas: conversa.filter(m => m.dir === 'out' && !String(m.id).startsWith('kommo:') && m.text.includes('?')).length,
       }
 
       // 2. Porta sem agente: mensagem fixa e finaliza (sem LLM)
@@ -155,7 +163,7 @@ export async function processLead(leadId: number, webhookId: string): Promise<vo
         handoff: reply.handoff,
         protegerSolucao: (!state.respostas?.dor && !!st2.respostas?.dor) || textoTurno.includes('?'),
       })
-      const detail = await enviar(leadId, reply.text)
+      const detail = await enviar(leadId, reply.text, !reply.handoff)
       await markAnswered(leadId, target.id)
       // Follow-up: finalizou (reunião, suporte, licença...) = para; senão recomeça a contar desta mensagem
       if (reply.handoff) await cancelarFollowup(leadId, ['sdr'])

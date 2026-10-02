@@ -118,6 +118,16 @@ async function main() {
     eq('preço do serviço continua com a trava de preço', ativos('quanto custa a implantação de vocês?'), ['perguntou preço'])
   }
 
+  // Resposta + pergunta em duas mensagens (02/10)
+  {
+    const { dividirMensagem } = await import('../lib/tom')
+    eq('resposta e pergunta viram 2 mensagens', dividirMensagem('Entendi. Dá pra montar as automações por etapa e cada mensagem sai no momento certo.\n\nHoje vocês fazem esse acompanhamento por onde?').length, 2)
+    eq('duas perguntas em 2 blocos ficam juntas na 2ª mensagem', dividirMensagem('Faz sentido, isso a gente organiza com funil e lembrete de retorno.\n\nA escolha é sua ou passa por mais alguém?\n\nE vocês querem resolver ainda este mês?'), ['Faz sentido, isso a gente organiza com funil e lembrete de retorno.', 'A escolha é sua ou passa por mais alguém?\n\nE vocês querem resolver ainda este mês?'])
+    eq('sem pergunta: uma mensagem só', dividirMensagem('Fechado, sexta às 10h.\n\nO link é meet.google.com/abc').length, 1)
+    eq('começa perguntando: uma mensagem só', dividirMensagem('Vocês já usam algum CRM?\n\nPergunto porque muda a implantação.').length, 1)
+    eq('reação curta não vira mensagem sozinha', dividirMensagem('Entendi.\n\nHoje vocês usam algum CRM?').length, 1)
+  }
+
   const extra = await import('./test-cliente').catch(() => null)
   if (extra?.default) { const extras = await extra.default(eq); falhas += extras }
 

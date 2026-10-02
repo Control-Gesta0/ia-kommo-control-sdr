@@ -37,7 +37,7 @@ const CAMPOS = {
     pergunta: 'Quantos vendedores usariam o sistema?',
   },
   dor: {
-    key: 'dor', curto: 'Dor', id: 1046003, kommoName: 'Problema', name: 'O que mais incomoda hoje (perder lead, não saber a etapa, falta de relatório)', type: 'textarea',
+    key: 'dor', curto: 'Dor', id: 1046003, kommoName: 'Problema', name: 'Problema ou pedido do lead (o que ele quer resolver, nas palavras dele)', type: 'textarea',
     sinal: /perd|esquec|some|sum|escap|etapa|fase|onde (est|par)|relat[oó]rio|n[uú]mero|m[eé]trica|indicador|controle|acompanh|organiz|bagun|demor|follow|retorno|respond|resposta|vis[aã]o|gest[aã]o|funil|atendimento|whats/i,
     pergunta: 'O que mais tá travando hoje no atendimento de vocês: perder lead, não saber em que etapa cada um está ou não ter relatório?',
   },
@@ -191,7 +191,7 @@ export const CRM_MAP = {
    * CHAMP antes de marcar: cada grupo precisa de PELO MENOS UM campo respondido
    * (ou "não sei" dito pelo lead). Money vale por faturamento OU nº de vendedores.
    */
-  exigirAntesDeAgendar: [['dor'], ['prioridade'], ['decisor'], ['faturamento', 'vendedores']] as string[][],
+  exigirAntesDeAgendar: [['dor']] as string[][], // 02/10: o resto é bom saber, não condição (lead que pede horário marca)
   /** Aviso de reunião marcada no WhatsApp pessoal do closer: mensagem pelo Salesbot no lead dele (0 = desligado) */
   avisoCloser: { leadId: 20755415 },  // "Rodrigo Pessoal" (+55 11 97606-1468), funil ATENDIMENTO CONTROL GESTAO
   /** etapa para onde `agendar_reuniao` move o lead DEPOIS da tarefa criada (id 0 = não move) */
@@ -229,7 +229,7 @@ export const CRM_MAP = {
       nome: 'perguntou preço',
       re: /quanto custa|quanto fica|quanto [ée]|pre[cç]o|valor|investimento|or[cç]amento|mensalidade|cobram|custo/i,
       exceto: CUSTO_META,
-      aviso: 'O lead perguntou PREÇO. Se for da LICENÇA/plano da Kommo, pode responder em REAIS com os planos do contexto. Se for da implantação/configuração/suporte/IA (nosso serviço), NÃO cite valor: "Depende do tamanho da operação, por isso quero te passar o valor certo." (ou do tamanho do projeto/escopo). E a pergunta desta resposta é sobre o TAMANHO (quantos vendedores vão usar, ou o faturamento mensal).',
+      aviso: 'O lead perguntou PREÇO. Licença/plano da Kommo: pode responder em REAIS com os planos do contexto. Implantação/configuração/treinamento/suporte/IA (nosso serviço): NÃO cite valor (você não tem) e NÃO ignore: explique em uma frase que depende do escopo, ligado ao que ELE contou, e que na reunião o especialista dimensiona e passa a proposta; convide para a reunião. Se ele já perguntou antes e você já explicou, não repita a explicação: ofereça a análise curta e sem compromisso; recusou de novo, encerre com gentileza (qualificado_sem_reuniao).',
     },
     {
       nome: 'custo do WhatsApp oficial',
@@ -238,7 +238,7 @@ export const CRM_MAP = {
     },
     {
       nome: 'dificuldade',
-      re: /n[aã]o sei (configurar|mexer|usar)|n[aã]o consegui|tentei aprender|dif[ií]cil|perdid[oa]|complicado|n[aã]o entendo/i,
+      re: /n[aã]o sei (configurar|mexer|usar|trabalhar)|n[aã]o consegui (configurar|mexer|usar|aprender|entender|montar|fazer)|tentei aprender|tenho dificuldade|dif[ií]cil de (usar|mexer|configurar|entender)|me (sinto )?perdid[oa]|complicado|n[aã]o entendo (nada )?(do|de|da) (kommo|crm|sistema|plataforma|ferramenta)/i,
       aviso: 'O lead contou uma DIFICULDADE (não sabe configurar/mexer). Comece a resposta acolhendo EXATAMENTE essa dificuldade em meia frase e mostre que é aí que a gente entra (ex.: "normal, no começo o Kommo assusta mesmo, e a configuração a gente faz junto com você na implantação"). Só depois siga com a próxima pergunta.',
     },
   ] as Alerta[],

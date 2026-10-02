@@ -35,7 +35,7 @@ export const CENARIOS: Cenario[] = [
     criterios: [
       'Começa com saudação e apresentação (Lara, Control Gestão) e diz que o pedido veio pela Kommo, antes de qualquer pergunta',
       'Cria rapport citando a necessidade do Comment (funil e/ou WhatsApp) com as palavras do lead, sem copiar o texto inteiro',
-      'Termina com uma pergunta do roteiro (o que mais trava / quanto isso pesa / prioridade), sem perguntar o que o Comment já respondeu',
+      'Termina com UMA pergunta que parte do Comment (sem lista pronta de opções como "perder lead, etapa ou relatório"), sem perguntar o que o Comment já respondeu',
       'Tem no máximo 3 linhas',
     ],
   },
@@ -59,7 +59,7 @@ export const CENARIOS: Cenario[] = [
     historico: [['out', ABERTURA]],
     msgs: ['planilha. Mas vocês integram o WhatsApp oficial ou só o Lite?'],
     checks: [umaPergunta, semFallback, tomHumano, chamou('salvar_respostas')],
-    criterios: ['Responde a pergunta sobre WhatsApp primeiro (sem inventar detalhe técnico que não sabe; pode dizer que o especialista detalha) e só depois faz a próxima pergunta do roteiro'],
+    criterios: ['Responde a pergunta sobre WhatsApp primeiro (sem inventar detalhe técnico que não sabe; pode dizer que o especialista detalha) e só depois segue a conversa (uma pergunta útil ou a reunião)'],
   },
   {
     id: 'preco-sem-valor',
@@ -68,8 +68,8 @@ export const CENARIOS: Cenario[] = [
     msgs: ['antes, quanto custa a implantação?'],
     checks: [umaPergunta, semFallback, tomHumano, semPreco, naoMarcou],
     criterios: [
-      'Responde a pergunta de preço primeiro, sem citar nenhum valor, dizendo que depende do tamanho da operação (ou do escopo, ou da quantidade de usuários)',
-      'Usa a pergunta seguinte para entender o tamanho: faturamento mensal ou quantos vendedores vão usar',
+      'Responde a pergunta de preço primeiro, sem citar nenhum valor, explicando que depende do escopo ligado ao pedido dela (funil e WhatsApp da equipe)',
+      'Conduz para entender o que falta do cenário ou para a reunião com o especialista como o caminho para o valor, sem exigir faturamento como condição para responder',
     ],
   },
   {
@@ -151,7 +151,7 @@ export const CENARIOS: Cenario[] = [
     criterios: [
       'A abertura cria rapport citando pelo menos um ponto concreto do Comment (ex.: cadastro dos clientes, datas especiais, pós-venda, atendimento com IA ou o padrão de joalheria)',
       'A resposta à mensagem do lead acolhe a dificuldade dele e NÃO pergunta de novo o que ele quer resolver, se tem CRM ou onde organiza os clientes',
-      'A pergunta da resposta é sobre algo que ainda falta no roteiro (impacto, prioridade, ou decisão e faturamento)',
+      'Se a resposta pergunta algo, é algo que ainda falta de verdade (impacto, pressa ou quem decide); oferecer a reunião direto também vale',
     ],
   },
   {

@@ -51,6 +51,8 @@ export interface ToolCtx {
   lastAgentText: string
   /** relógio (evals fixam; produção = Date.now()) */
   agora?: number
+  /** quantas mensagens da IA nesta conversa já terminaram em pergunta (teto de qualificação) */
+  perguntasFeitas?: number
 }
 
 export interface ToolOutcome { content: string; isError: boolean; handoff?: boolean; urgente?: boolean }
@@ -93,7 +95,7 @@ export function buildTools(porta: Porta): OpenAI.Chat.ChatCompletionTool[] {
       type: 'function',
       function: {
         name: 'salvar_respostas',
-        description: 'Grava TODAS as respostas do roteiro que o lead já deu (várias de uma vez se ele respondeu muita coisa numa mensagem). Chame ANTES de fazer a próxima pergunta. O retorno diz o que falta.',
+        description: 'Grava o que o lead já contou e serve para qualificar (várias coisas de uma vez se ele contou muita coisa numa mensagem). O retorno diz o que ainda não se sabe; isso NÃO é roteiro: pergunte só o que for útil.',
         parameters: {
           type: 'object',
           properties: {
@@ -235,24 +237,23 @@ export function snapshot(porta: Porta, state: LeadState): Snapshot {
   return { preenchidos, abertos }
 }
 
-export function describeOpen(porta: Porta, snap0: Snapshot, prioridade: string[] = []): string {
+export function describeOpen(porta: Porta, snap0: Snapshot, perguntasFeitas = 0): string {
   if (!porta.roteiro.length) return ''
-  const nicho = snap0.abertos.some(c => c.key === 'segmento') ? ' Ramo da empresa ainda não identificado: se ele já contou (ex.: "sou advogado", "minha clínica"), grave em segmento agora. NÃO faça pergunta só para descobrir o ramo.' : ''
-  // Só as 4 perguntas do roteiro (opcionais são gravados se o lead falar, nunca perguntados)
-  const s = { ...snap0, abertos: snap0.abertos.filter(c => !c.opcional) }
-  const aberto = (k: string) => s.abertos.some(c => c.key === k)
-  // O que trava a reunião já foi respondido (problema, prioridade, decisão, investimento): o impacto não segura a venda
-  const respondidas = Object.fromEntries(snap0.preenchidos.map(p => [p.campo.key, String(p.valor)]))
-  if (s.abertos.length && champCompleto(respondidas)) s.abertos = []
-  const gravar = ' Se o Comment ou as mensagens já respondem algum item (inclusive onde organizam os leads ou quantos vendedores), grave com salvar_respostas ANTES e pule.'
-  if (!s.abertos.length) return `Roteiro COMPLETO: agora VENDA a reunião (ligue o problema e o impacto que ele contou ao que fazemos e ofereça a análise gratuita com o especialista, perguntando se ele quer marcar). Só chame consultar_horarios depois que ele topar ou se ele já pediu horário.${nicho}`
-  // 4ª pergunta: decisão + investimento juntas, em 2 blocos (menos mensagens)
-  if (!prioridade.length && s.abertos.every(c => c.key === 'decisor' || c.key === 'faturamento') && aberto('decisor') && aberto('faturamento')) {
-    return `Faltam: decisão e investimento. Próximo → as DUAS juntas numa mensagem só, em 2 blocos (linha em branco entre eles):\n"A escolha do CRM é sua ou passa por mais alguém?\n\nE pra eu entender o tamanho da operação: o faturamento mensal de vocês fica mais perto de até R$ 50 mil, de R$ 50 a 200 mil ou acima disso?"\n(adapte com naturalidade; se ele já respondeu uma, pergunte só a outra).${gravar}${nicho}`
+  const nicho = snap0.abertos.some(c => c.key === 'segmento') ? ' Ramo da empresa ainda não identificado: se ele já contou (ex.: "sou advogado", "minha clínica"), grave em segmento. Não pergunte só para descobrir o ramo.' : ''
+  const sabe = (k: string) => snap0.preenchidos.some(p => p.campo.key === k)
+  const temProblema = sabe('dor')
+  const lacunas = [
+    !temProblema && 'qual é o problema ou o pedido',
+    !sabe('impacto') && 'se isso pesa (venda, tempo, controle)',
+    !sabe('prioridade') && 'se há pressa',
+    !sabe('decisor') && 'quem decide junto',
+  ].filter(Boolean)
+  const gravar = ' Grave com salvar_respostas o que o Comment ou as mensagens já contam.'
+  if (perguntasFeitas >= 3 || (temProblema && (lacunas.length <= 1 || perguntasFeitas >= 2))) {
+    return `Você já tem o suficiente: PARE de perguntar e VENDA a reunião (ligue o que ele contou ao que a implantação resolve e ofereça a análise gratuita com o especialista). Só chame consultar_horarios depois que ele topar ou se ele já pediu horário.${gravar}${nicho}`
   }
-  const prox = s.abertos.find(c => prioridade.includes(c.key)) || s.abertos[0]
-  const opc = prox.options ? ` (grave com uma destas opções EXATAS: ${prox.options.map(o => o.value).join(' | ')})` : ''
-  return `Faltam: ${s.abertos.map(c => c.name).join(' · ')}. Próximo que falta → ${prox.name}${prox.pergunta ? ` (sugestão: "${prox.pergunta}"; adapte com naturalidade ao que ele contou, mantendo as faixas se for o faturamento)` : ''}${opc}.${gravar} Pode seguir outra ordem se ficar mais natural.${nicho}`
+  const limite = perguntasFeitas >= 2 ? ' Você já fez 2 perguntas: no máximo mais UMA, e só se for essencial; senão, venda a reunião.' : ''
+  return `Ainda não se sabe: ${lacunas.join('; ')}. Isso NÃO é roteiro: pergunte só o que mudar sua leitura do cenário, partindo do que ele acabou de dizer, sem lista pronta de opções. ${temProblema ? 'O problema já está claro: não pergunte de novo o que trava nem o impacto de algo que já é obviamente perda (lead sem retorno = venda perdida); se já der para vender a reunião, venda.' : 'Se o pedido dele já diz o problema, grave e não pergunte de novo.'}${limite}${gravar}${nicho}`
 }
 
 // ---------- Execução ----------
@@ -388,7 +389,7 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
           isError: erros.length > 0 && salvos.length === 0,
           content: [salvos.length ? `Salvo: ${salvos.join(' · ')}.` : '',
             pedirNomeDecisor ? 'O decisor foi citado só pelo cargo: NESTA resposta, peça o nome dele sem ponto de interrogação ("Me passa o nome dele que eu já deixo no convite da reunião.") e diga que ele precisa participar. Depois use o nome.' : '',
-            convidarDecisor ? 'O decisor é outra pessoa: NESTA resposta, em meia frase, diga que vale ele participar da reunião com o nosso especialista (é quem aprova), usando o nome dele.' : '', erros.length ? `Não salvo: ${erros.join(' · ')}.` : '', describeOpen(porta, snapshot(porta, next))].filter(Boolean).join(' '),
+            convidarDecisor ? 'O decisor é outra pessoa: NESTA resposta, em meia frase, diga que vale ele participar da reunião com o nosso especialista (é quem aprova), usando o nome dele.' : '', erros.length ? `Não salvo: ${erros.join(' · ')}.` : '', describeOpen(porta, snapshot(porta, next), ctx.perguntasFeitas ?? 0)].filter(Boolean).join(' '),
         }
       }
 
@@ -434,7 +435,7 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
           }
           // Pergunta sobre o produto ("integram o WhatsApp oficial ou só o Lite?") é pré-venda, não suporte
           if (motivo === 'suporte' && !classificarSuporte(ev).suporte && (ev.includes('?') || /integr|funciona|oficial|\bapi\b|lite|d[aá] pra|tem como|consigo usar|serve pra/i.test(ev))) {
-            return err('NÃO finalizado: isso é uma PERGUNTA sobre o que o Kommo faz, não pedido de suporte. Responda em linhas gerais (seção 2c do prompt) ou diga que o especialista mostra na análise, e siga o CHAMP com a próxima pergunta.')
+            return err('NÃO finalizado: isso é uma PERGUNTA sobre o que o Kommo faz, não pedido de suporte. Responda em linhas gerais (seção 2c do prompt) ou diga que o especialista mostra na análise, e siga a conversa.')
           }
         }
         await aplicarFinalizacao(ctx, motivo, String(input.resumo || ''))
@@ -472,9 +473,16 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
         if (!cfg.ativa || !cfg.responsavelId) return err('Agenda não configurada.')
         const state = await port.getState()
         if (state.reuniao) return err(`A reunião já está marcada (${state.reuniao.label}). Confirme esse horário ao lead.`)
-        const respondido = (key: string) => !!state.respostas?.[key] || (state.semResposta || []).includes(key)
-        const faltando = CRM_MAP.exigirAntesDeAgendar.filter(grupo => !grupo.some(respondido))
-        if (faltando.length) return err(`Antes de marcar, falta (CHAMP): ${faltando.map(g => g.map(key => campoByKey(key)?.name || key).join(' OU ')).join('; ')}. Pergunte o próximo item (uma pergunta) e grave com salvar_respostas.`)
+        // O lead quer a reunião: a agenda nunca trava por qualificação (02/10). Se o problema não foi
+        // gravado, o pedido dele (Comment ou mensagens) vai no lugar, pro especialista chegar preparado
+        if (!state.respostas?.dor) {
+          const pedido = (state.comentario || ctx.leadText || '').replace(/\s+/g, ' ').trim().slice(0, 300)
+          const campoDor = campoByKey('dor')
+          if (pedido) {
+            await port.patchState({ respostas: { ...(state.respostas || {}), dor: pedido } })
+            if (campoDor && campoDor.id > 0) await port.writeFields([{ field_id: campoDor.id, values: [{ value: pedido }] }]).catch(() => undefined)
+          }
+        }
         const oferta: Slot[] = state.oferta || []
         const agora = ctx.agora ?? Date.now()
         if (!oferta.length) return err('Nenhum horário foi oferecido ainda. Chame consultar_horarios e ofereça as opções.')

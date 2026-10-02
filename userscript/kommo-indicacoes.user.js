@@ -50,7 +50,7 @@ var FiltroIndicacao = (function () {
     if (!m) return null
     var resto = t.slice(m.index + m[0].length)
     var fim = resto.search(/\n\s*[A-Za-zÀ-ú][A-Za-zÀ-ú _\-]{1,30}:\s|"\s*[,}]\s*"?[A-Za-z_]+"?\s*:/)
-    var out = (fim >= 0 ? resto.slice(0, fim) : resto).replace(/\s+/g, ' ').trim().replace(/^"|"$/g, '')
+    var out = (fim >= 0 ? resto.slice(0, fim) : resto).replace(/\s+/g, ' ').trim().replace(/"\s*\}+\s*$/, '').replace(/^"|"$/g, '')
     return out.slice(0, 2000)
   }
 
