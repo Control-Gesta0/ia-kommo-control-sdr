@@ -206,7 +206,13 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   ], [false, false, true, true, false])
   const L = await import('../lib/llm')
   eq('convite detectado (para não convidar antes da hora)', ['Quer marcar uma análise gratuita com o especialista?', 'Na análise, o especialista mostra isso. Quer marcar?', 'Posso te colocar numa análise gratuita com um especialista.', 'Isso o especialista te mostra na análise.', 'Quantas pessoas vão usar o Kommo no dia a dia?'].map(L.temConvite), [true, true, true, false, false])
-  eq('lead que pede reunião, apresentação ou preço libera o convite', ['quero conhecer a ferramenta', 'quanto custa?', 'Você pode apresentar a ferramenta?', 'Quero saber sobre o kommo', 'somos 4 vendedores'].map(t => L.PEDIU_REUNIAO.test(t)), [true, true, true, false, false])
+  eq('lead que pede reunião, apresentação ou preço libera o convite (orçamento do negócio dele não)', ['quero conhecer a ferramenta', 'quanto custa?', 'Você pode apresentar a ferramenta?', 'Quero saber sobre o kommo', 'somos 4 vendedores', 'O pior é orçamento que a gente manda e ninguém retorna'].map(t => L.pediuReuniao(t)), [true, true, true, false, false, false])
+  eq('pedido de conversa no Comment libera o convite', [L.pediuReuniao('somos 6 vendedores', 'Gostaria de conversar com um vendedor'), L.pediuReuniao('somos 6 vendedores', 'Implementação e estruturação do CRM')], [true, false])
+  eq('tema já perguntado (sem resposta) não trava o convite nem é perguntado de novo', [
+    T.temasPerguntados(['Bom dia! Quantas pessoas vão usar o CRM no dia a dia?', 'Entendi. Vocês fazem tráfego pago? Quantos leads chegam por mês?']),
+    T.prontoParaReuniao(snapQ({ dor: 'perco lead', vendedores: '4' }), 2, ['vendedores', 'volume']),
+    T.lacunasDeQualificacao(snapQ({ dor: 'perco lead' }), ['vendedores']).length,
+  ], [['vendedores', 'volume'], true, 1])
   eq('tráfego e volume valem como evidência', ['fazemos tráfego no Meta, chegam uns 600 leads por mês', 'não fazemos anúncio, é tudo indicação', 'somos 4 vendedores'].map(t => !!campoByKeyQ('volume')?.sinal?.test(t)), [true, true, true])
   const { decisorSoCargo, pedirNomeDoDecisor } = await import('../lib/saudacao')
   eq('decisor só pelo cargo: pede o nome dele/dela', ['quem decide é o dono da empresa', 'a decisão passa pela minha sócia', 'quem decide é o dono, Carlos', 'o dono pediu pra eu ver isso', 'quem aprova é a gerente'].map(decisorSoCargo), ['dele', 'dela', '', '', 'dela'])

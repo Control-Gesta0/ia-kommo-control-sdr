@@ -6,7 +6,7 @@ import { addUsage, emptyUsage, type Usage } from './execlog'
 import { checkReply, keepLastQuestion, overlap, semEspanhol, semTravessao, type Violation } from './guards'
 import { abreComPergunta, garantirSaudacao, primeiroNomeDe, saudacao, SO_CUMPRIMENTO } from './saudacao'
 import type { ChatMsg } from './history'
-import { aplicarFinalizacao, buildTools, describeOpen, lacunasDeQualificacao, prontoParaReuniao, runTool, snapshot, type ToolCtx } from './tools'
+import { aplicarFinalizacao, buildTools, describeOpen, lacunasDeQualificacao, prontoParaReuniao, runTool, snapshot, temasPerguntados, type ToolCtx } from './tools'
 
 /**
  * Cérebro: GPT-5.4 Mini (Chat Completions, reasoning none) com loop próprio de
@@ -112,7 +112,7 @@ export function createBrain(opts: LlmOptions) {
       state.reuniao ? `REUNIÃO JÁ MARCADA: ${state.reuniao.label}. Não marque outra.` : '',
       ...CRM_MAP.alertas.filter(a => alertaAtivo(a, ctx.lastLeadText)).map(a => `⚠️ ALERTA DO SISTEMA (${a.nome}): ${a.aviso}`),
       `Perguntas que você já fez nesta conversa: ${ctx.perguntasFeitas ?? 0} (teto de 3 a 4 na conversa inteira)`,
-      describeOpen(ctx.porta, snap, ctx.perguntasFeitas ?? 0),
+      describeOpen(ctx.porta, snap, ctx.perguntasFeitas ?? 0, ctx.temasPerguntados),
     ].filter(Boolean)
     return [
       { role: 'system', content: promptOf(ctx.porta) },
@@ -166,6 +166,7 @@ export function createBrain(opts: LlmOptions) {
     if (lead.primeiroContatoDaPorta && ctx.porta.abertura && /^\s*(?:op[cç][aã]o\s*)?\d{1,2}️?⃣?\s*$/i.test(ctx.lastLeadText)) {
       return { text: ctx.porta.abertura, toolsUsed: ['trava:abertura'], handoff: false, urgente: false, guard: [], usage }
     }
+    ctx.temasPerguntados ??= temasPerguntados(history.filter(m => m.dir === 'out').map(m => m.text))
     const toolsUsed: string[] = []
     let handoff = false
     let urgente = false
@@ -203,13 +204,33 @@ export function createBrain(opts: LlmOptions) {
           }
         }
       }
+      // Convite antes da hora (comercial, 02/10: "chamando para a reunião logo de cara"): sem o lead pedir,
+      // só convida depois de entender o problema, quantas pessoas usam e o volume de leads (ou 3 perguntas)
+      const snapAgora = snapshot(ctx.porta, estado)
+      if (!handoff && !estado.oferta?.length && !toolsUsed.includes('consultar_horarios') && !pediuReuniao(ctx.lastLeadText, estado.comentario)
+        && !prontoParaReuniao(snapAgora, ctx.perguntasFeitas ?? 0, ctx.temasPerguntados) && temConvite(safe.text)) {
+        const falta = lacunasDeQualificacao(snapAgora, ctx.temasPerguntados)
+        const fixI: Msg[] = [...messages, { role: 'assistant', content: safe.text }, { role: 'system', content: `[TRAVA DO SISTEMA] Ainda é cedo para convidar para a reunião: você ainda não sabe ${falta.join('; ')}. Tire o convite. Responda o que ele trouxe (mostre que entendeu e como a gente resolve) e faça UMA pergunta sobre o que falta, ligada ao que ele contou, sem repetir pergunta que você já fez. Responda só com o texto do WhatsApp.` }]
+        const cI = await call(fixI, null, usage)
+        const tI = (cI.message?.content || '').trim()
+        if (tI) {
+          const sI = await enforce(fixI, tI, usage, handoff, ctx.lastLeadText)
+          if (!sI.guard.includes('fallback')) safe = { text: sI.text, guard: [...sI.guard, 'convite antes da hora: refeita'] }
+        }
+        // Insistiu: o convite sai (fica a resposta)
+        if (temConvite(safe.text)) {
+          const frases = safe.text.split(/(?<=[.!?])\s+|\n+/).filter(Boolean)
+          const sem = frases.filter(f => !temConvite(f)).join(' ').replace(/\s{2,}/g, ' ').trim()
+          if (sem.replace(/[^\p{L}]/gu, '').length >= 20) safe = { text: sem, guard: [...safe.guard, 'convite antes da hora: cortado'] }
+        }
+      }
       // Bateu na mesma tecla: pergunta que ela JÁ fez antes (igual ou com outras palavras) → refaz uma vez
       const jaFeitas = history.filter(m => m.dir === 'out').flatMap(m => perguntasDe(m.text))
       const repetidaEm = (t: string) => perguntasDe(t).find(p => jaFeitas.some(q => parecidas(p, q)))
       if (!handoff && (!estado.oferta?.length || !(FALA_DE_HORARIO.test(ctx.lastLeadText) || ehAceite(ctx.lastLeadText)))) {
         const repetida = repetidaEm(safe.text)
         if (repetida) {
-          const fixQ: Msg[] = [...messages, { role: 'assistant', content: safe.text }, { role: 'system', content: `[TRAVA DO SISTEMA] Você repetiu uma pergunta que já fez antes nesta conversa ("${repetida.texto}"). Não pergunte isso de novo, nem com outras palavras. Responda o que ele trouxe e, se precisar perguntar, pergunte outra coisa que falte de verdade, ou venda a reunião de outro jeito (mais concreto). Responda só com o texto do WhatsApp.` }]
+          const fixQ: Msg[] = [...messages, { role: 'assistant', content: safe.text }, { role: 'system', content: `[TRAVA DO SISTEMA] Você repetiu uma pergunta que já fez antes nesta conversa ("${repetida.texto}"). Não pergunte isso de novo, nem com outras palavras. Responda o que ele trouxe (use o que ele acabou de contar) e, se precisar perguntar, pergunte outra coisa que falte de verdade, ou venda a reunião de outro jeito (mais concreto), sem agir como se ele já tivesse aceitado. Responda só com o texto do WhatsApp.` }]
           const cQ = await call(fixQ, null, usage)
           const tQ = (cQ.message?.content || '').trim()
           if (tQ) {
@@ -244,26 +265,6 @@ export function createBrain(opts: LlmOptions) {
             sem = sem.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
             safe = { text: sem.replace(/[^\p{L}]/gu, '').length >= 3 ? sem : 'Tudo bem?', guard: [...safe.guard, 'só cumprimento: pergunta cortada'] }
           }
-        }
-      }
-      // Convite antes da hora (comercial, 02/10: "chamando para a reunião logo de cara"): sem o lead pedir,
-      // só convida depois de entender o problema, quantas pessoas usam e o volume de leads (ou 3 perguntas)
-      const snapAgora = snapshot(ctx.porta, estado)
-      if (!handoff && !estado.oferta?.length && !toolsUsed.includes('consultar_horarios') && !PEDIU_REUNIAO.test(ctx.lastLeadText) && !QUER_LOGO.test(ctx.lastLeadText)
-        && !prontoParaReuniao(snapAgora, ctx.perguntasFeitas ?? 0) && temConvite(safe.text)) {
-        const falta = lacunasDeQualificacao(snapAgora)
-        const fixI: Msg[] = [...messages, { role: 'assistant', content: safe.text }, { role: 'system', content: `[TRAVA DO SISTEMA] Ainda é cedo para convidar para a reunião: você ainda não sabe ${falta.join('; ')}. Tire o convite. Responda o que ele trouxe (mostre que entendeu e como a gente resolve) e faça UMA pergunta sobre o que falta, ligada ao que ele contou, sem repetir pergunta que você já fez. Responda só com o texto do WhatsApp.` }]
-        const cI = await call(fixI, null, usage)
-        const tI = (cI.message?.content || '').trim()
-        if (tI) {
-          const sI = await enforce(fixI, tI, usage, handoff, ctx.lastLeadText)
-          if (!sI.guard.includes('fallback')) safe = { text: sI.text, guard: [...sI.guard, 'convite antes da hora: refeita'] }
-        }
-        // Insistiu: o convite sai (fica a resposta)
-        if (temConvite(safe.text)) {
-          const frases = safe.text.split(/(?<=[.!?])\s+|\n+/).filter(Boolean)
-          const sem = frases.filter(f => !temConvite(f)).join(' ').replace(/\s{2,}/g, ' ').trim()
-          if (sem.replace(/[^\p{L}]/gu, '').length >= 20) safe = { text: sem, guard: [...safe.guard, 'convite antes da hora: cortado'] }
         }
       }
       // Já convidou 2 vezes seguidas sem resposta ao convite: corta o convite desta mensagem (fica a resposta)
@@ -427,7 +428,14 @@ export function createBrain(opts: LlmOptions) {
 
 const FALA_DE_HORARIO = /hor[aá]rio|agenda|\bdia\b|semana|hoje|amanh|segunda|ter[cç]a|quarta|quinta|sexta|manh[aã]|tarde|noite|\d{1,2}\s*h\b|\d{1,2}:\d{2}|marc|agend|pode ser|\bs[oó] depois\b/i
 /** O lead pediu a reunião ou o que só a reunião dá: aí pode convidar antes de qualificar */
-export const PEDIU_REUNIAO = /reuni[aã]o|apresenta|demonstra[cç]|me mostr|mostrar (a|o|como)|conhecer (a |melhor a |o )?(ferramenta|plataforma|sistema)|como funciona|proposta|or[cç]amento|quanto (custa|fica|cobra|sai)|pre[cç]o|valores?\b|liga[cç][aã]o|me liga|falar com (algu[eé]m|uma pessoa|um especialista|o especialista|um humano|um atendente|um consultor)|atendimento humano|hor[aá]rio|agenda|marcar|agendar|\bmeet\b|\bcall\b|videochamada/i
+export const PEDIU_REUNIAO = /reuni[aã]o|apresenta|demonstra[cç]|me mostr|mostrar (a|o|como)|conhecer (a |melhor a |o )?(ferramenta|plataforma|sistema)|como funciona|proposta|liga[cç][aã]o|me liga|(falar|conversar) com (algu[eé]m|uma pessoa|um especialista|o especialista|um humano|um atendente|um consultor|um vendedor)|atendimento humano|hor[aá]rio|agenda|marcar|agendar|\bmeet\b|\bcall\b|videochamada/i
+/** Pedido explícito de conversa no Comment ("Gostaria de conversar com um vendedor") */
+const PEDIU_NO_COMMENT = /(falar|conversar) com (um|uma|o|a) (vendedor|consultor|especialista|pessoa|atendente)|reuni[aã]o|apresenta[cç][aã]o|demonstra[cç][aã]o|liga[cç][aã]o|me liguem/i
+/** Pediu reunião, preço de verdade (o alerta de preço, sem o "orçamento que a gente manda"), tem pressa ou pediu no Comment */
+export function pediuReuniao(textoLead: string, comentario = ''): boolean {
+  const preco = CRM_MAP.alertas.find(a => a.nome === 'perguntou preço')
+  return PEDIU_REUNIAO.test(textoLead) || QUER_LOGO.test(textoLead) || (!!preco && alertaAtivo(preco, textoLead)) || PEDIU_NO_COMMENT.test(comentario)
+}
 /** Frase que convida para a reunião/análise ("Quer marcar?", "Posso te colocar numa análise gratuita...") */
 export function temConvite(t: string): boolean {
   return t.split(/(?<=[.!?])\s+|\n+/).some(f => (/\?/.test(f) && (/\b(marc|agend)\w*/i.test(f) || /\b(posso|quer)\b[^?]{0,40}\bhor[aá]rios?\b/i.test(f)))

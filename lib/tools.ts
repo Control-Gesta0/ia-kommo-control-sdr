@@ -53,6 +53,8 @@ export interface ToolCtx {
   agora?: number
   /** quantas mensagens da IA nesta conversa já terminaram em pergunta (teto de qualificação) */
   perguntasFeitas?: number
+  /** temas de qualificação que a IA já perguntou, respondidos ou não (não pergunta de novo) */
+  temasPerguntados?: string[]
 }
 
 export interface ToolOutcome { content: string; isError: boolean; handoff?: boolean; urgente?: boolean }
@@ -242,8 +244,9 @@ export function snapshot(porta: Porta, state: LeadState): Snapshot {
  * Exemplos do que vale saber, NÃO roteiro: o problema, quantas pessoas vão usar o CRM e se fazem
  * tráfego pago / quantos leads chegam. O que o lead já contou (mesmo com outras palavras) é pulado.
  */
-export function lacunasDeQualificacao(snap0: Snapshot): string[] {
-  const sabe = (k: string) => snap0.preenchidos.some(p => p.campo.key === k)
+export function lacunasDeQualificacao(snap0: Snapshot, perguntados: string[] = []): string[] {
+  // Já perguntado e o lead não respondeu: não pergunta de novo (seria bater na mesma tecla)
+  const sabe = (k: string) => snap0.preenchidos.some(p => p.campo.key === k) || perguntados.includes(k)
   return [
     !sabe('dor') && 'qual é o problema ou o pedido',
     !sabe('vendedores') && 'quantas pessoas vão usar o CRM (3 ou mais já é uma operação boa)',
@@ -251,24 +254,34 @@ export function lacunasDeQualificacao(snap0: Snapshot): string[] {
   ].filter((x): x is string => !!x)
 }
 
-/** Já dá para convidar: problema claro e o resto respondido, ou já fez 3 perguntas (teto da conversa). */
-export function prontoParaReuniao(snap0: Snapshot, perguntasFeitas = 0): boolean {
+/** Temas de qualificação que a IA já perguntou nesta conversa (nas perguntas das mensagens dela). */
+export function temasPerguntados(textosIa: string[]): string[] {
+  const qs = textosIa.flatMap(t => t.match(/[^.!?\n]*\?/g) || []).join('\n')
+  const out: string[] = []
+  if (/quant[oa]s\s+(pessoas|vendedor|usu[aá]rio|atendente|corretor|consultor|colaborador|acessos)|tamanho (da|do) (equipe|time)|quem (mais )?(vai|v[aã]o) usar/i.test(qs)) out.push('vendedores')
+  if (/tr[aá]fego|an[uú]ncio|quant[oa]s\s+(leads|contatos|clientes|mensagens|atendimentos|oportunidades)|(leads|contatos) (chegam|entram)|volume/i.test(qs)) out.push('volume')
+  if (/o que (mais )?(t[aá] )?trava|qual (é )?o (maior )?(problema|desafio)|o que (voc[eê]s? )?(precisa|quer) (resolver|organizar)/i.test(qs)) out.push('dor')
+  return out
+}
+
+/** Já dá para convidar: problema claro e o resto respondido ou já perguntado, ou 3 perguntas feitas (teto da conversa). */
+export function prontoParaReuniao(snap0: Snapshot, perguntasFeitas = 0, perguntados: string[] = []): boolean {
   const temProblema = snap0.preenchidos.some(p => p.campo.key === 'dor')
-  return perguntasFeitas >= 4 || (temProblema && (lacunasDeQualificacao(snap0).length === 0 || perguntasFeitas >= 3))
+  return perguntasFeitas >= 4 || (temProblema && (lacunasDeQualificacao(snap0, perguntados).length === 0 || perguntasFeitas >= 3))
 }
 
 /** O que ainda falta saber, como raciocínio (não roteiro), e se já é hora de vender a reunião. */
-export function describeOpen(porta: Porta, snap0: Snapshot, perguntasFeitas = 0): string {
+export function describeOpen(porta: Porta, snap0: Snapshot, perguntasFeitas = 0, perguntados: string[] = []): string {
   if (!porta.roteiro.length) return ''
   const nicho = snap0.abertos.some(c => c.key === 'segmento') ? ' Ramo da empresa ainda não identificado: se ele já contou (ex.: "sou advogado", "minha clínica"), grave em segmento. Não pergunte só para descobrir o ramo.' : ''
   const sabe = (k: string) => snap0.preenchidos.some(p => p.campo.key === k)
   const gravar = ' Grave com salvar_respostas o que o Comment ou as mensagens já contam.'
   const bomSaber = [!sabe('decisor') && 'quem decide junto (se for outra pessoa, ela vai para a reunião)', !sabe('prioridade') && 'se há pressa'].filter(Boolean)
   const extra = bomSaber.length ? ` Bom saber se aparecer na conversa, sem perguntar só por isso: ${bomSaber.join('; ')}.` : ''
-  if (prontoParaReuniao(snap0, perguntasFeitas)) {
+  if (prontoParaReuniao(snap0, perguntasFeitas, perguntados)) {
     return `Você já entendeu o cenário: agora VENDA a reunião, sem mais perguntas de qualificação (ligue o que ele contou ao que a implantação resolve e ofereça a análise gratuita com o especialista). Só chame consultar_horarios depois que ele topar ou se ele já pediu horário.${gravar}${extra}${nicho}`
   }
-  const lacunas = lacunasDeQualificacao(snap0)
+  const lacunas = lacunasDeQualificacao(snap0, perguntados)
   const limite = perguntasFeitas >= 2 ? ' Você já fez 2 perguntas: no máximo mais UMA antes de vender a reunião.' : ''
   return `Antes de convidar para a reunião, ainda falta entender: ${lacunas.join('; ')}. São exemplos, não roteiro: pergunte UMA coisa por vez, a que mais ajuda agora, partindo do que ele acabou de dizer; se ele já respondeu com outras palavras, grave e pule. Enquanto isso, escute: mostre que entendeu e como a gente resolve o que ele contou. NÃO convide para a reunião ainda, a não ser que ele peça (reunião, apresentação, conhecer a ferramenta, proposta ou preço, falar com alguém) ou tenha pressa.${sabe('dor') ? ' O problema já está claro: não pergunte de novo o que trava.' : ''}${limite}${gravar}${extra}${nicho}`
 }
@@ -406,7 +419,7 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
           isError: erros.length > 0 && salvos.length === 0,
           content: [salvos.length ? `Salvo: ${salvos.join(' · ')}.` : '',
             pedirNomeDecisor ? 'O decisor foi citado só pelo cargo: NESTA resposta, peça o nome dele sem ponto de interrogação ("Me passa o nome dele que eu já deixo no convite da reunião.") e diga que ele precisa participar. Depois use o nome.' : '',
-            convidarDecisor ? 'O decisor é outra pessoa: NESTA resposta, em meia frase, diga que vale ele participar da reunião com o nosso especialista (é quem aprova), usando o nome dele.' : '', erros.length ? `Não salvo: ${erros.join(' · ')}.` : '', describeOpen(porta, snapshot(porta, next), ctx.perguntasFeitas ?? 0)].filter(Boolean).join(' '),
+            convidarDecisor ? 'O decisor é outra pessoa: NESTA resposta, em meia frase, diga que vale ele participar da reunião com o nosso especialista (é quem aprova), usando o nome dele.' : '', erros.length ? `Não salvo: ${erros.join(' · ')}.` : '', describeOpen(porta, snapshot(porta, next), ctx.perguntasFeitas ?? 0, ctx.temasPerguntados)].filter(Boolean).join(' '),
         }
       }
 

@@ -294,7 +294,7 @@ export const CENARIOS_REAIS: Cenario[] = [
     criterios: [
       'A abertura não termina com a lista pronta "perder lead, etapa ou relatório"',
       'Quando ele conta o problema (orçamento sem retorno), a IA mostra como a organização e a cadência de follow-up resolvem isso, sem perguntar de novo o que ele já contou',
-      'Com o volume alto (25 leads por dia), a IA usa isso para tocar na dor e só então convida para a análise com o especialista',
+      'Quando ele conta o volume (25 leads por dia), a IA usa isso para tocar na dor (organização e cadência de follow-up) e liga ao convite para a análise com o especialista, sem agir como se ele já tivesse aceitado',
     ],
   },
   {
