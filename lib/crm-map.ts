@@ -78,7 +78,7 @@ const AGENDA: AgendaConfig = {
 }
 
 /** Dúvida sobre a cobrança da Meta por mensagem (API oficial do WhatsApp) */
-const CUSTO_META = /\bmeta\b.{0,80}(pag|cobr|valor|custo|aprov)|(pag|cobr|valor|custo).{0,80}\bmeta\b|por mensagem|api oficial.{0,60}(pag|cobr|custo)|templates?.{0,40}(pag|cobr|aprov)/i
+const CUSTO_META = /\bmeta\b.{0,80}(pag|cobr|valor|custo|aprov)|(pag|cobr|valor|custo).{0,80}\bmeta\b|por mensagem|api oficial.{0,60}(pag|cobr|custo)|templates?.{0,40}(pag|cobr|aprov)|n[aã]o (quero )?pagar (mais )?nada al[eé]m|pagar s[oó] (o|a) kommo|s[oó] (o|a) kommo e mais nada/i
 
 export const CRM_MAP = {
   /** textarea que o Salesbot envia (Desenho A) */

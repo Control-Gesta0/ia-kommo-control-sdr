@@ -73,7 +73,7 @@ export function createBrain(opts: LlmOptions) {
     return `${nucleo.trim()}\n\n---\n\n${portaTxt.trim()}`
   }
 
-  async function buildSystem(ctx: ToolCtx, lead: LeadContext): Promise<Msg[]> {
+  async function buildSystem(ctx: ToolCtx, lead: LeadContext, historico: ChatMsg[] = []): Promise<Msg[]> {
     const state = await ctx.port.getState()
     const snap = snapshot(ctx.porta, state)
     const relogio = ctx.agora ?? Date.now()
@@ -102,9 +102,11 @@ export function createBrain(opts: LlmOptions) {
       SO_CUMPRIMENTO.test(ctx.lastLeadText.trim()) && ctx.lastAgentText
         ? 'O lead SÓ cumprimentou (não respondeu sua pergunta). Cumprimente de volta em poucas palavras e siga SEM repetir a pergunta anterior, nem com outras palavras: traga um ponto de valor curto ligado ao pedido dele ou uma pergunta diferente.'
         : '',
-      !state.oferta?.length && CONVITE.test(ctx.lastAgentText) && !ehAceite(ctx.lastLeadText)
-        ? 'Você JÁ convidou para a reunião na mensagem anterior e ele respondeu outra coisa: use o que ele trouxe e NÃO repita o convite igual. Se for convidar de novo, que seja diferente: mais concreto (chame consultar_horarios e já ofereça 2 horários) ou ligado ao que ele acabou de contar.'
-        : '',
+      ehAceite(ctx.lastLeadText) ? '' : convitesSeguidos(historico) >= 2
+        ? 'Você JÁ convidou para a reunião nas suas últimas mensagens e ele não respondeu ao convite. NESTA mensagem NÃO convide, não pergunte se quer marcar e não ofereça ver horários: só responda o que ele trouxe, curto. O convite continua de pé; ele responde quando quiser.'
+        : convitesSeguidos(historico) === 1
+          ? 'Você JÁ convidou para a reunião na mensagem anterior e ele respondeu outra coisa: use o que ele trouxe e NÃO repita o convite igual. Só convide de novo se for diferente e útil (mais concreto, com 2 horários, ou ligado ao que ele acabou de contar); senão, só responda.'
+          : '',
       state.reuniao ? `REUNIÃO JÁ MARCADA: ${state.reuniao.label}. Não marque outra.` : '',
       ...CRM_MAP.alertas.filter(a => alertaAtivo(a, ctx.lastLeadText)).map(a => `⚠️ ALERTA DO SISTEMA (${a.nome}): ${a.aviso}`),
       `Perguntas que você já fez nesta conversa: ${ctx.perguntasFeitas ?? 0} (teto de 3 a 4 na conversa inteira)`,
@@ -166,7 +168,7 @@ export function createBrain(opts: LlmOptions) {
     let handoff = false
     let urgente = false
     const tools = buildTools(ctx.porta)
-    const messages: Msg[] = [...(await buildSystem(ctx, lead)), ...turns]
+    const messages: Msg[] = [...(await buildSystem(ctx, lead, history)), ...turns]
     let cobrouHorario = false
 
     for (let step = 0; step < MAX_STEPS; step++) {
@@ -218,6 +220,15 @@ export function createBrain(opts: LlmOptions) {
             const sem = safe.text.replace(ainda.texto, '').replace(/\n{3,}/g, '\n\n').trim()
             if (sem.replace(/[^\p{L}]/gu, '').length >= 20) safe = { text: sem, guard: [...safe.guard, 'pergunta repetida: cortada'] }
           }
+        }
+      }
+      // Já convidou 2 vezes seguidas sem resposta ao convite: corta o convite desta mensagem (fica a resposta)
+      if (!handoff && !estado.oferta?.length && !ehAceite(ctx.lastLeadText) && !toolsUsed.includes('consultar_horarios') && convitesSeguidos(history) >= 2) {
+        const frases = safe.text.split(/(?<=[.!?])\s+|\n+/).filter(Boolean)
+        const eConvite = (f: string) => /\?/.test(f) && (CONVITE.test(f) || OFERECEU_VER_HORARIO.test(f) || /\b(marcar|agendar|agende|marque|reuni[aã]o|an[aá]lise|conversa)\b/i.test(f))
+        if (frases.some(eConvite)) {
+          const sem = frases.filter(f => !eConvite(f)).join(' ').replace(/\s{2,}/g, ' ').trim()
+          if (sem.replace(/[^\p{L}]/gu, '').length >= 20) safe = { text: sem, guard: [...safe.guard, 'convite repetido: cortado'] }
         }
       }
       // Mesma lista de horários em mensagens seguidas, sem o lead falar de horário: refaz sem repetir a lista
@@ -358,6 +369,17 @@ export function perguntasDe(t: string): Array<{ texto: string; palavras: string[
 export function parecidas(a: { palavras: string[] }, b: { palavras: string[] }): boolean {
   const sb = new Set(b.palavras)
   return a.palavras.filter(w => sb.has(w)).length / Math.min(a.palavras.length, b.palavras.length) >= 0.6
+}
+
+/** Quantas das últimas mensagens da IA (seguidas, mais recentes) convidaram para a reunião sem o lead aceitar. */
+export function convitesSeguidos(historico: Array<{ dir: string; text: string }>): number {
+  let n = 0
+  for (const m of [...historico].reverse()) {
+    if (m.dir !== 'out') continue
+    if (CONVITE.test(m.text) || OFERECEU_VER_HORARIO.test(m.text) || /an[aá]lise gratuita|reuni[aã]o/i.test(m.text) && /\?/.test(m.text)) n++
+    else break
+  }
+  return n
 }
 
 export function alertaAtivo(a: { re: RegExp; exceto?: RegExp }, texto: string): boolean {
