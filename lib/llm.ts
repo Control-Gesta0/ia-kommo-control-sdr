@@ -200,9 +200,10 @@ export function createBrain(opts: LlmOptions) {
       }
       // Bateu na mesma tecla: pergunta que ela JÁ fez antes (igual ou com outras palavras) → refaz uma vez
       const estado = await ctx.port.getState()
-      if (!handoff && !estado.oferta?.length) {
-        const jaFeitas = history.filter(m => m.dir === 'out').flatMap(m => perguntasDe(m.text))
-        const repetida = perguntasDe(safe.text).find(p => jaFeitas.some(q => parecidas(p, q)))
+      const jaFeitas = history.filter(m => m.dir === 'out').flatMap(m => perguntasDe(m.text))
+      const repetidaEm = (t: string) => perguntasDe(t).find(p => jaFeitas.some(q => parecidas(p, q)))
+      if (!handoff && (!estado.oferta?.length || !(FALA_DE_HORARIO.test(ctx.lastLeadText) || ehAceite(ctx.lastLeadText)))) {
+        const repetida = repetidaEm(safe.text)
         if (repetida) {
           const fixQ: Msg[] = [...messages, { role: 'assistant', content: safe.text }, { role: 'system', content: `[TRAVA DO SISTEMA] Você repetiu uma pergunta que já fez antes nesta conversa ("${repetida.texto}"). Não pergunte isso de novo, nem com outras palavras. Responda o que ele trouxe e, se precisar perguntar, pergunte outra coisa que falte de verdade, ou venda a reunião de outro jeito (mais concreto). Responda só com o texto do WhatsApp.` }]
           const cQ = await call(fixQ, null, usage)
@@ -211,13 +212,20 @@ export function createBrain(opts: LlmOptions) {
             const sQ = await enforce(fixQ, tQ, usage, handoff, ctx.lastLeadText)
             if (!sQ.guard.includes('fallback')) safe = { text: sQ.text, guard: [...sQ.guard, 'pergunta repetida: refeita'] }
           }
+          // Insistiu na mesma pergunta: corta a frase repetida (fica a resposta, sem bater na mesma tecla)
+          const ainda = repetidaEm(safe.text)
+          if (ainda) {
+            const sem = safe.text.replace(ainda.texto, '').replace(/\n{3,}/g, '\n\n').trim()
+            if (sem.replace(/[^\p{L}]/gu, '').length >= 20) safe = { text: sem, guard: [...safe.guard, 'pergunta repetida: cortada'] }
+          }
         }
       }
       // Mesma lista de horários em mensagens seguidas, sem o lead falar de horário: refaz sem repetir a lista
       if (!handoff && estado.oferta?.length) {
         const horas = estado.oferta.map(o => (o.label.match(/\d{1,2}h(?:\d{2})?/) || [''])[0]).filter(Boolean)
         const citaHoras = (t: string) => horas.some(h => new RegExp(`\\b${h}\\b`).test(t))
-        if (citaHoras(ctx.lastAgentText) && citaHoras(safe.text) && !FALA_DE_HORARIO.test(ctx.lastLeadText)) {
+        const ultimasIa = history.filter(m => m.dir === 'out').slice(-2).map(m => m.text)
+        if (ultimasIa.some(citaHoras) && citaHoras(safe.text) && !FALA_DE_HORARIO.test(ctx.lastLeadText)) {
           const fixH: Msg[] = [...messages, { role: 'assistant', content: safe.text }, { role: 'system', content: '[TRAVA DO SISTEMA] Você já mandou esses horários na mensagem anterior e ele falou de outra coisa. Responda o que ele trouxe SEM repetir os horários (eles continuam valendo). No máximo, termine perguntando se ele quer seguir com um deles, sem citar dia e hora de novo. Responda só com o texto do WhatsApp.' }]
           const cH = await call(fixH, null, usage)
           const tH = (cH.message?.content || '').trim()
@@ -331,7 +339,7 @@ export function createBrain(opts: LlmOptions) {
   return { generateReply, generateOpening, generateFollowup }
 }
 
-const FALA_DE_HORARIO = /hor[aá]rio|agenda|\bdia\b|semana|hoje|amanh|segunda|ter[cç]a|quarta|quinta|sexta|manh[aã]|tarde|noite|\d{1,2}\s*h\b|\d{1,2}:\d{2}|marc|agend|pode ser|serve|qual|esse|essa|primeir|segund/i
+const FALA_DE_HORARIO = /hor[aá]rio|agenda|\bdia\b|semana|hoje|amanh|segunda|ter[cç]a|quarta|quinta|sexta|manh[aã]|tarde|noite|\d{1,2}\s*h\b|\d{1,2}:\d{2}|marc|agend|pode ser|\bs[oó] depois\b/i
 const SO_CUMPRIMENTO = /^(?:(?:oi+|ol[aá]|opa|e a[ií]|bom dia|boa tarde|boa noite|tudo bem|tudo bom|como vai|lara)[\s,!.?]*)+$/i
 const OFERECEU_VER_HORARIO = /\b(posso|quer que eu|consigo|vou|j[aá] vou|deixa eu)\b[^.?!\n]{0,30}\b(verificar|ver|veja|consultar|consulte|checar|buscar|busque|olhar|separar|verifique)\b[^.?!\n]{0,40}\b(hor[aá]rio|agenda)/i
 const QUER_LOGO = /\b(hoje|logo|urgente|o quanto antes|r[aá]pido|essa semana|esta semana|amanh[aã])\b/i

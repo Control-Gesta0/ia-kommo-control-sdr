@@ -17,29 +17,31 @@ const palavras = (t: string) => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ
 const perguntas = (t: string) => (t.match(/[^.!?\n]*\?/g) || []).map(palavras).filter(p => p.length >= 2)
 const parecida = (a: string[], b: string[]) => { const sb = new Set(b); return a.filter(w => sb.has(w)).length / Math.min(a.length, b.length) >= 0.6 }
 const LISTA_PRONTA = /perder lead.{0,60}etapa.{0,60}relat[oó]rio/i
-// Escolher entre horários oferecidos pode se repetir ("qual fica melhor?"); o resto não
-const DE_HORARIO = /\b(qual|hor[aá]rio|melhor|serve|funciona)\b/i
 
 const ateDuas = { nome: 'no máximo 2 perguntas por resposta', fn: (_w: any, t: T[]) => t.every(x => (x.resposta.match(/\?/g) || []).length <= 2) }
+const HORA = /\b\d{1,2}h(?:\d{2})?\b/g
+const FALA_HORARIO = /hor[aá]rio|agenda|\bdia\b|semana|hoje|amanh|segunda|ter[cç]a|quarta|quinta|sexta|manh[aã]|tarde|\d{1,2}\s*h\b|marc|agend|pode ser/i
+const SO_ACEITE = /^(beleza|ok|okay|pode ser|sim|blz|certo|fechado|perfeito)\W*$/i
 const naoRepetePergunta = {
   nome: 'não repete a mesma pergunta (nem com outras palavras)',
-  fn: (_w: any, t: T[]) => {
-    const todas = t.flatMap((x, i) => (x.resposta.match(/[^.!?\n]*\?/g) || []).filter(q => !DE_HORARIO.test(q)).map(palavras).filter(p => p.length >= 2).map(p => ({ i, p })))
-    return !todas.some((a, k) => todas.slice(k + 1).some(b => b.i !== a.i && parecida(a.p, b.p)))
-  },
+  fn: (_w: any, t: T[]) => t.every((x, i) => {
+    // Lead falou de horário ou só aceitou: perguntar qual horário de novo é natural
+    if (i === 0 || FALA_HORARIO.test(x.lead) || SO_ACEITE.test(x.lead.trim())) return true
+    const antes = t.slice(0, i).flatMap(y => perguntas(y.resposta))
+    return !perguntas(x.resposta).some(p => antes.some(q => parecida(p, q)))
+  }),
 }
 const semListaPronta = { nome: 'não usa a lista pronta "perder lead / etapa / relatório"', fn: (_w: any, t: T[]) => t.every(x => !LISTA_PRONTA.test(x.resposta)) }
 const semFallback = { nome: 'nenhuma resposta caiu no texto de segurança', fn: (_w: any, t: T[]) => t.every(x => !x.guard.includes('fallback')) }
 const semTravessao = { nome: 'sem travessão', fn: (_w: any, t: T[]) => t.every(x => !/[—–]/.test(x.resposta)) }
 const semFaixaFaturamento = (t: string) => t.replace(/[^.?!\n]*fatura[^.?!\n]*[.?!]?/gi, '')
 // Preço da LICENÇA (R$ 104 / 156 / 234 por usuário, e o total dele) pode; valor de serviço a IA não tem
-const semLicenca = (t: string) => t.replace(/r\$\s*(104|156|234|1\.?170)(,00)?/gi, '')
+const LICENCA = [104, 156, 234]
+const semLicenca = (t: string) => t.replace(/r\$\s*([\d.]+)(?:,\d{2})?/gi, (m: string, n: string) => { const v = Number(String(n).replace(/\./g, '')); return LICENCA.some(p => v > 0 && v % p === 0) ? '' : m })
 const semPrecoServico = { nome: 'não inventa valor de serviço em R$', fn: (_w: any, t: T[]) => t.every(x => !/r\$\s*\d|\d+\s*(mil )?reais|a partir de r?\$?\s*\d/i.test(semLicenca(semFaixaFaturamento(x.resposta)))) }
 const marcou = (iso: string) => ({ nome: `marcou UMA reunião em ${iso}`, fn: (w: any) => w.reunioes.length === 1 && new Date(w.reunioes[0].ini).toISOString() === iso && w.state.finalizado?.motivo === 'agendado' })
 const naoMarcou = { nome: 'não criou reunião', fn: (w: any) => w.reunioes.length === 0 }
 const confirmaSemPergunta = { nome: 'confirmação final sem pergunta', fn: (_w: any, t: T[]) => !t[t.length - 1].resposta.includes('?') }
-const HORA = /\b\d{1,2}h(?:\d{2})?\b/g
-const FALA_HORARIO = /hor[aá]rio|agenda|\bdia\b|semana|hoje|amanh|segunda|ter[cç]a|quarta|quinta|sexta|manh[aã]|tarde|\d{1,2}\s*h\b|marc|agend|pode ser|qual/i
 const naoRepeteHorarios = {
   nome: 'não repete a mesma lista de horários em mensagens seguidas (quando o lead fala de outra coisa)',
   fn: (_w: any, t: T[]) => t.every((x, i) => {
