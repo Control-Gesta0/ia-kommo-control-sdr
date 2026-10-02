@@ -61,6 +61,38 @@ export function primeiroNomeDe(nome: string): string {
   return titulo ? `${titulo} ${n}` : n
 }
 
+/** Mensagem do lead que é SÓ cumprimento ("Bom dia", "Oi, tudo bem?", "Olá Lara"). */
+export const SO_CUMPRIMENTO = /^(?:(?:oi+e?|ol[aá]|opa|e a[ií]|bom dia|boa tarde|boa noite|tudo bem|tudo bom|tudo certo|como vai|lara)[\s,!.?]*)+$/i
+
+/** O lead só cumprimentou: a saudação que volta pra ele (a dele: "Bom dia" → "Bom dia"; "Oi" → "Oi"). Vazio se não é só cumprimento. */
+export function cumprimentoDoLead(texto: string): string {
+  const t = (texto || '').trim()
+  if (!t || !SO_CUMPRIMENTO.test(t)) return ''
+  const m = t.match(/bom dia|boa tarde|boa noite/i)
+  if (m) return m[0][0].toUpperCase() + m[0].slice(1).toLowerCase()
+  return /^ol[aá]/i.test(t) ? 'Olá' : 'Oi'
+}
+
+/**
+ * O lead só disse "Bom dia" (Luiz, 02/10): a resposta devolve o cumprimento dele
+ * ("Bom dia, Luiz!") em vez de entrar seca no assunto. Tira o cumprimento que o
+ * modelo já tenha escrito para não duplicar.
+ */
+export function cumprimentarDeVolta(texto: string, cumprimento: string, nome = ''): string {
+  if (!cumprimento) return texto
+  const nomeRe = nome ? new RegExp(`^${nome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}])`, 'u') : null
+  let t = texto.trim()
+  // "Oi, Luiz, bom dia! ..." → "..."
+  for (let i = 0; i < 4; i++) {
+    const antes = t
+    t = t.replace(/^(?:oi+e?|ol[aá]|opa|bom dia|boa tarde|boa noite)(?![\p{L}])/iu, '').replace(/^[\s,!.]+/, '')
+    if (nomeRe) t = t.replace(nomeRe, '').replace(/^[\s,!.]+/, '')
+    if (t === antes) break
+  }
+  const abre = `${cumprimento}${nome ? `, ${nome}` : ''}!`
+  return t ? `${abre} ${t[0].toUpperCase()}${t.slice(1)}` : abre
+}
+
 /** Tira "Boa tarde!"/"Oi, bom dia!" do começo (só a primeira mensagem da conversa cumprimenta). */
 export function tirarSaudacao(texto: string): string {
   const t = texto.trim()

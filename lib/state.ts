@@ -38,6 +38,8 @@ export interface LeadState {
   oferta?: Array<{ ini: number; fim: number; label: string }>
   ofertaEm?: number
   reuniao?: { ini: number; fim: number; label: string; taskId: string; em: string }
+  /** pediu atendimento humano e a IA ofereceu a reunião no lugar; se pedir de novo, passa para o time */
+  humanoOferecido?: boolean
 }
 
 const TTL = 90 * 86400

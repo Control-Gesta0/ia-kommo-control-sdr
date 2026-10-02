@@ -12,8 +12,9 @@ export function checkReply(text: string, regras = REGRAS_CLIENTE): Violation[] {
     const m = text.match(re)
     if (m) out.push({ regra, trecho: m[0] })
   }
-  // GPT-5.4 Mini sem raciocínio às vezes vaza sintaxe de tool, JSON ou alfabeto estranho (comum §49)
-  const corrupt = text.match(/to=functions\.|\w+\(\{"|[ऀ-෿฀-๿ក-៿぀-ヿ一-鿿가-힯]/)
+  // GPT-5.4 Mini sem raciocínio às vezes vaza sintaxe de tool, JSON ou alfabeto estranho (comum §49);
+  // qualquer letra fora do alfabeto latino ("Tenho երկու opções", 02/10) também é corrompido
+  const corrupt = text.match(/to=functions\.|\w+\(\{"|[^\P{L}\p{Script=Latin}]/u)
   if (corrupt) out.push({ regra: 'texto corrompido', trecho: corrupt[0] })
   const json = text.match(/^\s*[\[{]|"(campo|evidencia|respostas|motivo|resumo|valor)"\s*:/)
   if (json) out.push({ regra: 'texto corrompido', trecho: json[0] })

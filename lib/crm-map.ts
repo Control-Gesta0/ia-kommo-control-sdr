@@ -38,7 +38,9 @@ const CAMPOS = {
   },
   dor: {
     key: 'dor', curto: 'Dor', id: 1046003, kommoName: 'Problema', name: 'Problema ou pedido do lead (o que ele quer resolver, nas palavras dele)', type: 'textarea',
-    sinal: /perd|esquec|some|sum|escap|etapa|fase|onde (est|par)|relat[oó]rio|n[uú]mero|m[eé]trica|indicador|controle|acompanh|organiz|bagun|demor|follow|retorno|respond|resposta|vis[aã]o|gest[aã]o|funil|atendimento|whats/i,
+    // Problema OU pedido (02/10): "Implementação e estruturação do CRM", "não consigo fazer os gatilhos
+    // funcionarem" e "orçamento que ninguém retorna" eram recusados e a Lara voltava a perguntar o problema
+    sinal: /perd|esquec|some|sum|escap|etapa|fase|onde (est|par)|relat[oó]rio|n[uú]mero|m[eé]trica|indicador|controle|acompanh|organiz|bagun|demor|follow|retorn|respond|resposta|vis[aã]o|gest[aã]o|funil|funis|atendimento|whats|implant|implement|estrutur|configur|automa|gatilho|fluxo|rob[oô]|salesbot|integr|dispar|lembrete|agendamento|confirma|\bcrm\b|kommo|treina|centraliz|or[cç]amento|proposta|\bvendas?\b|\bvender\b|dificuldade|n[aã]o consigo|n[aã]o sei (mexer|usar|configurar)|problema|ajuda|conhecer/i,
     pergunta: 'O que mais tá travando hoje no atendimento de vocês: perder lead, não saber em que etapa cada um está ou não ter relatório?',
   },
   impacto: {

@@ -418,6 +418,16 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
       case 'finalizar_atendimento': {
         const motivo = String(input.motivo || '') as Motivo
         if (!MOTIVOS.includes(motivo)) return err(`Motivo inválido: ${motivo}`)
+        // "Atendimento humano" / "quero conhecer a ferramenta" é a reunião com o especialista (Luiz, 02/10):
+        // na 1ª vez a IA oferece a reunião; passa para o time se ele pedir ligação/outro número, recusar a
+        // reunião ou pedir gente de novo depois da oferta (insistir não vira "mesma tecla")
+        if (motivo === 'pediu_humano' && !/\b(?:liga(?:r|[cç][aã]o)?|ligue|telefone|me chama no|neste n[uú]mero|nesse n[uú]mero|meu n[uú]mero|n[aã]o quero (?:reuni|marcar|agendar)|agora mesmo|urgente)(?![\p{L}])/iu.test(ctx.lastLeadText)) {
+          const st = await port.getState()
+          if (!st.humanoOferecido) {
+            await port.patchState({ humanoOferecido: true })
+            return err('NÃO finalizado: pedir atendimento humano ou para conhecer a ferramenta é a reunião com o especialista (é uma pessoa do time que apresenta). Ofereça a reunião, de preferência já com 2 horários (consultar_horarios). Se ele pedir gente de novo, aí pode finalizar como pediu_humano.')
+          }
+        }
         const state = await port.getState()
         if (motivo === 'venda_licenca') {
           const n = numeroVendedores(state.respostas?.vendedores)

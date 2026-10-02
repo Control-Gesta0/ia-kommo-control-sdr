@@ -6,7 +6,7 @@ import {
   alreadyAnswered, appendMessage, getHistory, humanSpokeRecently, lastInbound, markAnswered, type ChatMsg,
 } from './history'
 import { getContact, getLead, leadTags, sleep } from './kommo'
-import { ajustarResposta, dividirMensagem } from './tom'
+import { acabamentoDoTurno, ajustarResposta, dividirMensagem } from './tom'
 import { createBrain } from './llm'
 import { kommoPort } from './port'
 import { rotear } from './router'
@@ -161,7 +161,7 @@ export async function processLead(leadId: number, webhookId: string): Promise<vo
         anteriores: conversa.filter(m => m.dir === 'out').map(m => m.text),
         faltaVendedores: false,
         handoff: reply.handoff,
-        protegerSolucao: (!state.respostas?.dor && !!st2.respostas?.dor) || textoTurno.includes('?'),
+        ...acabamentoDoTurno(textoTurno, !!state.respostas?.dor, !!st2.respostas?.dor),
       })
       const detail = await enviar(leadId, reply.text, !reply.handoff)
       await markAnswered(leadId, target.id)

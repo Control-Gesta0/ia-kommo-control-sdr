@@ -4,7 +4,7 @@ import OpenAI from 'openai'
 import { CRM_MAP, type Porta } from './crm-map'
 import { addUsage, emptyUsage, type Usage } from './execlog'
 import { checkReply, keepLastQuestion, overlap, semEspanhol, semTravessao, type Violation } from './guards'
-import { abreComPergunta, garantirSaudacao, primeiroNomeDe, saudacao } from './saudacao'
+import { abreComPergunta, garantirSaudacao, primeiroNomeDe, saudacao, SO_CUMPRIMENTO } from './saudacao'
 import type { ChatMsg } from './history'
 import { aplicarFinalizacao, buildTools, describeOpen, runTool, snapshot, type ToolCtx } from './tools'
 
@@ -100,7 +100,7 @@ export function createBrain(opts: LlmOptions) {
       state.outroAssunto ? `Outro assunto já registrado: ${state.outroAssunto}` : '',
       state.oferta?.length ? `Horários já oferecidos (só estes valem): ${state.oferta.map(o => o.label).join(' · ')}. O foco agora é ele escolher um deles: não volte a qualificar. Se ele trouxe outra coisa, responda; NÃO repita a mesma lista de horários se você já a mandou na mensagem anterior (no máximo pergunte se algum serve ou se prefere outro dia).` : '',
       SO_CUMPRIMENTO.test(ctx.lastLeadText.trim()) && ctx.lastAgentText
-        ? 'O lead SÓ cumprimentou (não respondeu sua pergunta). Cumprimente de volta em poucas palavras e siga SEM repetir a pergunta anterior, nem com outras palavras: traga um ponto de valor curto ligado ao pedido dele ou uma pergunta diferente.'
+        ? 'O lead SÓ cumprimentou e a sua pergunta anterior continua no ar. Devolva o cumprimento em poucas palavras e deixe a palavra com ele: NÃO repita a pergunta anterior (nem com outras palavras) e não faça outra pergunta de qualificação. Pode perguntar se está tudo bem ou dizer, numa frase, que está por aqui pra ajudar com o que ele pediu.'
         : '',
       ehAceite(ctx.lastLeadText) ? '' : convitesSeguidos(historico) >= 2
         ? 'Você JÁ convidou para a reunião nas suas últimas mensagens e ele não respondeu ao convite. NESTA mensagem NÃO convide, não pergunte se quer marcar e não ofereça ver horários: só responda o que ele trouxe, curto. O convite continua de pé; ele responde quando quiser.'
@@ -219,6 +219,28 @@ export function createBrain(opts: LlmOptions) {
           if (ainda) {
             const sem = safe.text.replace(ainda.texto, '').replace(/\n{3,}/g, '\n\n').trim()
             if (sem.replace(/[^\p{L}]/gu, '').length >= 20) safe = { text: sem, guard: [...safe.guard, 'pergunta repetida: cortada'] }
+          }
+        }
+      }
+      // Lead só cumprimentou e a pergunta anterior continua no ar: devolve o cumprimento e deixa a palavra com ele
+      // (Luiz, 02/10: depois do "Bom dia" ela refazia a pergunta da abertura com outras palavras)
+      if (!handoff && SO_CUMPRIMENTO.test(ctx.lastLeadText.trim()) && /\?/.test(ctx.lastAgentText || '')) {
+        const qualifica = (t: string) => perguntasDe(t).filter(p => !RAPPORT.test(p.texto))
+        if (qualifica(safe.text).length) {
+          const fixC: Msg[] = [...messages, { role: 'assistant', content: safe.text }, { role: 'system', content: '[TRAVA DO SISTEMA] Ele só cumprimentou e a sua pergunta anterior continua no ar. Devolva o cumprimento em poucas palavras e deixe a palavra com ele: NÃO faça pergunta de qualificação nesta mensagem, nem a anterior com outras palavras. Pode perguntar se está tudo bem ou dizer, numa frase, que está por aqui pra ajudar com o que ele pediu. Responda só com o texto do WhatsApp.' }]
+          const cC = await call(fixC, null, usage)
+          const tC = (cC.message?.content || '').trim()
+          if (tC) {
+            const sC = await enforce(fixC, tC, usage, handoff, ctx.lastLeadText)
+            if (!sC.guard.includes('fallback')) safe = { text: sC.text, guard: [...sC.guard, 'só cumprimento: refeita sem pergunta'] }
+          }
+          // Insistiu: a pergunta sai (fica o resto; o cumprimento de volta entra no acabamento, lib/tom.ts)
+          const sobra = qualifica(safe.text)
+          if (sobra.length) {
+            let sem = safe.text
+            for (const p of sobra) sem = sem.replace(p.texto, '')
+            sem = sem.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+            safe = { text: sem.replace(/[^\p{L}]/gu, '').length >= 3 ? sem : 'Tudo bem?', guard: [...safe.guard, 'só cumprimento: pergunta cortada'] }
           }
         }
       }
@@ -351,8 +373,9 @@ export function createBrain(opts: LlmOptions) {
 }
 
 const FALA_DE_HORARIO = /hor[aá]rio|agenda|\bdia\b|semana|hoje|amanh|segunda|ter[cç]a|quarta|quinta|sexta|manh[aã]|tarde|noite|\d{1,2}\s*h\b|\d{1,2}:\d{2}|marc|agend|pode ser|\bs[oó] depois\b/i
-const SO_CUMPRIMENTO = /^(?:(?:oi+|ol[aá]|opa|e a[ií]|bom dia|boa tarde|boa noite|tudo bem|tudo bom|como vai|lara)[\s,!.?]*)+$/i
-const OFERECEU_VER_HORARIO = /\b(posso|quer que eu|consigo|vou|j[aá] vou|deixa eu)\b[^.?!\n]{0,30}\b(verificar|ver|veja|consultar|consulte|checar|buscar|busque|olhar|separar|verifique)\b[^.?!\n]{0,40}\b(hor[aá]rio|agenda)/i
+/** Pergunta de cortesia ("tudo bem?", "como vai?"), não de qualificação */
+const RAPPORT = /^(?:\p{L}+,?\s+)?(?:e\s+)?(?:tudo (?:bem|bom|certo|tranquilo|joia)|como (?:vai|est[aá]|voc[eê] est[aá]))[^?]{0,20}\?$/iu
+const OFERECEU_VER_HORARIO =/\b(posso|quer que eu|consigo|vou|j[aá] vou|deixa eu)\b[^.?!\n]{0,30}\b(verificar|ver|veja|consultar|consulte|checar|buscar|busque|olhar|separar|verifique)\b[^.?!\n]{0,40}\b(hor[aá]rio|agenda)/i
 const QUER_LOGO = /\b(hoje|logo|urgente|o quanto antes|r[aá]pido|essa semana|esta semana|amanh[aã])\b/i
 const PROMETEU_HORARIO = /\b(vou|j[aá] vou|deixa eu|vou te)\b[^.?!\n]{0,40}\b(buscar|verificar|ver|consultar|checar|olhar|separar|mandar)\b[^.?!\n]{0,40}\b(hor[aá]rio|agenda|op[cç][oõ]es)/i
 const PERGUNTA_LICENCA = /\b(plano|planos|licen[cç]a|pro|b[aá]sico|avan[cç]ado|por usu[aá]rio|mensalidade da kommo)\b/i

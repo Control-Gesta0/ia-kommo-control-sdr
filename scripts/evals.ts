@@ -1,4 +1,4 @@
-import { ajustarResposta, dividirMensagem } from '../lib/tom'
+import { acabamentoDoTurno, ajustarResposta, dividirMensagem } from '../lib/tom'
 /**
  * O EXAME DO CÉREBRO — roda os prompts LOCAIS com as tools REAIS numa porta em
  * memória (zero efeito no CRM). Cenários em evals/cenarios.ts (patch do cliente).
@@ -141,7 +141,7 @@ async function main() {
           faltaVendedores: false,
           handoff: !!reply.handoff,
           agora,
-          protegerSolucao: (!dorAntes && !!w.state.respostas?.dor) || bloco.includes('?'),
+          ...acabamentoDoTurno(bloco, dorAntes, !!w.state.respostas?.dor),
         }) : ''
         if (process.env.EVAL_BRUTO === '1' && reply?.text && reply.text !== resposta) console.log(`[bruto ${c.id}] ${reply.text}\n[ajustado] ${resposta}`)
         custo += reply ? costUsd(MODEL, reply.usage) || 0 : 0
@@ -151,14 +151,14 @@ async function main() {
 
       const falhasCodigo = c.checks.filter(ch => { try { return !ch.fn(w, turnos) } catch { return true } }).map(ch => ch.nome)
       // Como o lead recebe: resposta e pergunta podem sair em duas mensagens (lib/tom.ts dividirMensagem)
-      const iaTexto = (r: string) => dividirMensagem(r).map((p, i) => `${i ? 'IA (2ª mensagem)' : 'IA'}: ${p}`).join('\n')
+      const iaTexto = (r: string) => dividirMensagem(r).map((p, i) => `${i ? 'IA (mesma resposta, 2ª mensagem)' : 'IA'}: ${p}`).join('\n')
       const anterior = (c.historico || []).map(([d, t]) => `${d === 'in' ? 'LEAD' : 'IA'} (antes): ${t}`).join('\n')
       const transcript = (c.comentario ? `(Comment que o lead escreveu na indicação da Kommo: "${c.comentario}")\n\n` : '') + (anterior ? `${anterior}\n\n` : '') + turnos.map(t => `LEAD: ${t.lead}\n${iaTexto(t.resposta)}`).join('\n\n')
       const juiz = await openai.chat.completions.create({
         model: JUDGE,
         response_format: { type: 'json_object' },
         messages: [
-          { role: 'system', content: 'Você avalia a conversa de um atendente virtual de WhatsApp. Para CADA critério responda se foi atendido. Seja rigoroso e literal. JSON: {"criterios":[{"criterio":"...","ok":true|false,"porque":"..."}]}' },
+          { role: 'system', content: 'Você avalia a conversa de um atendente virtual de WhatsApp. Uma resposta da IA pode sair em duas mensagens seguidas (a segunda marcada "mesma resposta, 2ª mensagem"): as duas são a MESMA resposta àquela mensagem do lead. Para CADA critério responda se foi atendido. Seja rigoroso e literal. JSON: {"criterios":[{"criterio":"...","ok":true|false,"porque":"..."}]}' },
           { role: 'user', content: `CRITÉRIOS:\n${c.criterios.map((x, i) => `${i + 1}. ${x}`).join('\n')}\n\nCONVERSA:\n${transcript}` },
         ],
       })

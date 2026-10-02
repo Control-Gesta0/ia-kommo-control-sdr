@@ -169,6 +169,21 @@ export default async function testesCliente(eq: Eq): Promise<number> {
     ehRespostaAutomatica('obrigado, em breve eu vejo isso com meu sócio'),
   ], [true, true, true, true, false, false, false])
   eq('só a 1ª mensagem cumprimenta', [tirarSaudacao('Boa tarde! Perfeito, já consigo te passar os horários.'), tirarSaudacao('Oi, bom dia, Ana! Show.'), tirarSaudacao('Ótimo! Boa tarde pra você também.')], ['Perfeito, já consigo te passar os horários.', 'Show.', 'Ótimo! Boa tarde pra você também.'])
+  // Lead só cumprimentou (Luiz, 02/10): devolve o cumprimento dele, sem pergunta repetida
+  const { cumprimentoDoLead, cumprimentarDeVolta } = await import('../lib/saudacao')
+  const { acabamentoDoTurno, ajustarResposta } = await import('../lib/tom')
+  eq('só cumprimento: qual saudação volta', ['Bom dia', 'oi, tudo bem?', 'Olá Lara', 'boa noite!!', 'Bom dia, quero saber o preço', 'ok'].map(cumprimentoDoLead), ['Bom dia', 'Oi', 'Olá', 'Boa noite', '', ''])
+  eq('só cumprimento: devolve sem duplicar', [
+    cumprimentarDeVolta('Tudo bem?', 'Bom dia', 'Luiz'),
+    cumprimentarDeVolta('Bom dia, Luiz! Tudo bem por aí?', 'Bom dia', 'Luiz'),
+    cumprimentarDeVolta('Oi, Luiz, bom dia! Fico por aqui pra te mostrar o Kommo.', 'Bom dia', 'Luiz'),
+    cumprimentarDeVolta('Olá! Pode falar.', 'Oi', ''),
+  ], ['Bom dia, Luiz! Tudo bem?', 'Bom dia, Luiz! Tudo bem por aí?', 'Bom dia, Luiz! Fico por aqui pra te mostrar o Kommo.', 'Oi! Pode falar.'])
+  eq('acabamento: "Bom dia" depois da abertura volta com o cumprimento', ajustarResposta('Tudo bem? Fico por aqui pra te mostrar o Kommo.', { primeiro: false, nomeCadastro: 'Luiz', anteriores: ['Boa noite, Luiz! Aqui é a Lara...'], faltaVendedores: false, handoff: false, ...acabamentoDoTurno('Bom dia', false, false) }), 'Bom dia, Luiz! Tudo bem? Fico por aqui pra te mostrar o Kommo.')
+  eq('acabamento: problema novo protege a solução (não corta como repetida)', [acabamentoDoTurno('O pior é orçamento que a gente manda e ninguém retorna', true, true).protegerSolucao, acabamentoDoTurno('somos 7 pessoas', true, true).protegerSolucao, acabamentoDoTurno('quanto custa?', true, true).protegerSolucao], [true, false, true])
+  const { campoByKey } = await import('../lib/crm-map')
+  eq('problema ou pedido: pedidos reais valem como evidência (antes eram recusados)', ['Implementação e estruturação do CRM', 'não consigo fazer os gatilhos funcionarem', 'Queria que disparasse a confirmação do agendamento e um lembrete no dia anterior', 'O pior é orçamento que a gente manda e ninguém retorna', 'Sou de Recife, quero conhecer melhor a plataforma', 'somos 4 vendedores'].map(t => !!campoByKey('dor')?.sinal?.test(t)), [true, true, true, true, true, false])
+  eq('letra de outro alfabeto é texto corrompido', [regras('Tenho երկու opções na segunda').includes('texto corrompido'), regras('Ação, coração, São Paulo, nº 1 e 2ª opção').includes('texto corrompido')], [true, false])
   const manha = Date.parse('2026-09-28T13:00:00Z') // 10h em Brasília
   eq('abertura fixa: saudação do horário + Lara + passa nas travas', [regras(aberturaFixa('Ana Souza', manha)), aberturaFixa('Ana', manha).startsWith('Bom dia, Ana! Aqui é a Lara'), aberturaFixa('Lead #9', manha).startsWith('Bom dia! Aqui é a Lara')], [[], true, true])
 
@@ -292,6 +307,19 @@ export default async function testesCliente(eq: Eq): Promise<number> {
 
   let out = await runTool(ctx('quinta às 10'), 'agendar_reuniao', { horario: 'quinta 01/10 às 10h' })
   eq('agendar sem problema gravado: não trava e usa o pedido do lead', [/falta entender/.test(out.content), !!w.state.respostas?.dor], [false, true])
+  // "Atendimento humano" (Luiz, 02/10) = a reunião na 1ª vez; pedir de novo ou pedir ligação passa para o time
+  {
+    const antes = { state: structuredClone(w.state), tags: new Set(w.tags), notes: [...w.notes] }
+    const humano = (lead: string) => runTool(ctx(lead), 'finalizar_atendimento', { motivo: 'pediu_humano', evidencia: lead, resumo: 'x' })
+    const h1 = await humano('Existe a possibilidade de atendimento humano, quero conhecer a ferramenta')
+    const h2 = await humano('Prefiro falar com uma pessoa mesmo')
+    w.state = {}
+    const h3 = await humano('Me liga nesse número, por favor')
+    w.state = {}
+    const h4 = await humano('Estou ligado, mas quero falar com um atendente')
+    eq('"atendimento humano": 1ª vez oferece a reunião; pedir de novo ou pedir ligação passa para o time', [h1.isError, /reuni[aã]o com o especialista/.test(h1.content), h2.isError, h3.isError, h4.isError], [true, true, false, false, true])
+    Object.assign(w, antes)
+  }
   w.state.respostas = { dor: 'perco lead' }
   out = await runTool(ctx('quinta às 10'), 'agendar_reuniao', { horario: 'quinta 01/10 às 10h' })
   eq('com o problema claro, não exige prioridade, decisor nem faturamento', /quando quer começar|decide|faturamento/i.test(out.content), false)
