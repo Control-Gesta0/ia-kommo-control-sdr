@@ -229,7 +229,9 @@ export const CRM_MAP = {
   alertas: [
     {
       nome: 'perguntou preço',
-      re: /quanto custa|quanto fica|quanto [ée]|pre[cç]o|valor|investimento|or[cç]amento|mensalidade|cobram|custo/i,
+      // Só PEDIDO de preço (02/10): "o pior é orçamento que a gente manda e ninguém retorna" ou "o valor do
+      // nosso ticket" é o negócio do lead, e a Lara respondia como se ele tivesse perguntado o preço
+      re: /quanto (?:custa|fica|[ée]|sai|cobra|seria|vai ficar)|pre[cç]os?\b|mensalidade|cobram|(?:qual|quais|me passa|passa|manda|envia|saber|ideia|m[eé]dia|faixa|seria|sobre|informa[cç](?:[aã]o|[oõ]es))\b[^.?!\n]{0,25}\b(?:valor|valores|or[cç]amento|custo|investimento)|(?:valor|valores|or[cç]amento|custo|investimento)\b[^.!\n]{0,40}\?|(?:quero|queria|gostaria|precis\w*|pedir|solicitar|primeiro ao|aguard\w*|espero)\s+(?:(?:de|um|uma|o|ao|seu|teu|do|da)\s+){0,3}or[cç]amento|(?:seu|teu)\s+or[cç]amento|or[cç]amento\s+(?:de|da|com)\s+voc[eê]s/i,
       exceto: CUSTO_META,
       aviso: 'O lead perguntou PREÇO. Licença/plano da Kommo: pode responder em REAIS com os planos do contexto. Implantação/configuração/treinamento/suporte/IA (nosso serviço): NÃO cite valor (você não tem) e NÃO ignore: explique em uma frase que depende do escopo, ligado ao que ELE contou, e que na reunião o especialista dimensiona e passa a proposta; convide para a reunião. Se ele já perguntou antes e você já explicou, não repita a explicação: ofereça a análise curta e sem compromisso; recusou de novo, encerre com gentileza (qualificado_sem_reuniao).',
     },
