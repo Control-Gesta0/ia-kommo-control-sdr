@@ -237,6 +237,11 @@ export const CRM_MAP = {
       aviso: 'O lead está perguntando da COBRANÇA DA META por mensagem no WhatsApp (API oficial), não do preço do nosso serviço. Responda a dúvida de verdade, curto e sem citar valores: (1) essa cobrança é da Meta, não da Kommo, e vale para qualquer CRM que use a API oficial; (2) responder o cliente dentro de 24h depois que ele manda mensagem não é cobrado; o que a Meta cobra são os disparos de modelos aprovados (templates) que a empresa inicia, como campanhas e lembretes fora dessa janela; (3) dá pra reduzir bastante o custo desenhando as automações para rodar dentro da janela de 24h, e há a opção do WhatsApp Lite (número atual pelo QR code), sem cobrança por mensagem, mas com limites para disparo e robôs. Acolha a frustração em meia frase e convide para o especialista mostrar na reunião qual desenho sai mais barato para a operação dela.',
     },
     {
+      nome: 'perguntou se é robô',
+      re: /(?<![\p{L}])(?:(?:voc[eê]|vc|isso|aqui)\s+(?:é|e|eh)\s+(?:uma?\s+)?(?:rob[oô]|bot|ia|intelig[eê]ncia artificial|m[aá]quina|humano|humana|pessoa|gente)|(?:falando|conversando)\s+com\s+(?:uma?\s+)?(?:rob[oô]|bot|ia|m[aá]quina|humano|humana|pessoa)|[eé]\s+(?:uma?\s+)?(?:rob[oô]|bot))(?![\p{L}])/iu,
+      aviso: 'O lead perguntou se está falando com robô/IA. Responda que SIM, com naturalidade e sem se desculpar: você é a Lara, assistente de IA da Control Gestão (é o tipo de coisa que a gente implanta para os clientes). Depois siga a conversa.',
+    },
+    {
       nome: 'dificuldade',
       re: /n[aã]o sei (configurar|mexer|usar|trabalhar)|n[aã]o consegui (configurar|mexer|usar|aprender|entender|montar|fazer)|tentei aprender|tenho dificuldade|dif[ií]cil de (usar|mexer|configurar|entender)|me (sinto )?perdid[oa]|complicado|n[aã]o entendo (nada )?(do|de|da) (kommo|crm|sistema|plataforma|ferramenta)/i,
       aviso: 'O lead contou uma DIFICULDADE (não sabe configurar/mexer). Comece a resposta acolhendo EXATAMENTE essa dificuldade em meia frase e mostre que é aí que a gente entra (ex.: "normal, no começo o Kommo assusta mesmo, e a configuração a gente faz junto com você na implantação"). Só depois siga com a próxima pergunta.',

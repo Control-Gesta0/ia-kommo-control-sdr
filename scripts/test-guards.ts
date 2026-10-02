@@ -116,6 +116,8 @@ async function main() {
     const ativos = (t: string) => CRM_MAP.alertas.filter(a => alertaAtivo(a, t)).map(a => a.nome).filter(n => /pre[cç]o|meta|whatsapp/i.test(n))
     eq('cobrança da Meta por mensagem → alerta do WhatsApp oficial, sem trava de preço', ativos('a gente tinha que pagar o meta, o meta tem que aprovar as mensagens e a gente tem que pagar um valor por mensagem'), ['custo do WhatsApp oficial'])
     eq('preço do serviço continua com a trava de preço', ativos('quanto custa a implantação de vocês?'), ['perguntou preço'])
+    const robo = (t: string) => CRM_MAP.alertas.some(a => a.nome === 'perguntou se é robô' && alertaAtivo(a, t))
+    eq('"você é um robô?" aciona o alerta (com acento)', [robo('você é um robô?'), robo('to falando com uma pessoa?'), robo('Existe a possibilidade de atendimento humano, quero conhecer a ferramenta')], [true, true, false])
   }
 
   // Resposta + pergunta em duas mensagens (02/10)

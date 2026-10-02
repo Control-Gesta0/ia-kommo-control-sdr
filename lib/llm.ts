@@ -233,7 +233,7 @@ export function createBrain(opts: LlmOptions) {
       const soOfereceuVer = OFERECEU_VER_HORARIO.test(safe.text) && aceitouOuPressa
       if (!handoff && !cobrouHorario && step < MAX_STEPS - 1 && (PROMETEU_HORARIO.test(safe.text) || soOfereceuVer) && !toolsUsed.includes('consultar_horarios') && !estado.oferta?.length) {
         cobrouHorario = true
-        messages.push({ role: 'assistant', content: safe.text }, { role: 'system', content: '[TRAVA DO SISTEMA] Você disse que ia ver os horários, mas não viu. Chame consultar_horarios agora (com a preferência do lead, se ele disse dia ou turno) e reescreva a resposta já com as opções. Responda só com o texto do WhatsApp.' })
+        messages.push({ role: 'assistant', content: safe.text }, { role: 'system', content: '[TRAVA DO SISTEMA] O lead aceitou ou tem pressa, e você só ofereceu ver horários (ou disse que ia ver e não viu). Chame consultar_horarios agora (com a preferência do lead, se ele disse dia ou turno) e reescreva a resposta: se ele perguntou algo nesta mensagem (preço, dúvida), responda isso PRIMEIRO, em uma ou duas frases; depois mande as opções de horário. Responda só com o texto do WhatsApp.' })
         continue
       }
       // Perguntou o preço da LICENÇA e a resposta veio sem valor em R$: refaz uma vez com o valor
