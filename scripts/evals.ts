@@ -97,6 +97,11 @@ async function main() {
 
   let reprovados = 0
   let custo = 0
+  // Teto de gasto (02/10: os testes esgotaram o crédito da OpenAI que a Lara usa em produção).
+  // Sem EVAL_MAX_USD não roda; ao passar do teto (agente + estimativa do juiz), para na hora.
+  const TETO = Number(process.env.EVAL_MAX_USD || 0)
+  if (!(TETO > 0)) { console.error('Defina EVAL_MAX_USD (ex.: EVAL_MAX_USD=1) — os evals gastam o mesmo crédito da Lara em produção.'); process.exit(1) }
+  const estourou = () => custo * 1.4 > TETO
   const uso = { input: 0, cached: 0, output: 0, calls: 0 }
   const somaUso = (u?: { input: number; cached: number; output: number; calls: number }) => { if (u) { uso.input += u.input; uso.cached += u.cached; uso.output += u.output; uso.calls += u.calls } }
   const lista = CENARIOS.filter(c => !filtros.length || filtros.some(f => c.id.includes(f)))
@@ -149,6 +154,7 @@ async function main() {
         if (process.env.EVAL_BRUTO === '1' && reply?.text && reply.text !== resposta) console.log(`[bruto ${c.id}] ${reply.text}\n[ajustado] ${resposta}`)
         if (process.env.EVAL_TRAVAS === '1' && reply?.guard?.length) console.log(`[travas ${c.id}] ${JSON.stringify(msg.slice(0, 40))} → ${reply.guard.join(' | ')}`)
         custo += reply ? costUsd(MODEL, reply.usage) || 0 : 0
+        if (estourou()) { console.error(`PARADO: gasto estimado passou do teto de US$ ${TETO} (agente US$ ${custo.toFixed(2)} + juiz)`); process.exit(2) }
         somaUso(reply?.usage)
         turnos.push({ lead: msg, resposta, tools: reply?.toolsUsed || [], guard: reply?.guard || [], handoff: !!reply?.handoff })
         history.push({ id: `r${history.length}`, dir: 'out', text: resposta, ts: history.length + 1 })
