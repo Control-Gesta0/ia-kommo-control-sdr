@@ -238,28 +238,39 @@ export function snapshot(porta: Porta, state: LeadState): Snapshot {
 }
 
 /**
- * O que ainda falta saber, como raciocínio (não roteiro). Lead que já escreveu o pedido em detalhe
- * (Davis, 02/10: Comment + mensagem com o fluxo inteiro, ~1.000 caracteres) já deu o suficiente:
- * com o problema claro, a Lara para de sondar e vende a reunião.
+ * Qualificação antes do convite (comercial, 02/10: "está chamando para a reunião logo de cara").
+ * Exemplos do que vale saber, NÃO roteiro: o problema, quantas pessoas vão usar o CRM e se fazem
+ * tráfego pago / quantos leads chegam. O que o lead já contou (mesmo com outras palavras) é pulado.
  */
-export function describeOpen(porta: Porta, snap0: Snapshot, perguntasFeitas = 0, textoLead = ''): string {
+export function lacunasDeQualificacao(snap0: Snapshot): string[] {
+  const sabe = (k: string) => snap0.preenchidos.some(p => p.campo.key === k)
+  return [
+    !sabe('dor') && 'qual é o problema ou o pedido',
+    !sabe('vendedores') && 'quantas pessoas vão usar o CRM (3 ou mais já é uma operação boa)',
+    !sabe('volume') && 'se fazem tráfego pago e quantos leads chegam por mês (uns 20 por dia já é volume alto: bom gancho para falar de organização e cadência de follow-up)',
+  ].filter((x): x is string => !!x)
+}
+
+/** Já dá para convidar: problema claro e o resto respondido, ou já fez 3 perguntas (teto da conversa). */
+export function prontoParaReuniao(snap0: Snapshot, perguntasFeitas = 0): boolean {
+  const temProblema = snap0.preenchidos.some(p => p.campo.key === 'dor')
+  return perguntasFeitas >= 4 || (temProblema && (lacunasDeQualificacao(snap0).length === 0 || perguntasFeitas >= 3))
+}
+
+/** O que ainda falta saber, como raciocínio (não roteiro), e se já é hora de vender a reunião. */
+export function describeOpen(porta: Porta, snap0: Snapshot, perguntasFeitas = 0): string {
   if (!porta.roteiro.length) return ''
   const nicho = snap0.abertos.some(c => c.key === 'segmento') ? ' Ramo da empresa ainda não identificado: se ele já contou (ex.: "sou advogado", "minha clínica"), grave em segmento. Não pergunte só para descobrir o ramo.' : ''
   const sabe = (k: string) => snap0.preenchidos.some(p => p.campo.key === k)
-  const temProblema = sabe('dor')
-  const lacunas = [
-    !temProblema && 'qual é o problema ou o pedido',
-    !sabe('impacto') && 'se isso pesa (venda, tempo, controle)',
-    !sabe('prioridade') && 'se há pressa',
-    !sabe('decisor') && 'quem decide junto',
-  ].filter(Boolean)
   const gravar = ' Grave com salvar_respostas o que o Comment ou as mensagens já contam.'
-  const detalhado = textoLead.trim().length >= 400
-  if (perguntasFeitas >= 3 || (temProblema && (lacunas.length <= 1 || perguntasFeitas >= 2 || detalhado))) {
-    return `Você já tem o suficiente: PARE de perguntar e VENDA a reunião (ligue o que ele contou ao que a implantação resolve e ofereça a análise gratuita com o especialista). Só chame consultar_horarios depois que ele topar ou se ele já pediu horário.${gravar}${nicho}`
+  const bomSaber = [!sabe('decisor') && 'quem decide junto (se for outra pessoa, ela vai para a reunião)', !sabe('prioridade') && 'se há pressa'].filter(Boolean)
+  const extra = bomSaber.length ? ` Bom saber se aparecer na conversa, sem perguntar só por isso: ${bomSaber.join('; ')}.` : ''
+  if (prontoParaReuniao(snap0, perguntasFeitas)) {
+    return `Você já entendeu o cenário: agora VENDA a reunião, sem mais perguntas de qualificação (ligue o que ele contou ao que a implantação resolve e ofereça a análise gratuita com o especialista). Só chame consultar_horarios depois que ele topar ou se ele já pediu horário.${gravar}${extra}${nicho}`
   }
-  const limite = perguntasFeitas >= 2 ? ' Você já fez 2 perguntas: no máximo mais UMA, e só se for essencial; senão, venda a reunião.' : ''
-  return `Ainda não se sabe: ${lacunas.join('; ')}. Isso NÃO é roteiro: pergunte só o que mudar sua leitura do cenário, partindo do que ele acabou de dizer, sem lista pronta de opções. ${temProblema ? 'O problema já está claro: não pergunte de novo o que trava nem o impacto de algo que já é obviamente perda (lead sem retorno = venda perdida); se já der para vender a reunião, venda.' : 'Se o pedido dele já diz o problema, grave e não pergunte de novo.'}${limite}${gravar}${nicho}`
+  const lacunas = lacunasDeQualificacao(snap0)
+  const limite = perguntasFeitas >= 2 ? ' Você já fez 2 perguntas: no máximo mais UMA antes de vender a reunião.' : ''
+  return `Antes de convidar para a reunião, ainda falta entender: ${lacunas.join('; ')}. São exemplos, não roteiro: pergunte UMA coisa por vez, a que mais ajuda agora, partindo do que ele acabou de dizer; se ele já respondeu com outras palavras, grave e pule. Enquanto isso, escute: mostre que entendeu e como a gente resolve o que ele contou. NÃO convide para a reunião ainda, a não ser que ele peça (reunião, apresentação, conhecer a ferramenta, proposta ou preço, falar com alguém) ou tenha pressa.${sabe('dor') ? ' O problema já está claro: não pergunte de novo o que trava.' : ''}${limite}${gravar}${extra}${nicho}`
 }
 
 // ---------- Execução ----------
@@ -395,7 +406,7 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
           isError: erros.length > 0 && salvos.length === 0,
           content: [salvos.length ? `Salvo: ${salvos.join(' · ')}.` : '',
             pedirNomeDecisor ? 'O decisor foi citado só pelo cargo: NESTA resposta, peça o nome dele sem ponto de interrogação ("Me passa o nome dele que eu já deixo no convite da reunião.") e diga que ele precisa participar. Depois use o nome.' : '',
-            convidarDecisor ? 'O decisor é outra pessoa: NESTA resposta, em meia frase, diga que vale ele participar da reunião com o nosso especialista (é quem aprova), usando o nome dele.' : '', erros.length ? `Não salvo: ${erros.join(' · ')}.` : '', describeOpen(porta, snapshot(porta, next), ctx.perguntasFeitas ?? 0, ctx.leadText)].filter(Boolean).join(' '),
+            convidarDecisor ? 'O decisor é outra pessoa: NESTA resposta, em meia frase, diga que vale ele participar da reunião com o nosso especialista (é quem aprova), usando o nome dele.' : '', erros.length ? `Não salvo: ${erros.join(' · ')}.` : '', describeOpen(porta, snapshot(porta, next), ctx.perguntasFeitas ?? 0)].filter(Boolean).join(' '),
         }
       }
 
@@ -481,7 +492,7 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
         }
         await port.patchState({ oferta: opcoes, ofertaEm: agora })
         const lista = opcoes.map((o, i) => `${i + 1}) ${o.label}`).join(' · ')
-        return ok(`${respeitouPreferencia ? '' : 'Não há horário livre na preferência do lead; diga isso e ofereça estes. '}Horários livres (ofereça exatamente estes, sem inventar outros): ${lista}. Reunião de ${cfg.duracaoMin} minutos. Se nesta mensagem ele contou um problema ou perguntou algo, responda isso em uma frase ANTES das opções (com as palavras dele). Pergunte qual fica melhor.`)
+        return ok(`${respeitouPreferencia ? '' : 'Não há horário livre na preferência do lead; diga isso e ofereça estes. '}Horários livres (ofereça exatamente estes, sem inventar outros): ${lista}. Se nesta mensagem ele contou um problema ou perguntou algo, responda isso em uma frase ANTES das opções (com as palavras dele). Pergunte qual fica melhor.`)
       }
 
       case 'agendar_reuniao': {
@@ -581,7 +592,7 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
           ].filter(x => x !== false && x !== null && x !== undefined).join('\n'), `${lead.id}-${slot.ini}`).catch(e => console.warn('[aviso closer]', e))
         }
         await aplicarFinalizacao(ctx, 'agendado', `Reunião marcada para ${slot.label}.`, false, reuniaoLinhas, moveu)
-        return ok(`Reunião marcada: ${slot.label} (30 a 45 min). Confirme ao lead o dia e a hora com essas palavras${link ? `, mande o link da reunião ${link} pedindo que ele confira se abre certinho` : ', diga que o especialista manda o link da reunião por aqui'}${convidado ? `, reforce que ${convidado} participa junto` : ''} e NÃO faça pergunta.`, { handoff: true })
+        return ok(`Reunião marcada: ${slot.label}. Confirme ao lead o dia e a hora com essas palavras${link ? `, mande o link da reunião ${link} pedindo que ele confira se abre certinho` : ', diga que o especialista manda o link da reunião por aqui'}${convidado ? `, reforce que ${convidado} participa junto` : ''} e NÃO faça pergunta.`, { handoff: true })
       }
 
       case 'mover_etapa': {

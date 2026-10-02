@@ -31,10 +31,17 @@ const CAMPOS = {
     sinal: /planilha|excel|sheets|caderno|papel|whats|kommo|amo|crm|sistema|agenda|cabe[cç]a|mem[oó]ria|google|trello|notion|pipedrive|\brd\b|hubspot|bitrix|ploomes|anot|nada|nenhum|lugar nenhum|n[aã]o (organiz|temos|tenho|usamos)/i,
     pergunta: 'Hoje vocês organizam os leads onde: WhatsApp, planilha ou outro CRM?',
   },
+  // Qualificação do comercial (02/10): quantas pessoas usam (3+ = operação boa) e tráfego/volume de leads
+  // (20 por dia já é volume alto). Exemplos, não roteiro: pergunta só o que ainda não sabe.
   vendedores: {
-    key: 'vendedores', curto: 'Vendedores', opcional: true, id: 0, name: 'Quantos vendedores usariam o Kommo', type: 'text',
-    sinal: /\d|\b(um|uma|dois|duas|tr[eê]s|quatro|cinco|seis|sete|oito|nove|dez|vinte|trinta)\b|s[oó] eu|sozinh|vendedor|pessoa|usu[aá]rio|atendente|consultor|corretor|equipe|time/i,
-    pergunta: 'Quantos vendedores usariam o sistema?',
+    key: 'vendedores', curto: 'Pessoas no CRM', id: 0, name: 'Quantas pessoas vão usar o CRM (3 ou mais = operação boa)', type: 'text',
+    sinal: /\d|\b(um|uma|dois|duas|tr[eê]s|quatro|cinco|seis|sete|oito|nove|dez|vinte|trinta)\b|s[oó] eu|sozinh|vendedor|pessoa|usu[aá]rio|atendente|consultor|corretor|equipe|time|acesso/i,
+    pergunta: 'Quantas pessoas vão usar o Kommo no dia a dia?',
+  },
+  volume: {
+    key: 'volume', curto: 'Tráfego e volume', id: 0, name: 'Tráfego pago e volume de leads (quantos chegam por mês ou por dia; 20 por dia já é volume alto)', type: 'text',
+    sinal: /\d|lead|contato|mensag|cliente|tr[aá]fego|an[uú]ncio|\bads\b|meta|google|instagram|facebook|org[aâ]nic|indica[cç]|campanha|n[aã]o (fazemos|fa[cç]o|temos|investimos|rodamos)|por (dia|m[eê]s|semana)|muito|pouco|bastante|nenhum/i,
+    pergunta: 'Vocês já fazem tráfego pago? Mais ou menos quantos leads chegam por mês?',
   },
   dor: {
     key: 'dor', curto: 'Dor', id: 1046003, kommoName: 'Problema', name: 'Problema ou pedido do lead (o que ele quer resolver, nas palavras dele)', type: 'textarea',
@@ -159,7 +166,7 @@ export const CRM_MAP = {
       ativa: true,
       promptFile: 'indicacao.md',
       sinais: /$^/,
-      roteiro: ['segmento', 'dor', 'impacto', 'prioridade', 'decisor', 'faturamento', 'organizacao', 'vendedores'],
+      roteiro: ['segmento', 'dor', 'vendedores', 'volume', 'impacto', 'prioridade', 'decisor', 'faturamento', 'organizacao'],
       obrigatorios: ['dor'],
     },
     {
@@ -170,7 +177,7 @@ export const CRM_MAP = {
       ativa: true,
       promptFile: 'direto.md',
       sinais: /$^/,
-      roteiro: ['segmento', 'dor', 'impacto', 'prioridade', 'decisor', 'faturamento', 'organizacao', 'vendedores'],
+      roteiro: ['segmento', 'dor', 'vendedores', 'volume', 'impacto', 'prioridade', 'decisor', 'faturamento', 'organizacao'],
       obrigatorios: ['dor'],
     },
   ] as Porta[],
@@ -233,7 +240,7 @@ export const CRM_MAP = {
       // nosso ticket" é o negócio do lead, e a Lara respondia como se ele tivesse perguntado o preço
       re: /quanto (?:custa|fica|[ée]|sai|cobra|seria|vai ficar)|pre[cç]os?\b|mensalidade|cobram|(?:qual|quais|me passa|passa|manda|envia|saber|ideia|m[eé]dia|faixa|seria|sobre|informa[cç](?:[aã]o|[oõ]es))\b[^.?!\n]{0,25}\b(?:valor|valores|or[cç]amento|custo|investimento)|(?:valor|valores|or[cç]amento|custo|investimento)\b[^.!\n]{0,40}\?|(?:quero|queria|gostaria|precis\w*|pedir|solicitar|primeiro ao|aguard\w*|espero)\s+(?:(?:de|um|uma|o|ao|seu|teu|do|da)\s+){0,3}or[cç]amento|(?:seu|teu)\s+or[cç]amento|or[cç]amento\s+(?:de|da|com)\s+voc[eê]s/i,
       exceto: CUSTO_META,
-      aviso: 'O lead perguntou PREÇO. Licença/plano da Kommo: pode responder em REAIS com os planos do contexto. Implantação/configuração/treinamento/suporte/IA (nosso serviço): NÃO cite valor (você não tem) e NÃO ignore: explique em uma frase que depende do escopo, ligado ao que ELE contou, e que na reunião o especialista dimensiona e passa a proposta; convide para a reunião. Se ele já perguntou antes e você já explicou, não repita a explicação: ofereça a análise curta e sem compromisso; recusou de novo, encerre com gentileza (qualificado_sem_reuniao).',
+      aviso: 'O lead perguntou PREÇO. Licença/plano da Kommo: pode responder em REAIS com os planos do contexto. Implantação/configuração/treinamento/suporte/IA (nosso serviço): NÃO cite valor (você não tem) e NÃO ignore: explique em uma frase que depende do escopo, ligado ao que ELE contou. Se ainda não sabe quantas pessoas vão usar ou o volume de leads, use isso para entender ("pra te dar uma direção, quantas pessoas vão usar o Kommo?"); se já sabe, mostre que na reunião o especialista dimensiona e passa a proposta e convide. Se ele já perguntou antes e você já explicou, não repita a explicação: ofereça a análise curta e sem compromisso; recusou de novo, encerre com gentileza (qualificado_sem_reuniao).',
     },
     {
       nome: 'custo do WhatsApp oficial',

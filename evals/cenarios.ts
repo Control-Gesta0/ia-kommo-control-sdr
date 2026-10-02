@@ -151,7 +151,7 @@ export const CENARIOS: Cenario[] = [
     criterios: [
       'A abertura cria rapport citando pelo menos um ponto concreto do Comment (ex.: cadastro dos clientes, datas especiais, pós-venda, atendimento com IA ou o padrão de joalheria)',
       'A resposta à mensagem do lead acolhe a dificuldade dele e NÃO pergunta de novo o que ele quer resolver, se tem CRM ou onde organiza os clientes',
-      'Se a resposta pergunta algo, é algo que ainda falta de verdade (impacto, pressa ou quem decide); oferecer a reunião direto também vale',
+      'Se a resposta pergunta algo, é algo que ainda falta de verdade (quantas pessoas vão usar, tráfego ou volume de leads, impacto, pressa ou quem decide)',
     ],
   },
   {

@@ -183,6 +183,31 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   eq('acabamento: "Bom dia" depois da abertura volta com o cumprimento', ajustarResposta('Tudo bem? Fico por aqui pra te mostrar o Kommo.', { primeiro: false, nomeCadastro: 'Luiz', anteriores: ['Boa noite, Luiz! Aqui é a Lara...'], faltaVendedores: false, handoff: false, ...acabamentoDoTurno('Bom dia', false, false) }), 'Bom dia, Luiz! Tudo bem? Fico por aqui pra te mostrar o Kommo.')
   eq('acabamento: problema novo protege a solução (não corta como repetida)', [acabamentoDoTurno('O pior é orçamento que a gente manda e ninguém retorna', true, true).protegerSolucao, acabamentoDoTurno('somos 7 pessoas', true, true).protegerSolucao, acabamentoDoTurno('quanto custa?', true, true).protegerSolucao], [true, false, true])
   const { campoByKey } = await import('../lib/crm-map')
+  const CRM_MAP_Q = (await import('../lib/crm-map')).CRM_MAP
+  const campoByKeyQ = (await import('../lib/crm-map')).campoByKey
+  // Comercial (02/10): duração da reunião uma vez só; qualificar (pessoas + tráfego/volume) antes de convidar
+  const { semDuracaoRepetida } = await import('../lib/saudacao')
+  const jaDisse = ['A análise é gratuita e leva de 30 a 45 minutos.']
+  eq('duração "30 a 45 minutos" sai quando já foi dita', [
+    semDuracaoRepetida('A análise é gratuita e leva de 30 a 45 minutos. Posso te passar dois horários?', jaDisse),
+    semDuracaoRepetida('Na reunião de 30 a 45 minutos, o especialista dimensiona isso.', jaDisse),
+    semDuracaoRepetida('Reunião marcada para amanhã, sexta 02/10 às 10h, com duração de 30 a 45 minutos.', jaDisse),
+    semDuracaoRepetida('A análise leva de 30 a 45 minutos.', []),
+  ], ['A análise é gratuita. Posso te passar dois horários?', 'Na reunião, o especialista dimensiona isso.', 'Reunião marcada para amanhã, sexta 02/10 às 10h.', 'A análise leva de 30 a 45 minutos.'])
+  const T = await import('../lib/tools')
+  const portaQ = CRM_MAP_Q.portas[0]
+  const snapQ = (r: Record<string, string>) => T.snapshot(portaQ, { respostas: r } as any)
+  eq('pronto para a reunião só com problema + pessoas + volume (ou 3 perguntas)', [
+    T.prontoParaReuniao(snapQ({ dor: 'perco lead' }), 1),
+    T.prontoParaReuniao(snapQ({ dor: 'perco lead', vendedores: '4' }), 2),
+    T.prontoParaReuniao(snapQ({ dor: 'perco lead', vendedores: '4', volume: '20 por dia' }), 1),
+    T.prontoParaReuniao(snapQ({ dor: 'perco lead' }), 3),
+    T.prontoParaReuniao(snapQ({}), 3),
+  ], [false, false, true, true, false])
+  const L = await import('../lib/llm')
+  eq('convite detectado (para não convidar antes da hora)', ['Quer marcar uma análise gratuita com o especialista?', 'Na análise, o especialista mostra isso. Quer marcar?', 'Posso te colocar numa análise gratuita com um especialista.', 'Isso o especialista te mostra na análise.', 'Quantas pessoas vão usar o Kommo no dia a dia?'].map(L.temConvite), [true, true, true, false, false])
+  eq('lead que pede reunião, apresentação ou preço libera o convite', ['quero conhecer a ferramenta', 'quanto custa?', 'Você pode apresentar a ferramenta?', 'Quero saber sobre o kommo', 'somos 4 vendedores'].map(t => L.PEDIU_REUNIAO.test(t)), [true, true, true, false, false])
+  eq('tráfego e volume valem como evidência', ['fazemos tráfego no Meta, chegam uns 600 leads por mês', 'não fazemos anúncio, é tudo indicação', 'somos 4 vendedores'].map(t => !!campoByKeyQ('volume')?.sinal?.test(t)), [true, true, true])
   const { decisorSoCargo, pedirNomeDoDecisor } = await import('../lib/saudacao')
   eq('decisor só pelo cargo: pede o nome dele/dela', ['quem decide é o dono da empresa', 'a decisão passa pela minha sócia', 'quem decide é o dono, Carlos', 'o dono pediu pra eu ver isso', 'quem aprova é a gerente'].map(decisorSoCargo), ['dele', 'dela', '', '', 'dela'])
   eq('decisor só pelo cargo: o pedido entra antes da pergunta e não duplica', [

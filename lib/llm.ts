@@ -6,7 +6,7 @@ import { addUsage, emptyUsage, type Usage } from './execlog'
 import { checkReply, keepLastQuestion, overlap, semEspanhol, semTravessao, type Violation } from './guards'
 import { abreComPergunta, garantirSaudacao, primeiroNomeDe, saudacao, SO_CUMPRIMENTO } from './saudacao'
 import type { ChatMsg } from './history'
-import { aplicarFinalizacao, buildTools, describeOpen, runTool, snapshot, type ToolCtx } from './tools'
+import { aplicarFinalizacao, buildTools, describeOpen, lacunasDeQualificacao, prontoParaReuniao, runTool, snapshot, type ToolCtx } from './tools'
 
 /**
  * Cérebro: GPT-5.4 Mini (Chat Completions, reasoning none) com loop próprio de
@@ -112,7 +112,7 @@ export function createBrain(opts: LlmOptions) {
       state.reuniao ? `REUNIÃO JÁ MARCADA: ${state.reuniao.label}. Não marque outra.` : '',
       ...CRM_MAP.alertas.filter(a => alertaAtivo(a, ctx.lastLeadText)).map(a => `⚠️ ALERTA DO SISTEMA (${a.nome}): ${a.aviso}`),
       `Perguntas que você já fez nesta conversa: ${ctx.perguntasFeitas ?? 0} (teto de 3 a 4 na conversa inteira)`,
-      describeOpen(ctx.porta, snap, ctx.perguntasFeitas ?? 0, ctx.leadText),
+      describeOpen(ctx.porta, snap, ctx.perguntasFeitas ?? 0),
     ].filter(Boolean)
     return [
       { role: 'system', content: promptOf(ctx.porta) },
@@ -246,6 +246,26 @@ export function createBrain(opts: LlmOptions) {
           }
         }
       }
+      // Convite antes da hora (comercial, 02/10: "chamando para a reunião logo de cara"): sem o lead pedir,
+      // só convida depois de entender o problema, quantas pessoas usam e o volume de leads (ou 3 perguntas)
+      const snapAgora = snapshot(ctx.porta, estado)
+      if (!handoff && !estado.oferta?.length && !toolsUsed.includes('consultar_horarios') && !PEDIU_REUNIAO.test(ctx.lastLeadText) && !QUER_LOGO.test(ctx.lastLeadText)
+        && !prontoParaReuniao(snapAgora, ctx.perguntasFeitas ?? 0) && temConvite(safe.text)) {
+        const falta = lacunasDeQualificacao(snapAgora)
+        const fixI: Msg[] = [...messages, { role: 'assistant', content: safe.text }, { role: 'system', content: `[TRAVA DO SISTEMA] Ainda é cedo para convidar para a reunião: você ainda não sabe ${falta.join('; ')}. Tire o convite. Responda o que ele trouxe (mostre que entendeu e como a gente resolve) e faça UMA pergunta sobre o que falta, ligada ao que ele contou, sem repetir pergunta que você já fez. Responda só com o texto do WhatsApp.` }]
+        const cI = await call(fixI, null, usage)
+        const tI = (cI.message?.content || '').trim()
+        if (tI) {
+          const sI = await enforce(fixI, tI, usage, handoff, ctx.lastLeadText)
+          if (!sI.guard.includes('fallback')) safe = { text: sI.text, guard: [...sI.guard, 'convite antes da hora: refeita'] }
+        }
+        // Insistiu: o convite sai (fica a resposta)
+        if (temConvite(safe.text)) {
+          const frases = safe.text.split(/(?<=[.!?])\s+|\n+/).filter(Boolean)
+          const sem = frases.filter(f => !temConvite(f)).join(' ').replace(/\s{2,}/g, ' ').trim()
+          if (sem.replace(/[^\p{L}]/gu, '').length >= 20) safe = { text: sem, guard: [...safe.guard, 'convite antes da hora: cortado'] }
+        }
+      }
       // Já convidou 2 vezes seguidas sem resposta ao convite: corta o convite desta mensagem (fica a resposta)
       if (!handoff && !estado.oferta?.length && !ehAceite(ctx.lastLeadText) && !toolsUsed.includes('consultar_horarios') && convitesSeguidos(history) >= 2) {
         const frases = safe.text.split(/(?<=[.!?])\s+|\n+/).filter(Boolean)
@@ -365,19 +385,22 @@ export function createBrain(opts: LlmOptions) {
       }
     }
     // 2) A abertura, com o contexto já atualizado (o "Já respondido" inclui o que veio do Comment)
-    // Comment longo e detalhado (Davis, 02/10: fluxo inteiro, canais e objetivos) já é o pedido: a abertura convida
-    const pedidoCompleto = ((await ctx.port.getState()).comentario || '').trim().length >= 200
     const messages: Msg[] = [
       ...(await buildSystem(ctx, lead)),
-      { role: 'system', content: `[ABERTURA ATIVA] O lead ainda não escreveu nada: a Kommo indicou este cliente e VOCÊ começa a conversa agora. Escreva só a primeira mensagem de WhatsApp, seguindo a seção "Abertura" do prompt: saudação, "aqui é a Lara, da Control Gestão, parceira oficial da Kommo", rapport com o Comment e ${pedidoCompleto
-        ? 'um convite para ver isso desenhado com o especialista (análise gratuita de 30 a 45 minutos). O Comment já é um pedido completo e detalhado: NÃO faça pergunta de qualificação'
-        : 'UMA pergunta de contexto que parta do Comment (como atendem hoje, se já usam o Kommo; nunca quem decide nem faturamento na abertura, nunca algo que o Comment já disse, nunca lista pronta de opções)'}. Separe a pergunta num parágrafo próprio. Responda só com o texto.` },
+      { role: 'system', content: '[ABERTURA ATIVA] O lead ainda não escreveu nada: a Kommo indicou este cliente e VOCÊ começa a conversa agora. Escreva só a primeira mensagem de WhatsApp, seguindo a seção "Abertura" do prompt: saudação, "aqui é a Lara, da Control Gestão, parceira oficial da Kommo", rapport com o Comment (mostre que entendeu o pedido e como a gente resolve) e UMA pergunta para entender o cenário, de algo que o Comment não diz (quantas pessoas vão usar, se fazem tráfego pago ou quantos leads chegam, como atendem hoje, se já usam o Kommo). NÃO convide para reunião na abertura. Nunca quem decide nem faturamento, nunca lista pronta de opções. Separe a pergunta num parágrafo próprio. Responda só com o texto.' },
     ]
     const c = await call(messages, null, usage, 600)
     const bruto = (c.message?.content || '').trim()
     if (!bruto) return null
-    const safe = await enforce(messages, bruto, usage, false, '')
+    let safe = await enforce(messages, bruto, usage, false, '')
     if (safe.guard.includes('fallback')) return null
+    // Abertura não convida para a reunião (comercial, 02/10): o convite sai; sem pergunta, vale a abertura fixa
+    if (temConvite(safe.text)) {
+      const frases = safe.text.split(/(?<=[.!?])\s+|\n+/).filter(Boolean)
+      const sem = frases.filter(f => !temConvite(f)).join(' ').replace(/\s{2,}/g, ' ').trim()
+      if (!sem.includes('?')) return null
+      safe = { text: sem, guard: [...safe.guard, 'abertura: convite cortado'] }
+    }
     // Regra do comercial em código: começa com a saudação certa do horário, nunca com pergunta
     const s = saudacao(ctx.agora ?? Date.now())
     const saudado = garantirSaudacao(safe.text, s, primeiroNomeDe(lead.nomeContato))
@@ -403,6 +426,14 @@ export function createBrain(opts: LlmOptions) {
 }
 
 const FALA_DE_HORARIO = /hor[aá]rio|agenda|\bdia\b|semana|hoje|amanh|segunda|ter[cç]a|quarta|quinta|sexta|manh[aã]|tarde|noite|\d{1,2}\s*h\b|\d{1,2}:\d{2}|marc|agend|pode ser|\bs[oó] depois\b/i
+/** O lead pediu a reunião ou o que só a reunião dá: aí pode convidar antes de qualificar */
+export const PEDIU_REUNIAO = /reuni[aã]o|apresenta|demonstra[cç]|me mostr|mostrar (a|o|como)|conhecer (a |melhor a |o )?(ferramenta|plataforma|sistema)|como funciona|proposta|or[cç]amento|quanto (custa|fica|cobra|sai)|pre[cç]o|valores?\b|liga[cç][aã]o|me liga|falar com (algu[eé]m|uma pessoa|um especialista|o especialista|um humano|um atendente|um consultor)|atendimento humano|hor[aá]rio|agenda|marcar|agendar|\bmeet\b|\bcall\b|videochamada/i
+/** Frase que convida para a reunião/análise ("Quer marcar?", "Posso te colocar numa análise gratuita...") */
+export function temConvite(t: string): boolean {
+  return t.split(/(?<=[.!?])\s+|\n+/).some(f => (/\?/.test(f) && (/\b(marc|agend)\w*/i.test(f) || /\b(posso|quer)\b[^?]{0,40}\bhor[aá]rios?\b/i.test(f)))
+    || (/\b(an[aá]lise|reuni[aã]o|apresenta[cç][aã]o|conversa com (o|nosso) especialista|especialista)\b/i.test(f)
+      && (/\?/.test(f) ? /\b(quer|vamos|bora|posso|podemos|vale|topa|faz sentido)/i.test(f) : /\b(posso te|podemos|a gente pode|vale (a pena )?marcar|que tal|consigo te (colocar|encaixar)|te coloco|bora|vamos marcar)\b/i.test(f))))
+}
 /** Pergunta de cortesia ("tudo bem?", "como vai?"), não de qualificação */
 const RAPPORT = /^(?:\p{L}+,?\s+)?(?:e\s+)?(?:tudo (?:bem|bom|certo|tranquilo|joia)|como (?:vai|est[aá]|voc[eê] est[aá]))[^?]{0,20}\?$/iu
 /** Oferta de horário concreto ("Qual fica melhor: amanhã às 10h ou às 15h?", "tenho segunda às 14h") */

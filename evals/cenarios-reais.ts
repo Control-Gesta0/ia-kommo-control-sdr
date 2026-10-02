@@ -50,7 +50,15 @@ const naoRepeteHorarios = {
     return !(x.resposta.match(HORA) || []).some(h => antes.has(h))
   }),
 }
-const BASE = [ateDuas, naoRepetePergunta, naoRepeteHorarios, semListaPronta, semFallback, semTravessao]
+// Comercial (02/10): nada de convite logo de cara (abertura e 1ª resposta), salvo se o lead pediu
+const PEDIU = /reuni[aã]o|apresenta|demonstra[cç]|me mostr|conhecer (a |melhor a |o )?(ferramenta|plataforma|sistema)|como funciona|proposta|or[cç]amento|quanto (custa|fica|cobra|sai)|pre[cç]o|valores?\b|liga[cç][aã]o|falar com|atendimento humano|hor[aá]rio|agenda|marcar|agendar|\bmeet\b|hoje|logo|urgente|o quanto antes/i
+const CONVIDA = (t: string) => t.split(/(?<=[.!?])\s+|\n+/).some(f => (/\?/.test(f) && /\b(marc|agend)\w*/i.test(f)) || (/\b(an[aá]lise|reuni[aã]o|especialista)\b/i.test(f) && (/\?/.test(f) ? /\b(quer|vamos|bora|posso|podemos|vale|topa)/i.test(f) : /\b(posso te|podemos|a gente pode|que tal|te coloco)\b/i.test(f))))
+const semConviteDeCara = {
+  nome: 'não convida para a reunião na abertura nem na 1ª resposta (salvo se o lead pediu)',
+  fn: (_w: any, t: T[]) => t.slice(0, 2).every(x => PEDIU.test(x.lead) || !CONVIDA(x.resposta)),
+}
+const duracaoUmaVez = { nome: 'duração "30 a 45 minutos" no máximo uma vez na conversa', fn: (_w: any, t: T[]) => t.filter(x => /30\s*(a|-|–|ou)\s*45\s*min/i.test(x.resposta)).length <= 1 }
+const BASE = [ateDuas, naoRepetePergunta, naoRepeteHorarios, semListaPronta, semFallback, semTravessao, semConviteDeCara, duracaoUmaVez]
 const ctx = (segmento: string) => ({ contexto: { pais: 'Brazil', idiomas: 'Portuguese', segmento } })
 
 export const CENARIOS_REAIS: Cenario[] = [
@@ -92,7 +100,7 @@ export const CENARIOS_REAIS: Cenario[] = [
     ],
     checks: [...BASE, semPrecoServico, naoMarcou],
     criterios: [
-      'Com o problema (não saber a etapa dos leads), o impacto (perdendo vendas) e a urgência (quer resolver hoje), a IA para de qualificar e vende a reunião, sem perguntar decisor e faturamento como formulário',
+      'Com o problema (não saber a etapa dos leads), o impacto (perdendo vendas) e a urgência (quer resolver hoje), a IA vende a reunião sem perguntar decisor e faturamento como formulário',
       'Ao ser corrigida (loja de móveis, não imobiliária), a IA agradece a correção e usa o ramo certo',
       'Na primeira pergunta de valores, a IA responde (não desconversa): não inventa valor de implantação, explica que depende do escopo ligado ao que ela contou e mostra a reunião como o caminho para o valor',
       'Quando ela insiste pela segunda vez e diz que não pode agendar, a IA fecha com gentileza e deixa a porta aberta, sem pressionar',
@@ -133,7 +141,7 @@ export const CENARIOS_REAIS: Cenario[] = [
     checks: [...BASE, marcou('2026-10-05T13:00:00.000Z'), confirmaSemPergunta],
     criterios: [
       'A abertura cita o pedido de automatizar o Kommo sem terminar numa lista pronta de opções',
-      'Depois de "quero começar do zero", a IA reconhece que é implantação completa e não faz mais que 2 perguntas de qualificação antes de convidar para a análise com o especialista',
+      'Depois de "quero começar do zero", a IA reconhece que é implantação completa, entende o cenário com poucas perguntas (sem repetir o que ele já disse, como 3 corretores e WhatsApp) e só então convida para a análise com o especialista',
       'Quando ele conta que fica tudo no WhatsApp de cada corretor, a IA mostra em uma frase como o Kommo resolve isso',
     ],
   },
@@ -151,7 +159,7 @@ export const CENARIOS_REAIS: Cenario[] = [
     ],
     checks: [...BASE, marcou('2026-10-02T13:00:00.000Z'), confirmaSemPergunta],
     criterios: [
-      'Com um pedido tão completo, a IA não faz perguntas básicas (qual o problema, quantos vendedores, onde organizam): reconhece a demanda e vai para a reunião',
+      'Com um pedido tão completo, a IA não pergunta o que ele já escreveu (o problema, o fluxo, os canais): reconhece a demanda e pergunta só o que falta (quantas pessoas vão usar, tráfego/volume de leads) antes de convidar',
       'A IA não promete cada integração (PIX, nota fiscal, ERP) pelo chat: diz que o especialista mostra a estrutura e as integrações na reunião',
       'Quando ele aceita, a IA oferece horários e confirma o escolhido com dia e hora',
     ],
@@ -179,7 +187,7 @@ export const CENARIOS_REAIS: Cenario[] = [
     criterios: [
       'A IA responde de verdade a dúvida sobre a cobrança da Meta (é da Meta, vale para qualquer CRM com a API oficial, responder em até 24h não é cobrado), sem cair numa frase pronta de preço',
       'Quando ela diz que não quer pagar nada além do Kommo, a IA responde com honestidade (WhatsApp Lite sem cobrança por mensagem, com limites; automações desenhadas para gastar menos) sem prometer custo zero',
-      'Com a necessidade clara (follow-up, cobrança, renovação, perda de clientes), a IA vende a reunião sem fazer perguntas de formulário',
+      'Com a necessidade clara (follow-up, cobrança, renovação, perda de clientes), a IA mostra como a organização e a cadência de follow-up resolvem isso e vende a reunião sem fazer perguntas de formulário',
     ],
   },
   {
@@ -278,13 +286,15 @@ export const CENARIOS_REAIS: Cenario[] = [
     msgs: [
       'Oi Lara, desculpa a demora. Hoje a gente usa só WhatsApp e uma planilha, somos 4 vendedores',
       'O pior é orçamento que a gente manda e ninguém retorna',
+      'Fazemos tráfego no Meta sim, chegam uns 25 leads por dia',
       'Quero sim, segunda à tarde',
       '15h',
     ],
     checks: [...BASE, marcou('2026-10-05T18:00:00.000Z'), confirmaSemPergunta],
     criterios: [
       'A abertura não termina com a lista pronta "perder lead, etapa ou relatório"',
-      'Quando ele conta o problema (orçamento sem retorno), a IA mostra em uma frase como o Kommo resolve e convida para a análise sem mais perguntas de formulário',
+      'Quando ele conta o problema (orçamento sem retorno), a IA mostra como a organização e a cadência de follow-up resolvem isso, sem perguntar de novo o que ele já contou',
+      'Com o volume alto (25 leads por dia), a IA usa isso para tocar na dor e só então convida para a análise com o especialista',
     ],
   },
   {

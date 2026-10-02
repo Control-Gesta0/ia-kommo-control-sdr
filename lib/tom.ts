@@ -1,5 +1,5 @@
 import { campoByKey } from './crm-map'
-import { cumprimentarDeVolta, cumprimentoDoLead, decisorSoCargo, garantirSaudacao, naturalizar, pedirNomeDoDecisor, pedirNomeSeFalta, primeiroNomeDe, saudacao, semGeneralizacaoRepetida, semSolucaoRepetida, tirarApresentacao, tirarSaudacao, vocativoCerto } from './saudacao'
+import { cumprimentarDeVolta, cumprimentoDoLead, decisorSoCargo, garantirSaudacao, naturalizar, pedirNomeDoDecisor, semDuracaoRepetida, pedirNomeSeFalta, primeiroNomeDe, saudacao, semGeneralizacaoRepetida, semSolucaoRepetida, tirarApresentacao, tirarSaudacao, vocativoCerto } from './saudacao'
 
 /**
  * Acabamento em código de TODA resposta da Lara (o que o comercial pediu e o
@@ -27,7 +27,7 @@ export function ajustarResposta(texto: string, o: {
     ? garantirSaudacao(texto, saudacao(o.agora ?? Date.now()), nomeLead)
     : (() => {
       const base = semGeneralizacaoRepetida(naturalizar(tirarApresentacao(tirarSaudacao(texto)), nomeLead, o.anteriores, o.nomeCadastro), o.anteriores)
-      const semRepetir = o.protegerSolucao ? base : semSolucaoRepetida(base, o.anteriores)
+      const semRepetir = semDuracaoRepetida(o.protegerSolucao ? base : semSolucaoRepetida(base, o.anteriores), o.anteriores)
       return o.cumprimento ? cumprimentarDeVolta(semRepetir, o.cumprimento, nomeLead) : semRepetir
     })()
   t = vocativoCerto(t, nomeLead)

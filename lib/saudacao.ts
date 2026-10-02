@@ -234,6 +234,31 @@ function inserirAntesDaPergunta(texto: string, pedido: string): string {
   return `${texto.slice(0, corte + 1).trimEnd()}${sep === '\n' ? '\n' : ' '}${pedido} ${texto.slice(corte + 1).trimStart()}`
 }
 
+const DURACAO = /30\s*(?:a|-|–|ou)\s*45\s*min/i
+
+/**
+ * Duração da reunião ("30 a 45 minutos") no máximo uma vez na conversa (comercial, 02/10: "soa
+ * repetitivo"). Se uma mensagem anterior já disse, a duração sai desta, sem quebrar a frase.
+ */
+export function semDuracaoRepetida(texto: string, anteriores: string[]): string {
+  if (!DURACAO.test(texto) || !anteriores.some(a => DURACAO.test(a))) return texto
+  const D = '30\\s*(?:a|-|–|ou)\\s*45\\s*min(?:utos)?'
+  let t = texto
+    // "A análise é gratuita e leva de 30 a 45 minutos." → "A análise é gratuita."
+    .replace(new RegExp(`\\s*,?\\s*(?:e\\s+|que\\s+)?(?:leva|dura|tem)\\s+(?:(?:de|uns|cerca de|em torno de)\\s+)?${D}`, 'gi'), '')
+    // ", com duração de 30 a 45 minutos" → ""
+    .replace(new RegExp(`\\s*,?\\s*(?:com\\s+)?(?:a\\s+|uma\\s+)?dura[cç][aã]o\\s+(?:(?:de|entre|m[eé]dia de)\\s+)?${D}`, 'gi'), '')
+    // "(30 a 45 min)"
+    .replace(new RegExp(`\\s*\\(\\s*${D}\\s*\\)`, 'gi'), '')
+    // "Em 30 a 45 minutos, o especialista..." → "O especialista..."
+    .replace(new RegExp(`(^|[.!?\\n]\\s*)(?:em|com)\\s+(?:(?:uns|cerca de)\\s+)?${D}\\s*,\\s*(\\p{L})`, 'giu'), (_m, ini: string, letra: string) => `${ini}${letra.toUpperCase()}`)
+    // "uma análise gratuita de 30 a 45 minutos com..." / ", rápida, de 30 a 45 minutos," → sem a duração
+    .replace(new RegExp(`\\s*,?\\s*(?:r[aá]pida\\s*,?\\s*)?(?:de|com|em)\\s+(?:(?:uns|cerca de)\\s+)?${D}`, 'gi'), '')
+    .replace(new RegExp(`\\s*${D}`, 'gi'), '')
+  t = t.replace(/\s+([,.!?])/g, '$1').replace(/,\s*,/g, ',').replace(/,([.!?])/g, '$1').replace(/[ \t]{2,}/g, ' ').trim()
+  return t.length >= 12 ? t : texto
+}
+
 const SOLUCAO = ['etapa', 'responsavel', 'lembrete', 'retorno', 'funil', 'relatorio', 'centraliz', 'automatic', 'alerta', 'distribui', 'historico', 'caixa de entrada']
 const temas = (t: string) => { const n = normalizar(t); return new Set(SOLUCAO.filter(k => n.includes(k))) }
 
