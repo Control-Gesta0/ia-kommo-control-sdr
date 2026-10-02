@@ -100,7 +100,9 @@ export function createBrain(opts: LlmOptions) {
       state.outroAssunto ? `Outro assunto já registrado: ${state.outroAssunto}` : '',
       state.oferta?.length ? `Horários já oferecidos (só estes valem): ${state.oferta.map(o => o.label).join(' · ')}. O foco agora é ele escolher um deles: não volte a qualificar. Se ele trouxe outra coisa, responda; NÃO repita a mesma lista de horários se você já a mandou na mensagem anterior (no máximo pergunte se algum serve ou se prefere outro dia).` : '',
       SO_CUMPRIMENTO.test(ctx.lastLeadText.trim()) && ctx.lastAgentText
-        ? 'O lead SÓ cumprimentou e a sua pergunta anterior continua no ar. Devolva o cumprimento em poucas palavras e deixe a palavra com ele: NÃO repita a pergunta anterior (nem com outras palavras) e não faça outra pergunta de qualificação. Pode perguntar se está tudo bem ou dizer, numa frase, que está por aqui pra ajudar com o que ele pediu.'
+        ? /\?/.test(ctx.lastAgentText)
+          ? 'O lead SÓ cumprimentou e a sua pergunta anterior continua no ar. Devolva o cumprimento em poucas palavras e deixe a palavra com ele: NÃO repita a pergunta anterior (nem com outras palavras) e não faça outra pergunta de qualificação. Pode perguntar se está tudo bem ou dizer, numa frase, que está por aqui pra ajudar com o que ele pediu.'
+          : 'O lead SÓ cumprimentou. Devolva o cumprimento em poucas palavras e siga a conversa de onde ela parou, sem repetir o que você já disse.'
         : '',
       ehAceite(ctx.lastLeadText) ? '' : convitesSeguidos(historico) >= 2
         ? 'Você JÁ convidou para a reunião nas suas últimas mensagens e ele não respondeu ao convite. NESTA mensagem NÃO convide, não pergunte se quer marcar e não ofereça ver horários: só responda o que ele trouxe, curto. O convite continua de pé; ele responde quando quiser.'

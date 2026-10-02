@@ -178,7 +178,8 @@ export default async function testesCliente(eq: Eq): Promise<number> {
     cumprimentarDeVolta('Bom dia, Luiz! Tudo bem por aí?', 'Bom dia', 'Luiz'),
     cumprimentarDeVolta('Oi, Luiz, bom dia! Fico por aqui pra te mostrar o Kommo.', 'Bom dia', 'Luiz'),
     cumprimentarDeVolta('Olá! Pode falar.', 'Oi', ''),
-  ], ['Bom dia, Luiz! Tudo bem?', 'Bom dia, Luiz! Tudo bem por aí?', 'Bom dia, Luiz! Fico por aqui pra te mostrar o Kommo.', 'Oi! Pode falar.'])
+    cumprimentarDeVolta('Tudo bem, Luiz? Fico por aqui.', 'Boa tarde', 'Luiz'),
+  ], ['Bom dia, Luiz! Tudo bem?', 'Bom dia, Luiz! Tudo bem por aí?', 'Bom dia, Luiz! Fico por aqui pra te mostrar o Kommo.', 'Oi! Pode falar.', 'Boa tarde, Luiz! Tudo bem? Fico por aqui.'])
   eq('acabamento: "Bom dia" depois da abertura volta com o cumprimento', ajustarResposta('Tudo bem? Fico por aqui pra te mostrar o Kommo.', { primeiro: false, nomeCadastro: 'Luiz', anteriores: ['Boa noite, Luiz! Aqui é a Lara...'], faltaVendedores: false, handoff: false, ...acabamentoDoTurno('Bom dia', false, false) }), 'Bom dia, Luiz! Tudo bem? Fico por aqui pra te mostrar o Kommo.')
   eq('acabamento: problema novo protege a solução (não corta como repetida)', [acabamentoDoTurno('O pior é orçamento que a gente manda e ninguém retorna', true, true).protegerSolucao, acabamentoDoTurno('somos 7 pessoas', true, true).protegerSolucao, acabamentoDoTurno('quanto custa?', true, true).protegerSolucao], [true, false, true])
   const { campoByKey } = await import('../lib/crm-map')

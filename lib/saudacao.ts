@@ -89,6 +89,8 @@ export function cumprimentarDeVolta(texto: string, cumprimento: string, nome = '
     if (nomeRe) t = t.replace(nomeRe, '').replace(/^[\s,!.]+/, '')
     if (t === antes) break
   }
+  // O nome já vai no cumprimento: sai do resto ("Tudo bem, Luiz?" → "Tudo bem?")
+  if (nome) t = t.replace(new RegExp(`,\\s*${nome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=[!.,?\\s]|$)`, 'u'), '')
   const abre = `${cumprimento}${nome ? `, ${nome}` : ''}!`
   return t ? `${abre} ${t[0].toUpperCase()}${t.slice(1)}` : abre
 }
