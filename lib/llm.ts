@@ -173,28 +173,13 @@ export function createBrain(opts: LlmOptions) {
     const messages: Msg[] = [...(await buildSystem(ctx, lead, history)), ...turns]
     let cobrouHorario = false
 
-    for (let step = 0; step < MAX_STEPS; step++) {
-      const choice = await call(messages, handoff ? null : tools, usage)
-      const calls = choice.message?.tool_calls
-      if (calls?.length) {
-        messages.push(choice.message)
-        for (const tc of calls) {
-          if (tc.type !== 'function') continue
-          toolsUsed.push(tc.function.name)
-          let input: Record<string, unknown> = {}
-          try { input = JSON.parse(tc.function.arguments || '{}') } catch { /* a tool trata */ }
-          const out = await runTool(ctx, tc.function.name, input)
-          opts.onTool?.(tc.function.name, input, out)
-          if (out.handoff) handoff = true
-          if (out.urgente) urgente = true
-          if (out.isError) console.warn(`[tool:${tc.function.name}] ${out.content}`)
-          messages.push({ role: 'tool', tool_call_id: tc.id, content: out.content || '(sem retorno)' })
-        }
-        continue
-      }
-      const text = (choice.message?.content || '').trim()
-      if (!text) break
-      let safe = await enforce(messages, text, usage, handoff, ctx.lastLeadText)
+    /**
+     * Travas depois do texto. Valem para a resposta do loop E para a resposta final sem ferramentas
+     * (Isadora, 02/10: a pergunta repetida saiu pelo caminho final, que só passava pelo enforce).
+     * voltar = prometeu horário sem buscar: o loop chama as ferramentas de novo.
+     */
+    async function revisar(s0: { text: string; guard: string[] }, podeVoltar: boolean): Promise<{ text: string; guard: string[]; voltar?: boolean }> {
+      let safe = s0
       // Copiou a própria mensagem anterior (raro, mas acontece): refaz uma vez respondendo ao lead
       if (ctx.lastAgentText && overlap(safe.text, ctx.lastAgentText) >= 0.85 && overlap(ctx.lastAgentText, safe.text) >= 0.85) {
         const fixRep: Msg[] = [...messages, { role: 'assistant', content: safe.text }, { role: 'system', content: '[TRAVA DO SISTEMA] Você repetiu a sua mensagem anterior. Responda ao que o lead ACABOU de escrever (se ele perguntou algo, responda primeiro) e siga com a próxima pergunta que falta. Sem saudação e sem se apresentar de novo. Responda só com o texto do WhatsApp.' }]
@@ -274,10 +259,10 @@ export function createBrain(opts: LlmOptions) {
       // Lead aceitou o convite ou tem pressa e a IA só OFERECEU ver horários: busca agora, sem perguntar de novo
       const aceitouOuPressa = (CONVITE.test(ctx.lastAgentText) && ehAceite(ctx.lastLeadText)) || QUER_LOGO.test(ctx.lastLeadText)
       const soOfereceuVer = OFERECEU_VER_HORARIO.test(safe.text) && aceitouOuPressa
-      if (!handoff && !cobrouHorario && step < MAX_STEPS - 1 && (PROMETEU_HORARIO.test(safe.text) || soOfereceuVer) && !toolsUsed.includes('consultar_horarios') && !estado.oferta?.length) {
+      if (!handoff && !cobrouHorario && podeVoltar && (PROMETEU_HORARIO.test(safe.text) || soOfereceuVer) && !toolsUsed.includes('consultar_horarios') && !estado.oferta?.length) {
         cobrouHorario = true
         messages.push({ role: 'assistant', content: safe.text }, { role: 'system', content: '[TRAVA DO SISTEMA] O lead aceitou ou tem pressa, e você só ofereceu ver horários (ou disse que ia ver e não viu). Chame consultar_horarios agora (com a preferência do lead, se ele disse dia ou turno) e reescreva a resposta: se ele perguntou algo nesta mensagem (preço, dúvida), responda isso PRIMEIRO, em uma ou duas frases; depois mande as opções de horário. Responda só com o texto do WhatsApp.' })
-        continue
+        return { ...safe, voltar: true }
       }
       // Perguntou o preço da LICENÇA e a resposta veio sem valor em R$: refaz uma vez com o valor
       if (!handoff && PERGUNTA_LICENCA.test(ctx.lastLeadText) && /quanto|pre[cç]o|valor|custa|fica/i.test(ctx.lastLeadText) && !/R\$\s*\d/.test(safe.text)) {
@@ -298,14 +283,40 @@ export function createBrain(opts: LlmOptions) {
           toolsUsed.push(`trava:finalizou-${alerta.finaliza.motivo}`)
         }
       }
+      return safe
+    }
+
+    for (let step = 0; step < MAX_STEPS; step++) {
+      const choice = await call(messages, handoff ? null : tools, usage)
+      const calls = choice.message?.tool_calls
+      if (calls?.length) {
+        messages.push(choice.message)
+        for (const tc of calls) {
+          if (tc.type !== 'function') continue
+          toolsUsed.push(tc.function.name)
+          let input: Record<string, unknown> = {}
+          try { input = JSON.parse(tc.function.arguments || '{}') } catch { /* a tool trata */ }
+          const out = await runTool(ctx, tc.function.name, input)
+          opts.onTool?.(tc.function.name, input, out)
+          if (out.handoff) handoff = true
+          if (out.urgente) urgente = true
+          if (out.isError) console.warn(`[tool:${tc.function.name}] ${out.content}`)
+          messages.push({ role: 'tool', tool_call_id: tc.id, content: out.content || '(sem retorno)' })
+        }
+        continue
+      }
+      const text = (choice.message?.content || '').trim()
+      if (!text) break
+      const safe = await revisar(await enforce(messages, text, usage, handoff, ctx.lastLeadText), step < MAX_STEPS - 1)
+      if (safe.voltar) continue
       return { text: safe.text, toolsUsed, handoff, urgente, guard: safe.guard, usage }
     }
 
-    // Tools já mexeram no CRM: nunca deixar o lead em silêncio
+    // Tools já mexeram no CRM: nunca deixar o lead em silêncio (e com as mesmas travas)
     const final = await call(messages, null, usage)
     const text = (final.message?.content || '').trim()
     if (!text) return null
-    const safe = await enforce(messages, text, usage, handoff, ctx.lastLeadText)
+    const safe = await revisar(await enforce(messages, text, usage, handoff, ctx.lastLeadText), false)
     return { text: safe.text, toolsUsed, handoff, urgente, guard: safe.guard, usage }
   }
 

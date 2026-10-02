@@ -144,6 +144,7 @@ async function main() {
           ...acabamentoDoTurno(bloco, dorAntes, !!w.state.respostas?.dor),
         }) : ''
         if (process.env.EVAL_BRUTO === '1' && reply?.text && reply.text !== resposta) console.log(`[bruto ${c.id}] ${reply.text}\n[ajustado] ${resposta}`)
+        if (process.env.EVAL_TRAVAS === '1' && reply?.guard?.length) console.log(`[travas ${c.id}] ${JSON.stringify(msg.slice(0, 40))} → ${reply.guard.join(' | ')}`)
         custo += reply ? costUsd(MODEL, reply.usage) || 0 : 0
         turnos.push({ lead: msg, resposta, tools: reply?.toolsUsed || [], guard: reply?.guard || [], handoff: !!reply?.handoff })
         history.push({ id: `r${history.length}`, dir: 'out', text: resposta, ts: history.length + 1 })
