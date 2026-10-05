@@ -4,7 +4,7 @@ Música: eletrônica a 120 BPM em Lá menor / Dó maior, compasso de 2 s com o p
 para que o drop (5,0 s) e o impacto final (37,0 s) caiam no tempo forte. Progressão Am–F–C–G e cadência G→C no logo.
 Efeitos: lidos de cues.json, que as próprias cenas registram (sincronia exata com a animação).
 
-Uso: python3 audio/make_audio.py audio/cues.json audio/trilha.wav
+Uso: python3 audio/make_audio.py audio/cues.json out/trilha.wav [out/voz.wav]  (com a voz: versão narrada)
 """
 import json
 import sys
@@ -699,6 +699,20 @@ def sfx(name, o):
     raise ValueError('efeito sem síntese: ' + name)
 
 
+def lufs(x):
+    """Loudness integrado (ITU-R BS.1770-4) de um sinal estéreo (2, n) a 48 kHz."""
+    b1, a1 = [1.53512485958697, -2.69169618940638, 1.19839281085285], [1.0, -1.69065929318241, 0.73248077421585]
+    b2, a2 = [1.0, -2.0, 1.0], [1.0, -1.99004745483398, 0.99007225036621]
+    y = signal.lfilter(b2, a2, signal.lfilter(b1, a1, x, axis=1), axis=1)
+    blk, hop = int(0.4 * SR), int(0.1 * SR)
+    z = np.array([np.sum(np.mean(y[:, i:i + blk] ** 2, axis=1)) for i in range(0, y.shape[1] - blk, hop)])
+    lk = -0.691 + 10 * np.log10(z + 1e-12)
+    z1 = z[lk > -70]
+    rel = -0.691 + 10 * np.log10(np.mean(z1)) - 10
+    z2 = z[(lk > -70) & (lk > rel)]
+    return -0.691 + 10 * np.log10(np.mean(z2))
+
+
 def main():
     cues = json.load(open(sys.argv[1]))
     out = sys.argv[2]
@@ -708,6 +722,24 @@ def main():
         x = sfx(c['name'], c)
         place(fx, x, c['t'])
     mix = mus * 0.62 + fx * 0.78
+    if len(sys.argv) > 3:
+        # versão narrada: a música abaixa ~8 dB e os efeitos ~4 dB enquanto a voz fala
+        from scipy.io import wavfile as _wf
+        _, v = _wf.read(sys.argv[3])
+        v = v.astype(float).T / 32768
+        vo = np.zeros((2, N))
+        vo[:, :min(N, v.shape[1])] = v[:, :N]
+        env = signal.sosfilt(signal.butter(1, 7, 'low', fs=SR, output='sos'), np.abs(vo[0]))
+        act = np.clip(env / 0.045, 0, 1)
+        act = signal.sosfiltfilt(signal.butter(1, 3, 'low', fs=SR, output='sos'), act).clip(0, 1)
+        bed = mus * 0.62 * (1 - 0.6 * act) + fx * 0.78 * (1 - 0.35 * act)
+        on = act > 0.5
+        rms_bed = np.sqrt(np.mean((mus * 0.62 + fx * 0.78)[:, int(5 * SR):int(35 * SR)] ** 2))
+        rms_vo = np.sqrt(np.mean(vo[:, on] ** 2)) if on.any() else 1.0
+        mix = bed + vo * (rms_bed / rms_vo) * 1.15
+        # mesmo nível de entrada no master que a versão sem voz (evita esmagar a dinâmica)
+        ref = mus * 0.62 + fx * 0.78
+        mix *= np.sqrt(np.mean(ref ** 2)) / np.sqrt(np.mean(mix ** 2))
     # master: graves limpos, compressão suave e limitador
     mix = np.stack([hp(mix[0], 28), hp(mix[1], 28)])
     env = np.maximum(np.abs(mix[0]), np.abs(mix[1]))
@@ -717,6 +749,11 @@ def main():
     mix *= gain
     mix = np.tanh(mix * 1.15) / np.tanh(1.15)
     mix = norm(mix, 0.89)
+    # loudness padrão das plataformas: -14 LUFS (só abaixa; o pico já está em -1 dBFS)
+    L = lufs(mix)
+    if L > -14.0:
+        mix *= 10 ** ((-14.0 - L) / 20)
+    print(f'loudness {L:.1f} → {lufs(mix):.1f} LUFS')
     # fade de 0,3 s no fim
     nf = int(0.3 * SR)
     mix[:, -nf:] *= np.linspace(1, 0, nf)
