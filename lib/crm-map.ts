@@ -84,7 +84,6 @@ const AGENDA: AgendaConfig = {
   horarios: ['10:00', '11:00', '14:00', '15:00', '16:00', '17:00'], // preferência do Rodrigo (25/09)
   maxOpcoes: 2,
   folgaMin: 0,               // horários de 1h em sequência (10h e 11h) precisam caber um depois do outro
-  especialista: 'Rodrigo',   // quem faz a reunião (05/10)
 }
 
 /** Dúvida sobre a cobrança da Meta por mensagem (API oficial do WhatsApp) */

@@ -327,7 +327,7 @@ export const CENARIOS_REAIS: Cenario[] = [
     checks: [...BASE, { nome: 'marcou a reunião no 2º horário oferecido', fn: (w: any) => w.reunioes.length === 1 && w.state.finalizado?.motivo === 'agendado' }, confirmaSemPergunta],
     criterios: [
       'Quando ela responde "2", a IA marca o segundo horário e confirma o dia e a hora',
-      'A confirmação diz que a reunião é com o Rodrigo e que o link vai pelo chat (nunca por e-mail)',
+      'A confirmação diz que o link vai pelo chat (nunca por e-mail)',
     ],
   },
   {

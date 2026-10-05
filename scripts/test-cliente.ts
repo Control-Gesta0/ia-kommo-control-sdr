@@ -265,9 +265,9 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   // ---------------- Lembretes para o cliente ----------------
   const { textoLembrete } = await import('../lib/followup')
   const reuniao = Date.parse('2026-10-01T09:30:00-03:00') // quinta 9h30
-  eq('lembrete 24h', textoLembrete(1440, reuniao, reuniao - 24 * 3600000, 'Ana'), 'Oi, Ana! Passando pra lembrar da nossa reunião amanhã, quinta 01/10 às 9h30 com o Rodrigo, especialista da Control Gestão. Tudo certo pra você?')
-  eq('lembrete 1h (o link vai 10 min antes)', textoLembrete(60, reuniao, reuniao - 3600000, 'Ana'), 'Oi, Ana! Daqui a pouco, às 9h30, é a nossa reunião com o Rodrigo, especialista da Control Gestão. Te mando o link 10 minutinhos antes. Até já!')
-  eq('lembrete 10 min com o link', textoLembrete(10, reuniao, reuniao - 600000, 'Ana', 'meet.google.com/abc-defg-hij'), 'Oi, Ana! Em 10 minutinhos começa a nossa reunião com o Rodrigo, especialista da Control Gestão. É só entrar por aqui: meet.google.com/abc-defg-hij\nAté já!')
+  eq('lembrete 24h', textoLembrete(1440, reuniao, reuniao - 24 * 3600000, 'Ana'), 'Oi, Ana! Passando pra lembrar da nossa reunião amanhã, quinta 01/10 às 9h30 com o especialista da Control Gestão. Tudo certo pra você?')
+  eq('lembrete 1h (o link vai 10 min antes)', textoLembrete(60, reuniao, reuniao - 3600000, 'Ana'), 'Oi, Ana! Daqui a pouco, às 9h30, é a nossa reunião com o especialista da Control Gestão. Te mando o link 10 minutinhos antes. Até já!')
+  eq('lembrete 10 min com o link', textoLembrete(10, reuniao, reuniao - 600000, 'Ana', 'meet.google.com/abc-defg-hij'), 'Oi, Ana! Em 10 minutinhos começa a nossa reunião com o especialista da Control Gestão. É só entrar por aqui: meet.google.com/abc-defg-hij\nAté já!')
   eq('lembrete com link pede para conferir', textoLembrete(1440, reuniao, reuniao - 86400000, 'Ana', 'https://meet.google.com/abc-defg-hij').includes('https://meet.google.com/abc-defg-hij\nConfere se abre certinho aí pra você?'), true)
   const { foraDoIdioma } = await import('../lib/indicacao')
   eq('idioma decide pelo Comment: EUA com Comment em português aceita; espanhol/inglês não', [
