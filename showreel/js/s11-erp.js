@@ -62,8 +62,8 @@
       cue(PIX, 'notif', { gain: 0.9 }); cue(PAID, 'flip', { gain: 0.7 }); cue(PAID + 0.05, 'success', { gain: 0.9 });
     },
     update(t) {
-      this.hlA.update(t, 31.08, 33.72);
-      this.hlB.update(t, 33.8, 34.6);
+      this.hlA.update(t, 31.08, 33.46);
+      this.hlB.update(t, 33.86, 34.6);
       const din = E('outExpo')(clamp((t - 30.98) / 0.6));
       const out = E('in3')(clamp((t - 34.66) / 0.3));
       set(this.dash, { s: 0.6 + 0.4 * din + out * 0.1, o: Math.min(1, din * 1.4) * (1 - out), y: -out * 60 });

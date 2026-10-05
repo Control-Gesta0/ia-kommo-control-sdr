@@ -110,8 +110,8 @@
       SR.shakeAt(WON, 0.35, 10); SR.leakAt(WON - 0.1, 1.4, ['#EF4F24', '#E6F76A'], 0.55);
     },
     update(t) {
-      this.hlA.update(t, 23.12, 25.32);
-      this.hlB.update(t, 25.38, 26.88);
+      this.hlA.update(t, 23.12, 25.02);
+      this.hlB.update(t, 25.38, 26.68);
       this.hlC.update(t, 27.05, 28.3);
       this.hlD.update(t, 28.66, 30.86);
       const zoomOut = E('in3')(clamp((t - 30.85) / 0.27));

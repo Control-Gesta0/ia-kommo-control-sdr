@@ -56,7 +56,7 @@
       SR.shakeAt(LAND, 0.25, 7);
     },
     update(t) {
-      this.hlA.update(t, 17.55, 19.28);
+      this.hlA.update(t, 17.55, 18.98);
       this.hlB.update(t, 19.36, 20.85);
       const out = E('in3')(clamp((t - 20.82) / 0.28));
       const stIn = E('outExpo')(clamp((t - 17.47) / 0.5));
