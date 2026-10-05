@@ -265,9 +265,9 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   // ---------------- Lembretes para o cliente ----------------
   const { textoLembrete } = await import('../lib/followup')
   const reuniao = Date.parse('2026-10-01T09:30:00-03:00') // quinta 9h30
-  eq('lembrete 24h', textoLembrete(1440, reuniao, reuniao - 24 * 3600000, 'Ana'), 'Oi, Ana! Passando pra lembrar da nossa reunião amanhã, quinta 01/10 às 9h30 com o especialista da Control Gestão. Tudo certo pra você?')
-  eq('lembrete 1h (o link vai 10 min antes)', textoLembrete(60, reuniao, reuniao - 3600000, 'Ana'), 'Oi, Ana! Daqui a pouco, às 9h30, é a nossa reunião com o especialista da Control Gestão. Te mando o link 10 minutinhos antes. Até já!')
-  eq('lembrete 10 min com o link', textoLembrete(10, reuniao, reuniao - 600000, 'Ana', 'meet.google.com/abc-defg-hij'), 'Oi, Ana! Em 10 minutinhos começa a nossa reunião com o especialista da Control Gestão. É só entrar por aqui: meet.google.com/abc-defg-hij\nAté já!')
+  eq('lembrete 24h', textoLembrete(1440, reuniao, reuniao - 24 * 3600000, 'Ana'), 'Oi, Ana! Passando pra lembrar da nossa reunião amanhã, quinta 01/10 às 9h30 com o Rodrigo, especialista da Control Gestão. Tudo certo pra você?')
+  eq('lembrete 1h (o link vai 10 min antes)', textoLembrete(60, reuniao, reuniao - 3600000, 'Ana'), 'Oi, Ana! Daqui a pouco, às 9h30, é a nossa reunião com o Rodrigo, especialista da Control Gestão. Te mando o link 10 minutinhos antes. Até já!')
+  eq('lembrete 10 min com o link', textoLembrete(10, reuniao, reuniao - 600000, 'Ana', 'meet.google.com/abc-defg-hij'), 'Oi, Ana! Em 10 minutinhos começa a nossa reunião com o Rodrigo, especialista da Control Gestão. É só entrar por aqui: meet.google.com/abc-defg-hij\nAté já!')
   eq('lembrete com link pede para conferir', textoLembrete(1440, reuniao, reuniao - 86400000, 'Ana', 'https://meet.google.com/abc-defg-hij').includes('https://meet.google.com/abc-defg-hij\nConfere se abre certinho aí pra você?'), true)
   const { foraDoIdioma } = await import('../lib/indicacao')
   eq('idioma decide pelo Comment: EUA com Comment em português aceita; espanhol/inglês não', [
@@ -321,6 +321,7 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   eq('escolha: só a hora, repetida em 2 dias = ambíguo', escolha('10h'), null)
   eq('escolha: hora fora da oferta = null (nunca outro dia)', escolha('terça às 15h'), null)
   eq('escolha: dia fora da oferta = null', escolha('sexta'), null)
+  eq('escolha: número solto respondendo à lista (Camila, 05/10: "2")', [escolha('2'), escolha('1'), escolha('a 2'), escolha('opção 2'), escolha('3')], ['quinta 01/10 às 10h', 'amanhã, terça 29/09 às 10h', 'quinta 01/10 às 10h', 'quinta 01/10 às 10h', null])
   eq('escolha: ordinal', [escolha('a segunda opção'), escolha('pode ser a primeira')], ['quinta 01/10 às 10h', 'amanhã, terça 29/09 às 10h'])
   eq('"pode ser" depois de UMA sugestão', [A.ehAfirmativo('pode ser!'), A.slotsCitados('Tenho quinta 01/10 às 10h, serve?', oferta).map(s => s.label)], [true, ['quinta 01/10 às 10h']])
   const oferta2 = [{ ini: iso('2026-10-01T12:00:00Z'), fim: 0, label: 'quinta 01/10 às 9h' }, { ini: iso('2026-10-01T12:30:00Z'), fim: 0, label: 'quinta 01/10 às 9h30' }]

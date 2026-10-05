@@ -40,6 +40,8 @@ export interface AgendaConfig {
   maxOpcoes: number
   /** folga entre reuniões (min) aplicada em volta do ocupado */
   folgaMin: number
+  /** primeiro nome do especialista que faz a reunião (o lead pergunta "qual o nome do consultor?") */
+  especialista?: string
 }
 
 export interface Slot { ini: number; fim: number; label: string }
@@ -209,6 +211,9 @@ export function resolverEscolha(texto: string, oferta: Slot[], agora: number): S
   const ORD: Record<string, number> = { primeir: 0, segund: 1, terceir: 2 }
   const num = n.match(/\b(?:opcao|op|alternativa|horario)\s*(\d)\b/)
   if (num) return oferta[Number(num[1]) - 1] || null
+  // Número solto respondendo à lista "1) ... 2) ..." (Camila, 05/10: respondeu "2" e a reunião não foi marcada)
+  const solto = n.match(/^(?:(?:pode ser|prefiro|fico com|quero|vou de|escolho)\s+)?(?:a|o|numero|n)?\s*(\d)\s*(?:a|o)?\s*(?:opcao|horario)?$/)
+  if (solto) return oferta[Number(solto[1]) - 1] || null
   const o = n.match(/\b(primeir|segund|terceir|ultim)[oa]\s*(?:opcao|horario|alternativa)\b/) || n.match(/^(?:a|o|pode ser a|pode ser o|prefiro a|prefiro o|fico com a|fico com o)\s+(primeir|ultim)[oa]\b/)
   if (o) return oferta[o[1] === 'ultim' ? oferta.length - 1 : ORD[o[1]]] || null
   return null

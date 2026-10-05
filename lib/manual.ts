@@ -1,6 +1,8 @@
 import { rotulo } from './agenda'
 import { CONFIG } from './config'
 import { CRM_MAP } from './crm-map'
+
+const ESPECIALISTA = CRM_MAP.agenda.especialista ? `o ${CRM_MAP.agenda.especialista}, especialista da Control Gestão` : 'o especialista da Control Gestão'
 import { avancar, NOMES } from './etapas'
 import { logExec } from './execlog'
 import { agendarLembretes, cancelarFollowup } from './followup'
@@ -93,8 +95,8 @@ export async function agendarManual(leadId: number, ini: number, autor = 0): Pro
 
   const n = nome ? `, ${nome}` : ''
   const texto = remarcou
-    ? `Oi${n}! Sua reunião com o especialista da Control Gestão foi remarcada para ${label}.${link ? ` O link continua este: ${link}` : ''}\nQualquer coisa é só me chamar por aqui.`
-    : `Oi${n}! Aqui é a Lara, da Control Gestão. Sua reunião com o nosso especialista ficou marcada para ${label}.${link ? `\nO link é este: ${link}\nConfere se abre certinho aí?` : '\nO especialista te chama por aqui no horário.'} Te lembro um pouco antes.`
+    ? `Oi${n}! Sua reunião com ${ESPECIALISTA} foi remarcada para ${label}.${link ? ` O link continua este: ${link}` : ''}\nQualquer coisa é só me chamar por aqui.`
+    : `Oi${n}! Aqui é a Lara, da Control Gestão. Sua reunião com ${ESPECIALISTA} ficou marcada para ${label}.${link ? `\nO link é este: ${link}\nConfere se abre certinho aí?` : `\n${CRM_MAP.agenda.especialista ? `O ${CRM_MAP.agenda.especialista}` : 'O especialista'} te chama por aqui no horário.`} Te lembro um pouco antes.`
   const detalhe = await sendReply(leadId, texto)
   await appendMessage(leadId, { id: `manual:${ini}`, dir: 'out', text: texto, ts: agora })
 

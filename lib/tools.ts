@@ -621,7 +621,7 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
           ].filter(x => x !== false && x !== null && x !== undefined).join('\n'), `${lead.id}-${slot.ini}`).catch(e => console.warn('[aviso closer]', e))
         }
         await aplicarFinalizacao(ctx, 'agendado', `Reunião marcada para ${slot.label}.`, false, reuniaoLinhas, moveu)
-        return ok(`Reunião marcada: ${slot.label}. Confirme ao lead o dia e a hora com essas palavras${link ? `, mande o link da reunião ${link} pedindo que ele confira se abre certinho` : ', diga que o especialista manda o link da reunião por aqui'}${convidado ? `, reforce que ${convidado} participa junto` : ''} e NÃO faça pergunta.`, { handoff: true })
+        return ok(`Reunião marcada: ${slot.label}${cfg.especialista ? `, com o ${cfg.especialista}, nosso especialista` : ''}. Confirme ao lead o dia e a hora com essas palavras${link ? `, mande AQUI NO CHAT o link da reunião ${link} pedindo que ele confira se abre certinho (o link vai pelo WhatsApp, não por e-mail)` : `, diga que ${cfg.especialista ? `o ${cfg.especialista}` : 'o especialista'} manda o link da reunião aqui no chat`}${convidado ? `, reforce que ${convidado} participa junto` : ''} e NÃO faça pergunta.`, { handoff: true })
       }
 
       case 'mover_etapa': {

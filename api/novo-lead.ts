@@ -103,7 +103,8 @@ export function parseEntrada(raw: Record<string, unknown>, statusEntrada = CRM_M
   // Userscript (JSON simples)
   if (raw.leadId !== undefined) {
     const leadId = Number(raw.leadId)
-    if (leadId) out.iniciar.push({ leadId, comentario: typeof raw.comentario === 'string' ? raw.comentario : null, origem: String(raw.origem || 'userscript') })
+    // Userscript antigo manda o Comment com o fecho do JSON ("...plataforma\"}"): limpa aqui também (Camila, 05/10)
+    if (leadId) out.iniciar.push({ leadId, comentario: typeof raw.comentario === 'string' ? raw.comentario.replace(/"\s*\}+\s*$/, '').trim() : null, origem: String(raw.origem || 'userscript') })
     return out
   }
   const f = achatar(raw)

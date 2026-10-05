@@ -332,6 +332,9 @@ export async function agendarLembretes(leadId: number, ini: number, taskId: stri
   }
 }
 
+/** "o Rodrigo, especialista da Control Gestão" (o lead pergunta o nome de quem faz a reunião, 05/10) */
+const ESPECIALISTA = CRM_MAP.agenda.especialista ? `o ${CRM_MAP.agenda.especialista}, especialista da Control Gestão` : 'o especialista da Control Gestão'
+
 /** Texto do lembrete (fixo, sem IA: data e hora não podem sair erradas). Sempre em português. */
 export function textoLembrete(minutos: number, ini: number, agora: number, nome: string, link = ''): string {
   const l = local(ini)
@@ -340,21 +343,21 @@ export function textoLembrete(minutos: number, ini: number, agora: number, nome:
   // 10 min antes: o link para entrar
   if (minutos <= 15) {
     return link
-      ? `Oi${n}! Em ${minutos} minutinhos começa a nossa reunião com o especialista da Control Gestão. É só entrar por aqui: ${link}\nAté já!`
-      : `Oi${n}! Em ${minutos} minutinhos começa a nossa reunião com o especialista da Control Gestão. Ele te chama por aqui. Até já!`
+      ? `Oi${n}! Em ${minutos} minutinhos começa a nossa reunião com ${ESPECIALISTA}. É só entrar por aqui: ${link}\nAté já!`
+      : `Oi${n}! Em ${minutos} minutinhos começa a nossa reunião com ${ESPECIALISTA}. ${CRM_MAP.agenda.especialista ? `O ${CRM_MAP.agenda.especialista}` : 'Ele'} te chama por aqui. Até já!`
   }
   // 1h antes: aviso (o link vai 10 min antes)
   if (minutos <= 120 && CRM_MAP.lembretes.minutosAntes.some(m => m <= 15)) {
-    return `Oi${n}! Daqui a pouco, às ${hora}, é a nossa reunião com o especialista da Control Gestão. Te mando o link 10 minutinhos antes. Até já!`
+    return `Oi${n}! Daqui a pouco, às ${hora}, é a nossa reunião com ${ESPECIALISTA}. Te mando o link 10 minutinhos antes. Até já!`
   }
   if (minutos >= 12 * 60) {
     return link
-      ? `Oi${n}! Passando pra lembrar da nossa reunião ${rotulo(ini, agora)} com o especialista da Control Gestão. O link é este: ${link}\nConfere se abre certinho aí pra você?`
-      : `Oi${n}! Passando pra lembrar da nossa reunião ${rotulo(ini, agora)} com o especialista da Control Gestão. Tudo certo pra você?`
+      ? `Oi${n}! Passando pra lembrar da nossa reunião ${rotulo(ini, agora)} com ${ESPECIALISTA}. O link é este: ${link}\nConfere se abre certinho aí pra você?`
+      : `Oi${n}! Passando pra lembrar da nossa reunião ${rotulo(ini, agora)} com ${ESPECIALISTA}. Tudo certo pra você?`
   }
   return link
-    ? `Oi${n}! Daqui a pouco, às ${hora}, é a nossa reunião com o especialista da Control Gestão. O link: ${link}\nAté já!`
-    : `Oi${n}! Daqui a pouco, às ${hora}, é a nossa reunião com o especialista da Control Gestão. Até já!`
+    ? `Oi${n}! Daqui a pouco, às ${hora}, é a nossa reunião com ${ESPECIALISTA}. O link: ${link}\nAté já!`
+    : `Oi${n}! Daqui a pouco, às ${hora}, é a nossa reunião com ${ESPECIALISTA}. Até já!`
 }
 
 async function processarLembrete(minutos: number, leadId: number, agora: number): Promise<string> {

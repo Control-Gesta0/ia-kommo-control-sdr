@@ -196,13 +196,17 @@ export function createBrain(opts: LlmOptions) {
         const horas = estado.oferta.map(o => (o.label.match(/\d{1,2}h(?:\d{2})?/) || [''])[0]).filter(Boolean)
         const citaHoras = (t: string) => horas.some(h => new RegExp(`\\b${h}\\b`).test(t))
         const ultimasIa = history.filter(m => m.dir === 'out').slice(-2).map(m => m.text)
-        if (ultimasIa.some(citaHoras) && citaHoras(safe.text) && !FALA_DE_HORARIO.test(ctx.lastLeadText)) {
+        // Não vale quando a agenda foi mexida neste turno ou o lead está escolhendo ("2", "a primeira"): aí
+        // repetir as opções ou confirmar o horário é o certo (Camila, 05/10: a confirmação virou "Certo, Camila.")
+        const mexeuNaAgenda = toolsUsed.includes('agendar_reuniao') || toolsUsed.includes('consultar_horarios')
+        if (!mexeuNaAgenda && !ESCOLHA_CURTA.test(ctx.lastLeadText.trim()) && ultimasIa.some(citaHoras) && citaHoras(safe.text) && !FALA_DE_HORARIO.test(ctx.lastLeadText)) {
           const fixH: Msg[] = [...messages, { role: 'assistant', content: safe.text }, { role: 'system', content: '[TRAVA DO SISTEMA] Você já mandou esses horários na mensagem anterior e ele falou de outra coisa. Responda o que ele trouxe SEM repetir os horários (eles continuam valendo). Se você ainda não perguntou se ele quer seguir com um deles, pode perguntar uma vez, sem citar dia e hora; se já perguntou, não pergunte de novo. Responda só com o texto do WhatsApp.' }]
           const cH = await call(fixH, null, usage)
           const tH = (cH.message?.content || '').trim()
           if (tH) {
             const sH = await enforce(fixH, tH, usage, handoff, ctx.lastLeadText)
-            if (!sH.guard.includes('fallback') && !citaHoras(sH.text)) safe = { text: sH.text, guard: [...sH.guard, 'horários repetidos: refeita'] }
+            // A reescrita não pode perder a pergunta (senão vira "Certo." e a conversa trava)
+            if (!sH.guard.includes('fallback') && !citaHoras(sH.text) && (!/\?/.test(safe.text) || /\?/.test(sH.text))) safe = { text: sH.text, guard: [...sH.guard, 'horários repetidos: refeita'] }
           }
         }
       }
@@ -456,6 +460,8 @@ export function temConvite(t: string): boolean {
     || (/\b(an[aá]lise|reuni[aã]o|apresenta[cç][aã]o|conversa com (o|nosso) especialista|especialista)\b/i.test(f)
       && (/\?/.test(f) ? /\b(quer|vamos|bora|posso|podemos|vale|topa|faz sentido)/i.test(f) : /\b(posso te|podemos|a gente pode|vale (a pena )?marcar|que tal|consigo te (colocar|encaixar)|te coloco|bora|vamos marcar)\b/i.test(f))))
 }
+/** Resposta curta de escolha de horário ("2", "a primeira", "opção 1", "essa") */
+const ESCOLHA_CURTA = /^(?:(?:pode ser|prefiro|fico com|quero|vou de|escolho)\s+)?(?:a|o|op[cç][aã]o|n[uú]mero)?\s*(?:\d|primeir[ao]|segund[ao]|terceir[ao]|[uú]ltim[ao]|essa|esse|de cima|de baixo)\b[^?]{0,25}$/i
 /** Pergunta de cortesia ("tudo bem?", "como vai?"), não de qualificação */
 const RAPPORT = /^(?:\p{L}+,?\s+)?(?:e\s+)?(?:tudo (?:bem|bom|certo|tranquilo|joia)|como (?:vai|est[aá]|voc[eê] est[aá]))[^?]{0,20}\?$/iu
 /** Oferta de horário concreto ("Qual fica melhor: amanhã às 10h ou às 15h?", "tenho segunda às 14h") */

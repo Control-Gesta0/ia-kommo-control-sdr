@@ -318,6 +318,18 @@ export const CENARIOS_REAIS: Cenario[] = [
     ],
   },
   {
+    // Real (lead 20779827, 05/10): respondeu "2" para o 2º horário e a reunião não foi marcada
+    id: 'real-camila-escolhe-numero',
+    porta: 'indicacao', nomeContato: 'Camila', abertura: true, agora: '2026-10-05T14:11:00Z', state: ctx('Saúde, estética e bem-estar'),
+    comentario: 'CRM, demonstracão da plataforma',
+    msgs: ['Bom dia, tudo bem?\nNós estamos começando do zero', '3 pessoas', 'Sim', '2'],
+    checks: [...BASE, { nome: 'marcou a reunião no 2º horário oferecido', fn: (w: any) => w.reunioes.length === 1 && w.state.finalizado?.motivo === 'agendado' }, confirmaSemPergunta],
+    criterios: [
+      'Quando ela responde "2", a IA marca o segundo horário e confirma o dia e a hora',
+      'A confirmação diz que a reunião é com o Rodrigo e que o link vai pelo chat (nunca por e-mail)',
+    ],
+  },
+  {
     // Inventado a partir do Comment real (lead 20772777 nunca respondeu)
     id: 'real-alan-quer-vendedor',
     porta: 'indicacao', nomeContato: 'Alan', abertura: true, agora: '2026-10-02T13:10:00Z', state: ctx('Tecnologia / software'),
