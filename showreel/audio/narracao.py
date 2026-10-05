@@ -9,7 +9,7 @@ Motores:
   kokoro — alternativa local (Apache 2.0). Modelos em github.com/thewh1teagle/kokoro-onnx (model-files-v1.0).
 
 Cada fala tem entrada amarrada à cena e um fim máximo. Se passar, a velocidade sobe de 5 em 5% (até +20%).
-O texto já vem escrito para a voz: "Contról" (lido em português), "I.A." (soletrado, mais curto que
+O texto já vem escrito para a voz: "Contrôl" (con-TRÔL, pronúncia aprovada pelo cliente), "I.A." (soletrado, mais curto que
 "inteligência artificial"), e nenhuma frase de uma palavra só (a voz multilíngue erra o idioma nelas).
 
 Uso: python3 audio/narracao.py out/voz.wav [azure|edge|kokoro] [--kokoro-dir DIR]
@@ -43,7 +43,7 @@ FALAS = [
     (23.20, 26.95, 'O contrato é assinado digitalmente e volta direto pro card.'),
     (27.15, 30.90, 'Pagamento feito? O valor cai direto no card.'),
     (31.20, 34.70, 'Se atrasar, ela cobra no WhatsApp, com o Pix pronto.'),
-    (37.25, 38.40, 'Contról Gestão.'),
+    (37.25, 38.40, 'Contrôl Gestão.'),
     (38.45, 39.35, 'Do oi ao pago.'),
     (39.40, 41.40, 'I.A. no Kommo, de ponta a ponta.'),
     (41.45, 42.80, 'Chama a gente no Insta.'),
