@@ -38,6 +38,15 @@ ffmpeg -i out/do-oi-ao-pago_9x16.mp4 -i out/trilha_narrada.wav -map 0:v -map 1:a
 Pela Azure, o SSML força português do Brasil em toda fala (`<lang xml:lang="pt-BR">`), o que deixa a pronúncia
 estável. O plano gratuito da Azure (F0) cobre a locução inteira (~700 caracteres).
 
+### Capa do Reels
+
+`capa/capa.html` (1080×1920). Logo, título e frase ficam dentro do recorte 3:4 que o Instagram usa no grid
+do perfil (de y=240 a y=1680); o @ fica fora, só aparece no Reels em tela cheia. `?guias` mostra as linhas.
+
+```bash
+node tools/capa.mjs out/capa_reels.png            # --guias para ver os recortes 3:4 (vermelho) e 1:1 (azul)
+```
+
 Prévia rápida de quadros soltos (útil para revisar sem renderizar tudo):
 
 ```bash
