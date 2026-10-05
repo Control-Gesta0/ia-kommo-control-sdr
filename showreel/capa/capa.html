@@ -19,13 +19,15 @@
 
   .t { position:absolute; left:0; right:0; display:flex; align-items:center; justify-content:center; gap:34px; font:900 214px/1 'Figtree'; letter-spacing:-.05em; }
   .t1 { top:566px; }
-  .t2 { top:850px; }
-  .bubble { background:#fff; color:#0E0142; border-radius:64px 64px 64px 16px; padding:4px 56px 30px; transform:rotate(-4deg); box-shadow:0 30px 70px rgba(0,0,0,.4); }
+  .t2 { top:868px; }
+  .bubble { position:relative; background:#fff; color:#0E0142; border-radius:64px 64px 64px 16px; padding:4px 56px 40px; transform:rotate(-4deg); box-shadow:0 30px 70px rgba(0,0,0,.4); }
+  .bubble .meta { position:absolute; right:30px; bottom:16px; display:flex; align-items:center; gap:6px; font:600 26px/1 'Figtree'; letter-spacing:0; color:#8a90a6; }
+  .bubble .meta svg { width:34px; height:22px; }
   .pill { background:linear-gradient(135deg,#22C77A,#12894F); border-radius:52px; padding:4px 54px 30px 50px; transform:rotate(3deg); box-shadow:0 30px 70px rgba(24,178,107,.35); }
 
-  .sub { position:absolute; top:1164px; left:0; right:0; text-align:center; font:600 48px 'Figtree'; color:var(--sub); letter-spacing:-.005em; }
+  .sub { position:absolute; top:1182px; left:0; right:0; text-align:center; font:600 48px 'Figtree'; color:var(--sub); letter-spacing:-.005em; }
 
-  .marcas { position:absolute; top:1338px; left:0; right:0; display:flex; align-items:center; justify-content:center; gap:34px; }
+  .marcas { position:absolute; top:1354px; left:0; right:0; display:flex; align-items:center; justify-content:center; gap:34px; }
   .cg { display:flex; align-items:center; gap:16px; }
   .cg svg { width:104px; height:auto; }
   .cg .wm { font:300 30px/1 Raleway; letter-spacing:.1em; white-space:nowrap; }
@@ -42,7 +44,7 @@
 <body>
 <div class="bg"></div><div class="grain"></div>
 
-<div class="t t1"><span>Do</span><div class="bubble">oi</div></div>
+<div class="t t1"><span>Do</span><div class="bubble">oi<div class="meta">23:47<svg viewBox="0 0 26 16" fill="none" stroke="#3FA2FF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5 8.5 5.5 12.5 13.5 3"/><polyline points="10.5 11.5 11.5 12.5 19.5 3"/></svg></div></div></div>
 <div class="t t2"><span>ao</span><div class="pill">pago.</div></div>
 
 <div class="sub">IA no Kommo, de ponta a ponta.</div>
