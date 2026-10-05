@@ -5,117 +5,61 @@
 <title>Capa Reels</title>
 <link rel="stylesheet" href="../assets/fonts/fonts.css">
 <style>
-  :root { --noite:#0A0A26; --laranja:#EF4F24; --verde:#18B26B; --sub:#C9C3F0; --mono:'JetBrains Mono', monospace; }
+  /* Capa limpa: o título é o protagonista. Tudo que importa fica no recorte 3:4 do grid (y 240–1680). */
+  :root { --noite:#0A0A26; --laranja:#EF4F24; --sub:#C9C3F0; }
   * { box-sizing:border-box; margin:0; padding:0; }
   html, body { width:1080px; height:1920px; overflow:hidden; background:var(--noite); }
   body { font-family:'Figtree', sans-serif; color:#fff; position:relative; -webkit-font-smoothing:antialiased; }
-  .abs { position:absolute; }
   .bg { position:absolute; inset:0;
     background:
-      radial-gradient(900px 760px at 92% 18%, rgba(123,92,255,.55), transparent 62%),
-      radial-gradient(900px 800px at 0% 88%, rgba(239,79,36,.42), transparent 62%),
-      radial-gradient(1200px 900px at 50% 52%, rgba(39,71,110,.6), transparent 72%),
-      var(--noite); }
-  .grid { position:absolute; inset:0; opacity:.08;
-    background-image:linear-gradient(rgba(255,255,255,.8) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.8) 1px, transparent 1px);
-    background-size:90px 90px; -webkit-mask:radial-gradient(ellipse at 50% 50%, #000 30%, transparent 78%); }
-  .grain { position:absolute; inset:0; background:url('../assets/img/grain.png'); opacity:.07; mix-blend-mode:overlay; }
-  .vig { position:absolute; inset:0; background:radial-gradient(ellipse at 50% 50%, transparent 58%, rgba(0,0,0,.5) 100%); }
+      radial-gradient(820px 700px at 88% 22%, rgba(123,92,255,.42), transparent 64%),
+      radial-gradient(820px 700px at 8% 84%, rgba(239,79,36,.30), transparent 64%),
+      linear-gradient(180deg, #0B0B2C 0%, #0A0A26 100%); }
+  .grain { position:absolute; inset:0; background:url('../assets/img/grain.png'); opacity:.05; mix-blend-mode:overlay; }
 
-  /* topo: marcas (dentro do recorte 3:4 do grid) */
-  .brand { position:absolute; top:282px; left:84px; right:84px; display:flex; align-items:center; justify-content:space-between; }
-  .cg { display:flex; align-items:center; gap:18px; }
-  .cg svg { width:118px; height:auto; }
-  .cg .wm { font:300 34px/1 Raleway; letter-spacing:.1em; white-space:nowrap; }
+  .t { position:absolute; left:0; right:0; display:flex; align-items:center; justify-content:center; gap:34px; font:900 214px/1 'Figtree'; letter-spacing:-.05em; }
+  .t1 { top:566px; }
+  .t2 { top:850px; }
+  .bubble { background:#fff; color:#0E0142; border-radius:64px 64px 64px 16px; padding:4px 56px 30px; transform:rotate(-4deg); box-shadow:0 30px 70px rgba(0,0,0,.4); }
+  .pill { background:linear-gradient(135deg,#22C77A,#12894F); border-radius:52px; padding:4px 54px 30px 50px; transform:rotate(3deg); box-shadow:0 30px 70px rgba(24,178,107,.35); }
+
+  .sub { position:absolute; top:1164px; left:0; right:0; text-align:center; font:600 48px 'Figtree'; color:var(--sub); letter-spacing:-.005em; }
+
+  .marcas { position:absolute; top:1338px; left:0; right:0; display:flex; align-items:center; justify-content:center; gap:34px; }
+  .cg { display:flex; align-items:center; gap:16px; }
+  .cg svg { width:104px; height:auto; }
+  .cg .wm { font:300 30px/1 Raleway; letter-spacing:.1em; white-space:nowrap; }
   .cg .wm b { font-weight:700; color:var(--laranja); }
-  .partner { background:#fff; border-radius:16px; padding:10px 14px; box-shadow:0 14px 34px rgba(0,0,0,.4); }
-  .partner img { display:block; width:170px; }
-
-  .kick { position:absolute; top:452px; left:0; right:0; text-align:center; font:700 27px var(--mono); letter-spacing:.26em; color:#9FE6FF; }
-  .kick i { display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--laranja); box-shadow:0 0 14px var(--laranja); margin:0 18px 4px; vertical-align:middle; }
-
-  /* título: "Do [oi]" / "ao [pago]" */
-  .t { position:absolute; left:0; right:0; display:flex; align-items:center; justify-content:center; gap:30px; font:900 214px/1 'Figtree'; letter-spacing:-.05em; }
-  .t1 { top:532px; }
-  .t2 { top:1012px; }
-  .bubble { position:relative; background:#fff; color:#0E0142; border-radius:64px 64px 64px 18px; padding:6px 52px 34px; transform:rotate(-4deg); box-shadow:0 30px 70px rgba(0,0,0,.45); }
-  .bubble .meta { position:absolute; right:30px; bottom:14px; font:600 26px 'Figtree'; letter-spacing:0; color:#8a90a6; }
-  .bubble .meta span { color:#3FA2FF; }
-  .pill { position:relative; background:linear-gradient(135deg,#22C77A,#11834B); color:#fff; border-radius:48px; padding:4px 50px 30px 46px; transform:rotate(3deg);
-    box-shadow:0 30px 70px rgba(24,178,107,.45), inset 0 0 0 4px rgba(255,255,255,.18); }
-  .pill .ck { position:absolute; top:-46px; right:-40px; width:118px; height:118px; border-radius:50%; background:#fff; display:grid; place-items:center;
-    box-shadow:0 14px 34px rgba(0,0,0,.35), 0 0 0 8px rgba(24,178,107,.35); }
-  .pill .ck svg { width:74px; height:74px; }
-
-  /* jornada entre o oi e o pago */
-  .path { position:absolute; left:0; top:0; width:1080px; height:1920px; overflow:visible; }
-  .node { position:absolute; width:96px; height:96px; margin:-48px; border-radius:50%; display:grid; place-items:center;
-    background:rgba(20,18,60,.92); border:3px solid rgba(255,255,255,.35); color:#fff; box-shadow:0 0 26px rgba(123,92,255,.45); }
-  .node svg { width:46px; height:46px; }
-  .node.hot { background:linear-gradient(135deg,#FF9A5A,#EF4F24); border-color:transparent; box-shadow:0 0 34px rgba(239,79,36,.7); }
-  .spark { position:absolute; width:84px; height:84px; margin:-42px; border-radius:50%; background:linear-gradient(135deg,#3FD0FF,#7B5CFF); display:grid; place-items:center; box-shadow:0 0 40px rgba(123,92,255,.8); }
-  .spark svg { width:48px; height:48px; }
-  .lbl { position:absolute; font:700 22px var(--mono); letter-spacing:.14em; color:rgba(244,242,255,.75); white-space:nowrap; }
-
-  .sub { position:absolute; top:1418px; left:90px; right:90px; text-align:center; font:600 46px/1.28 'Figtree'; color:var(--sub); }
-  .sub b { color:#fff; font-weight:800; }
-
-  .char { position:absolute; filter:drop-shadow(0 22px 26px rgba(0,0,0,.45)); }
-
-  /* fora do recorte do grid: só aparece no Reels em tela cheia */
-  .cta { position:absolute; top:1716px; left:0; right:0; display:flex; justify-content:center; }
-  .cta div { display:flex; align-items:center; gap:14px; padding:14px 30px 14px 14px; border-radius:999px; background:linear-gradient(95deg,#E6F76A,#6FF0D2); color:#0E0142; font:900 36px 'Figtree'; }
-  .cta img { width:58px; height:58px; border-radius:16px; }
+  .sep { width:2px; height:56px; background:rgba(255,255,255,.25); }
+  .kommo { display:flex; flex-direction:column; align-items:flex-start; gap:2px; }
+  .kommo img { width:150px; filter:brightness(0) invert(1); }
+  .kommo span { font:500 22px/1 'Raleway'; letter-spacing:.24em; color:rgba(255,255,255,.7); padding-left:3px; }
 
   .safe { position:absolute; left:0; right:0; border-top:3px dashed rgba(255,61,96,.9); display:none; }
   body.guias .safe { display:block; }
 </style>
 </head>
 <body>
-<div class="bg"></div><div class="grid"></div>
+<div class="bg"></div><div class="grain"></div>
 
-<svg class="path" viewBox="0 0 1080 1920">
-  <defs><linearGradient id="pg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3FD0FF"/><stop offset=".5" stop-color="#7B5CFF"/><stop offset="1" stop-color="#22C77A"/></linearGradient></defs>
-  <path d="M 300 800 C 140 860, 120 940, 300 960 S 600 950, 690 990" fill="none" stroke="url(#pg)" stroke-width="8" stroke-linecap="round" stroke-dasharray="2 22"/>
-</svg>
+<div class="t t1"><span>Do</span><div class="bubble">oi</div></div>
+<div class="t t2"><span>ao</span><div class="pill">pago.</div></div>
 
-<div class="brand">
+<div class="sub">IA no Kommo, de ponta a ponta.</div>
+
+<div class="marcas">
   <div class="cg"><svg id="cg" viewBox="0 0 1330 708"></svg><div class="wm">CONTROL <b>GESTÃO</b></div></div>
-  <div class="partner"><img src="../assets/img/kommo-partner.png"></div>
+  <div class="sep"></div>
+  <div class="kommo"><img src="../assets/img/kommo-logo.png"><span>PARTNER</span></div>
 </div>
-
-<div class="kick">IA NO KOMMO<i></i>DE PONTA A PONTA</div>
-
-<div class="t t1"><span>Do</span><div class="bubble">oi<div class="meta">23:47 <span>✓✓</span></div></div></div>
-<div class="t t2"><span>ao</span><div class="pill">pago.<div class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="#11834B" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div></div></div>
-
-<div id="nodes"></div>
-
-<div class="sub">A IA que <b>atende, agenda, assina e cobra</b> dentro do Kommo.</div>
-
-<img class="char" src="../assets/kommo/lightning-pink.png" style="width:118px;left:902px;top:742px;transform:rotate(16deg)">
-<img class="char" src="../assets/kommo/wallet.png" style="width:140px;left:46px;top:1236px;transform:rotate(-12deg)">
-
-<div class="cta"><div><img src="../assets/kommo/ch-instagram.png">@control.gestao</div></div>
 
 <div class="safe" style="top:240px"></div><div class="safe" style="top:1680px"></div>
 <div class="safe" style="top:420px;border-color:rgba(63,208,255,.9)"></div><div class="safe" style="top:1500px;border-color:rgba(63,208,255,.9)"></div>
 
-<script src="../js/icons.js"></script>
 <script src="../js/cg-paths.js"></script>
 <script>
   const P = window.CG_PATHS;
   document.getElementById('cg').innerHTML = `<path fill="#fff" fill-rule="evenodd" d="${P.C}"/><path fill="#fff" fill-rule="evenodd" d="${P.Gtop}"/><path fill="#fff" fill-rule="evenodd" d="${P.Gbot}"/><path fill="#EF4F24" fill-rule="evenodd" d="${P.lens}"/>`;
-  // jornada: ícones ao longo do caminho entre o "oi" e o "pago"
-  const path = document.querySelector('.path path');
-  const L = path.getTotalLength();
-  const icons = [['chat', 0.12], ['check', 0.3], ['kanban', 0.47], ['calendar', 0.64], ['contract', 0.8], ['coin', 0.96]];
-  const box = document.getElementById('nodes');
-  icons.forEach(([ic, u], i) => {
-    const p = path.getPointAtLength(L * u);
-    box.insertAdjacentHTML('beforeend', `<div class="node ${i === icons.length - 1 ? 'hot' : ''}" style="left:${p.x}px;top:${p.y}px">${ICONS[ic]}</div>`);
-  });
-  const sp = path.getPointAtLength(L * 0.55);
   if (new URLSearchParams(location.search).has('guias')) document.body.classList.add('guias');
   window.__ready = document.fonts.ready.then(() => Promise.all([...document.images].map(i => i.decode().catch(() => {}))));
 </script>

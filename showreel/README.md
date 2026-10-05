@@ -40,8 +40,9 @@ estável. O plano gratuito da Azure (F0) cobre a locução inteira (~700 caracte
 
 ### Capa do Reels
 
-`capa/capa.html` (1080×1920). Logo, título e frase ficam dentro do recorte 3:4 que o Instagram usa no grid
-do perfil (de y=240 a y=1680); o @ fica fora, só aparece no Reels em tela cheia. `?guias` mostra as linhas.
+`capa/capa.html` (1080×1920), versão limpa: título, uma frase e as marcas numa linha. Tudo fica dentro do
+recorte 3:4 que o Instagram usa no grid do perfil (y 240–1680) e também do recorte quadrado (y 420–1500).
+`?guias` mostra as linhas.
 
 ```bash
 node tools/capa.mjs out/capa_reels.png            # --guias para ver os recortes 3:4 (vermelho) e 1:1 (azul)
