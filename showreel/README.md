@@ -21,6 +21,23 @@ tools/build.sh v out out/trilha.wav                         # 1080x1920 → out/
 tools/build.sh h out out/trilha.wav                         # 1920x1080 → out/do-oi-ao-pago_16x9.mp4
 ```
 
+### Versão narrada (voz Thalita, Microsoft)
+
+A locução está em `audio/narracao.py`: 16 falas amarradas ao tempo das cenas, escritas para a voz
+("Contrôl Gestão" com ô fechado, "I.A." soletrado, sem frases de uma palavra só). A música abaixa sozinha
+enquanto a voz fala e o resultado é normalizado em -14 LUFS.
+
+```bash
+pip install edge-tts                                          # só para prévia (leitor do Edge, não comercial)
+python3 audio/narracao.py out/voz.wav azure                   # produção: precisa de AZURE_SPEECH_KEY e AZURE_SPEECH_REGION
+python3 audio/make_audio.py audio/cues.json out/trilha_narrada.wav out/voz.wav
+ffmpeg -i out/do-oi-ao-pago_9x16.mp4 -i out/trilha_narrada.wav -map 0:v -map 1:a -c:v copy -c:a aac -b:a 160k \
+  -shortest -movflags +faststart out/do-oi-ao-pago_narrado_9x16.mp4             # idem para 16x9
+```
+
+Pela Azure, o SSML força português do Brasil em toda fala (`<lang xml:lang="pt-BR">`), o que deixa a pronúncia
+estável. O plano gratuito da Azure (F0) cobre a locução inteira (~700 caracteres).
+
 Prévia rápida de quadros soltos (útil para revisar sem renderizar tudo):
 
 ```bash
@@ -35,7 +52,8 @@ node tools/render.mjs --fmt v --stills 5.2,11.8,28.0,38.8 --scale 0.5 --out out/
 | Títulos cinéticos, card do Kommo, pílula da IA, participações 3D | `js/ui.js` |
 | Fundo, HUD, flash, luz vazada, tremida | `js/globals.js` |
 | Cores, fontes e componentes | `css/style.css` |
-| Música (progressão, bateria, timbres) e efeitos | `audio/make_audio.py` |
+| Música (progressão, bateria, timbres), efeitos e mixagem com a voz | `audio/make_audio.py` |
+| Texto e tempo da locução | `audio/narracao.py` |
 
 ## Créditos e cuidados
 
