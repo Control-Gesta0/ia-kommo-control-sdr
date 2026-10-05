@@ -45,7 +45,8 @@ const confirmaSemPergunta = { nome: 'confirmação final sem pergunta', fn: (_w:
 const naoRepeteHorarios = {
   nome: 'não repete a mesma lista de horários em mensagens seguidas (quando o lead fala de outra coisa)',
   fn: (_w: any, t: T[]) => t.every((x, i) => {
-    if (i === 0 || FALA_HORARIO.test(x.lead)) return true
+    // Lead escolhendo ("2", "a primeira"): confirmar o horário escolhido não é repetir a lista
+    if (i === 0 || FALA_HORARIO.test(x.lead) || /^\W*(\d|primeir|segund|[uú]ltim)/i.test(x.lead.trim())) return true
     const antes = new Set(t[i - 1].resposta.match(HORA) || [])
     return !(x.resposta.match(HORA) || []).some(h => antes.has(h))
   }),
@@ -55,7 +56,7 @@ const PEDIU = /reuni[aã]o|apresenta|demonstra[cç]|me mostr|conhecer (a |melhor
 const CONVIDA = (t: string) => t.split(/(?<=[.!?])\s+|\n+/).some(f => (/\?/.test(f) && /\b(marc|agend)\w*/i.test(f)) || (/\b(an[aá]lise|reuni[aã]o|especialista)\b/i.test(f) && (/\?/.test(f) ? /\b(quer|vamos|bora|posso|podemos|vale|topa)/i.test(f) : /\b(posso te|podemos|a gente pode|que tal|te coloco)\b/i.test(f))))
 const semConviteDeCara = {
   nome: 'não convida para a reunião na abertura nem na 1ª resposta (salvo se o lead pediu)',
-  fn: (w: any, t: T[]) => /(falar|conversar) com (um|uma|o|a) (vendedor|consultor|especialista)|reuni[aã]o|apresenta[cç][aã]o/i.test(w.state.comentario || '') || t.slice(0, 2).every(x => PEDIU.test(x.lead) || !CONVIDA(x.resposta)),
+  fn: (w: any, t: T[]) => /(falar|conversar) com (um|uma|o|a) (vendedor|consultor|especialista|pessoa|atendente)|reuni[aã]o|apresenta[cç][aã]o|demonstra[cç][aã]o|liga[cç][aã]o/i.test(w.state.comentario || '') || t.slice(0, 2).every(x => PEDIU.test(x.lead) || !CONVIDA(x.resposta)),
 }
 const duracaoUmaVez = { nome: 'duração "30 a 45 minutos" no máximo uma vez na conversa', fn: (_w: any, t: T[]) => t.filter(x => /30\s*(a|-|–|ou)\s*45\s*min/i.test(x.resposta)).length <= 1 }
 const dado49UmaVez = { nome: 'dado dos 49% do follow-up no máximo uma vez na conversa', fn: (_w: any, t: T[]) => t.filter(x => /49\s*%/.test(x.resposta)).length <= 1 }
