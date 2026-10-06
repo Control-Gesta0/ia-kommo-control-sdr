@@ -7,7 +7,7 @@ import { appendMessage, getHistory } from './history'
 import { acharComentario, classificarSuporte, extrairContexto, foraDoIdioma, marcaDeInvalido, segmentoPt, type Classificacao, type ContextoIndicacao } from './indicacao'
 import { classificarIntencao } from './intencao'
 import {
-  addLeadNote, addLeadTags, contactPhones, getContact, getLead, getLeadNotes, kommoGet, leadTags, textoDasNotas, textoDoLead, updateLeadFields, type KommoLead,
+  addLeadNote, addLeadTags, contactPhones, getContact, getLead, getLeadNotes, kommoGet, leadTags, sleep, textoDasNotas, textoDoLead, updateLeadFields, type KommoLead,
 } from './kommo'
 import { primeiroNomeDe } from './llm'
 import { nota, quando } from './notas'
@@ -123,7 +123,13 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
       const c = cid ? await getContact(cid) : null
       return { lead: l, contato: c, telefones: c ? contactPhones(c) : [] }
     }
-    const { lead, contato, telefones } = await lerContato()
+    let { lead, contato, telefones } = await lerContato()
+    // A Kommo cria o contato e o telefone alguns segundos depois do aceite (lead 20782629, 06/10):
+    // confere de novo em 30 s; se ainda faltar, reconfere mais uma vez 5 minutos depois (abaixo)
+    if (!telefones.length && !opts.reconferencia) {
+      await sleep(30000)
+      ;({ lead, contato, telefones } = await lerContato())
+    }
     // Nome da PESSOA (o nome do lead costuma ser a empresa ou "Lead №85304")
     nome = contato?.name || lead.name || ''
     const leitura = await lerIndicacao(lead, comentarioInformado)
@@ -163,8 +169,7 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
     }
     if (d.acao === 'sem-telefone') {
       await addLeadTags(leadId, [CRM_MAP.tags.semTelefone])
-      // A Kommo cria o contato e o telefone alguns segundos DEPOIS do aceite (lead 20782629, 06/10:
-      // checou às 14:04:03, telefone às 14:04:04): confere UMA vez de novo daqui a 5 minutos
+      // Ainda sem telefone 30 s depois do aceite: confere uma última vez daqui a 5 minutos
       const reconfere = !opts.reconferencia
       await addLeadNote(leadId, `☎️ IA não iniciou: o contato não tem telefone${reconfere ? ' (confere de novo em 5 minutos)' : ''}. Comment: ${comentario ?? '(não achado)'}`)
       await logExec({ tipo: 'pulou', leadId, nome, detalhe: `sem telefone · via ${origem}${reconfere ? ' · reconfere em 5 min' : ''}` })
