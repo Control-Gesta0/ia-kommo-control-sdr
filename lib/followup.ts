@@ -75,6 +75,9 @@ interface Cadencia { passo: number; desde: number; tipo: 'sdr' | 'neg' }
 
 const chaveEstado = (tipo: string, leadId: number) => k('fu', tipo, leadId)
 
+/** Item avulso na fila (ex.: tel:<lead> = reconferir o telefone do contato) */
+export const agendarItem = (membro: string, quando: number) => enfileirar(membro, quando)
+
 async function enfileirar(membro: string, quando: number): Promise<void> {
   await redis.zadd(FILA(), { score: quando, member: membro })
   await despertar(membro, quando).catch(e => console.warn('[qstash]', e instanceof Error ? e.message : e))
@@ -198,6 +201,13 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
   const [tipo, idTxt] = membro.split(':')
   const leadId = Number(idTxt)
   if (!leadId) return 'inválido'
+
+  if (tipo === 'tel') {
+    // Reconferência do telefone 5 min depois do aceite (uma vez só)
+    const { iniciarConversa } = await import('./iniciar')
+    const r = await iniciarConversa(leadId, 'reconferencia-telefone', null, { reconferencia: true })
+    return `reconferência do telefone: ${r.acao} (${r.detalhe})`
+  }
 
   if (tipo === 'sdr') {
     const est = await redis.get<Cadencia>(chaveEstado('sdr', leadId))

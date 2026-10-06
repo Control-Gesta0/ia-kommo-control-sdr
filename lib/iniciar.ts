@@ -7,12 +7,12 @@ import { appendMessage, getHistory } from './history'
 import { acharComentario, classificarSuporte, extrairContexto, foraDoIdioma, marcaDeInvalido, segmentoPt, type Classificacao, type ContextoIndicacao } from './indicacao'
 import { classificarIntencao } from './intencao'
 import {
-  addLeadNote, addLeadTags, contactPhones, getContact, getLead, getLeadNotes, kommoGet, leadTags, sleep, textoDasNotas, textoDoLead, updateLeadFields, type KommoLead,
+  addLeadNote, addLeadTags, contactPhones, getContact, getLead, getLeadNotes, kommoGet, leadTags, textoDasNotas, textoDoLead, updateLeadFields, type KommoLead,
 } from './kommo'
 import { primeiroNomeDe } from './llm'
 import { nota, quando } from './notas'
 import { avancar } from './etapas'
-import { agendarFollowup } from './followup'
+import { agendarFollowup, agendarItem } from './followup'
 import { kommoPort } from './port'
 import { k, redis } from './redis'
 import { saudacao } from './saudacao'
@@ -109,7 +109,7 @@ async function lerIndicacao(lead: KommoLead, informado?: string | null): Promise
 
 export interface ResultadoInicio { ok: boolean; acao: string; detalhe: string }
 
-export async function iniciarConversa(leadId: number, origem: string, comentarioInformado?: string | null, opts: { manual?: boolean; responder?: boolean } = {}): Promise<ResultadoInicio> {
+export async function iniciarConversa(leadId: number, origem: string, comentarioInformado?: string | null, opts: { manual?: boolean; responder?: boolean; reconferencia?: boolean } = {}): Promise<ResultadoInicio> {
   const t0 = Date.now()
   const chave = k('inicio', leadId)
   if ((await redis.set(chave, origem, { nx: true, ex: 30 * 86400 })) !== 'OK') {
@@ -123,13 +123,7 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
       const c = cid ? await getContact(cid) : null
       return { lead: l, contato: c, telefones: c ? contactPhones(c) : [] }
     }
-    let { lead, contato, telefones } = await lerContato()
-    // A Kommo cria o contato e preenche o telefone alguns segundos DEPOIS do aceite (lead 20782629,
-    // 06/10: checou às 14:04:03, telefone chegou às 14:04:04): espera até ~25 s antes de desistir
-    for (let i = 0; i < 5 && !telefones.length; i++) {
-      await sleep(5000)
-      ;({ lead, contato, telefones } = await lerContato())
-    }
+    const { lead, contato, telefones } = await lerContato()
     // Nome da PESSOA (o nome do lead costuma ser a empresa ou "Lead №85304")
     nome = contato?.name || lead.name || ''
     const leitura = await lerIndicacao(lead, comentarioInformado)
@@ -169,10 +163,14 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
     }
     if (d.acao === 'sem-telefone') {
       await addLeadTags(leadId, [CRM_MAP.tags.semTelefone])
-      await addLeadNote(leadId, `☎️ IA não iniciou: o contato não tem telefone. Comment: ${comentario ?? '(não achado)'}`)
-      await logExec({ tipo: 'pulou', leadId, nome, detalhe: `sem telefone · via ${origem}` })
-      // Libera a chave: se o telefone aparecer depois, a tag ia-sdr colocada à mão inicia a conversa
+      // A Kommo cria o contato e o telefone alguns segundos DEPOIS do aceite (lead 20782629, 06/10:
+      // checou às 14:04:03, telefone às 14:04:04): confere UMA vez de novo daqui a 5 minutos
+      const reconfere = !opts.reconferencia
+      await addLeadNote(leadId, `☎️ IA não iniciou: o contato não tem telefone${reconfere ? ' (confere de novo em 5 minutos)' : ''}. Comment: ${comentario ?? '(não achado)'}`)
+      await logExec({ tipo: 'pulou', leadId, nome, detalhe: `sem telefone · via ${origem}${reconfere ? ' · reconfere em 5 min' : ''}` })
+      // Libera a chave: a reconferência (ou a tag ia-sdr colocada à mão) pode iniciar a conversa depois
       await redis.del(chave)
+      if (reconfere) await agendarItem(`tel:${leadId}`, Date.now() + 5 * 60000).catch(e => console.warn('[inicio] reconferir telefone:', e))
       return { ok: true, acao: d.acao, detalhe: d.motivo }
     }
     if (d.acao !== 'iniciar') {
