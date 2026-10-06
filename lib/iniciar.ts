@@ -7,7 +7,7 @@ import { appendMessage, getHistory } from './history'
 import { acharComentario, classificarSuporte, extrairContexto, foraDoIdioma, marcaDeInvalido, segmentoPt, type Classificacao, type ContextoIndicacao } from './indicacao'
 import { classificarIntencao } from './intencao'
 import {
-  addLeadNote, addLeadTags, contactPhones, getContact, getLead, getLeadNotes, kommoGet, leadTags, textoDasNotas, textoDoLead, updateLeadFields, type KommoLead,
+  addLeadNote, addLeadTags, contactPhones, getContact, getLead, getLeadNotes, kommoGet, leadTags, sleep, textoDasNotas, textoDoLead, updateLeadFields, type KommoLead,
 } from './kommo'
 import { primeiroNomeDe } from './llm'
 import { nota, quando } from './notas'
@@ -117,12 +117,21 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
   }
   let nome = ''
   try {
-    const lead = await getLead(leadId)
-    const contatoId = (lead._embedded?.contacts || []).find(c => c.is_main)?.id || lead._embedded?.contacts?.[0]?.id
-    const contato = contatoId ? await getContact(contatoId) : null
+    const lerContato = async () => {
+      const l = await getLead(leadId)
+      const cid = (l._embedded?.contacts || []).find(c => c.is_main)?.id || l._embedded?.contacts?.[0]?.id
+      const c = cid ? await getContact(cid) : null
+      return { lead: l, contato: c, telefones: c ? contactPhones(c) : [] }
+    }
+    let { lead, contato, telefones } = await lerContato()
+    // A Kommo cria o contato e preenche o telefone alguns segundos DEPOIS do aceite (lead 20782629,
+    // 06/10: checou às 14:04:03, telefone chegou às 14:04:04): espera até ~25 s antes de desistir
+    for (let i = 0; i < 5 && !telefones.length; i++) {
+      await sleep(5000)
+      ;({ lead, contato, telefones } = await lerContato())
+    }
     // Nome da PESSOA (o nome do lead costuma ser a empresa ou "Lead №85304")
     nome = contato?.name || lead.name || ''
-    const telefones = contato ? contactPhones(contato) : []
     const leitura = await lerIndicacao(lead, comentarioInformado)
     const { comentario, contexto, textoIndicacao } = leitura
     // Liberado pelo Rodrigo (LIBERAR_INVALIDOS): atende mesmo com a marca de inválido da Kommo
@@ -162,6 +171,8 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
       await addLeadTags(leadId, [CRM_MAP.tags.semTelefone])
       await addLeadNote(leadId, `☎️ IA não iniciou: o contato não tem telefone. Comment: ${comentario ?? '(não achado)'}`)
       await logExec({ tipo: 'pulou', leadId, nome, detalhe: `sem telefone · via ${origem}` })
+      // Libera a chave: se o telefone aparecer depois, a tag ia-sdr colocada à mão inicia a conversa
+      await redis.del(chave)
       return { ok: true, acao: d.acao, detalhe: d.motivo }
     }
     if (d.acao !== 'iniciar') {
