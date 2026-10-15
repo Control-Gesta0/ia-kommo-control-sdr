@@ -26,8 +26,9 @@
  *      + MARGEM (40 ms).
  *   2. Repete rápido só enquanto a resposta NÃO for sucesso (rede, erro genérico).
  *   3. Depois do aceite, CONFERE o lead (notas e eventos): "no longer available"
- *      = foi cedo → a margem sobe 1s; "already been accepted by other partners"
- *      = perdeu a corrida; limpo = válido. 5 válidos seguidos → a margem desce 0,25s.
+ *      = foi cedo → a margem sobe 0,2s (rajada conta uma vez, teto 0,6s); "already been
+ *      accepted by other partners" = perdeu a corrida → a margem desce 0,1s; limpo = válido.
+ *      3 válidos seguidos → a margem desce 0,1s.
  *   4. Lead que já passou da janela (indicação antiga parada em Incoming) é
  *      ignorado em silêncio.
  *   5. Limite GLOBAL de 6 req/s somando todos os leads.
@@ -56,14 +57,19 @@
 
     // Liberação medida: exatamente 300s depois da chegada do lead
     LIBERACAO_MS: 5 * 60 * 1000,
-    // Folga depois do limite seguro. Sobe sozinha 300 ms se algum aceite sair cedo.
+    // Folga depois do limite seguro. Sobe sozinha 200 ms se algum aceite sair cedo (teto MARGEM_MAX_MS).
     MARGEM_MS: 40,
     // Dispara X ms ANTES do limite calculado. 2000 ms validado em 30/09 (v3.6.0): 6 de 6 leads aceitos
-    // entre +299s e +300s, todos válidos (com contato). Se algum sair cedo, a margem sobe 0,5 s sozinha.
+    // entre +299s e +300s, todos válidos (com contato). Se algum sair cedo, a margem sobe 0,2 s sozinha.
     ANTECIPAR_MS: 2000,
     AJUSTAR_MARGEM: true,
     MARGEM_MIN_MS: 0,
-    MARGEM_MAX_MS: 5000,
+    // Teto da margem automática. MEDIDO (07 a 15/10): margem de ~1,5s jogou todo aceite do segundo
+    // 300 para o 301 da Kommo e a perda para outros parceiros foi de 4 em 31 para 18 em 35.
+    MARGEM_MAX_MS: 600,
+    MARGEM_SOBE_MS: 200,          // aceite cedo (rajada de cedos em 2 min conta uma vez só)
+    MARGEM_DESCE_MS: 100,         // lead perdido para outro parceiro, ou VALIDOS_PARA_DESCER válidos seguidos
+    VALIDOS_PARA_DESCER: 3,
 
     JANELA_MS: 8000,             // depois do disparo, repete só enquanto não houver sucesso
     MIN_INTERVALO_MS: 150,
@@ -89,7 +95,7 @@
   var pageFetch = W.fetch.bind(W)
   var STORE_KEY = 'cg-indicacoes-v3'
   var DIAG_KEY = 'cg-indicacoes-v3-diag'
-  var VERSAO = '3.7.2'
+  var VERSAO = '3.7.3'
 
   if (W.__INDICACOES__ && W.__INDICACOES__.stop) {
     console.warn('[INDICAÇÕES] já ativo, reiniciando...')
@@ -118,6 +124,8 @@
   if (memo.leads || memo.aprendizado) memo = {}
   var aprendizado = store.aprendizado || {}
   if (typeof aprendizado.margem !== 'number') aprendizado = { margem: CFG.MARGEM_MS, validosSeguidos: 0, historico: [] }
+  // Margem acima do teto (aprendida pela regra antiga, até 5s) volta ao ponto de partida
+  if (aprendizado.margem > CFG.MARGEM_MAX_MS) { aprendizado.margem = CFG.MARGEM_MS; aprendizado.validosSeguidos = 0 }
   var diag = ler(DIAG_KEY, {})
 
   function salvar() {
@@ -460,15 +468,24 @@
     aprendizado.historico = (aprendizado.historico || []).concat([{ id: id, resultado: resultado, offsetMs: offset, margemMs: margem(), em: new Date().toISOString() }]).slice(-30)
     if (CFG.AJUSTAR_MARGEM) {
       if (resultado === 'cedo') {
-        aprendizado.margem = Math.min(CFG.MARGEM_MAX_MS, aprendizado.margem + 500)
         aprendizado.validosSeguidos = 0
+        // Cedos em rajada (07/10: 3 no mesmo minuto) vêm da mesma leitura de relógio: sobe uma vez só
+        if (now() - (aprendizado.ultimaSubida || 0) < 2 * 60 * 1000) { log('📈', 'aceite saiu CEDO (mesma rajada): margem fica em ' + seg(aprendizado.margem)); salvar(); return }
+        aprendizado.ultimaSubida = now()
+        aprendizado.margem = Math.min(CFG.MARGEM_MAX_MS, aprendizado.margem + CFG.MARGEM_SOBE_MS)
         log('📈', 'aceite saiu CEDO: margem sobe para ' + seg(aprendizado.margem))
+      } else if (resultado === 'outros') {
+        // Outro parceiro chegou antes: a margem está custando lead, desce
+        if (aprendizado.margem > CFG.MARGEM_MS) {
+          aprendizado.margem = Math.max(CFG.MARGEM_MS, aprendizado.margem - CFG.MARGEM_DESCE_MS)
+          log('📉', 'perdido para outro parceiro: margem desce para ' + seg(aprendizado.margem))
+        }
       } else if (resultado === 'valido') {
         aprendizado.validosSeguidos = (aprendizado.validosSeguidos || 0) + 1
-        if (aprendizado.validosSeguidos >= 5 && aprendizado.margem > CFG.MARGEM_MS) {
-          aprendizado.margem = Math.max(CFG.MARGEM_MS, aprendizado.margem - 100)
+        if (aprendizado.validosSeguidos >= CFG.VALIDOS_PARA_DESCER && aprendizado.margem > CFG.MARGEM_MS) {
+          aprendizado.margem = Math.max(CFG.MARGEM_MS, aprendizado.margem - CFG.MARGEM_DESCE_MS)
           aprendizado.validosSeguidos = 0
-          log('📉', '5 aceites válidos seguidos: margem desce para ' + seg(aprendizado.margem))
+          log('📉', CFG.VALIDOS_PARA_DESCER + ' aceites válidos seguidos: margem desce para ' + seg(aprendizado.margem))
         }
       }
     }
@@ -521,7 +538,7 @@
         }
         if (res === 'nao_existe') return fim('nao_existe')
         // Se a própria resposta do aceite já disser isso, a indicação acabou para nós
-        if (res === 'cedo' || res === 'outros') { if (res === 'cedo' && memo[id].criado) registrarResultado(id, 'cedo', now() + difServidor() - memo[id].criado); return fim('perdido', ROTULO[res]) }
+        if (res === 'cedo' || res === 'outros') { if (memo[id].criado) registrarResultado(id, res, now() + difServidor() - memo[id].criado); return fim('perdido', ROTULO[res]) }
         marcar(id, { ultimaResposta: ROTULO[res] })
         return esperar(res === 'recuar' ? CFG.RECUO_429_MS : rand(CFG.MIN_INTERVALO_MS, CFG.MAX_INTERVALO_MS)).then(volta)
       }, function (e) {
@@ -916,7 +933,7 @@
       return JSON.stringify({ versao: VERSAO, gerado: new Date().toISOString(), url: location.pathname, apiSessaoOk: apiSessaoOk, difServidorMs: Math.round(difServidor()), relogioIntervaloMs: relogioLo === null ? null : [Math.round(relogioLo), Math.round(relogioHi)], amostrasRelogio: amostrasRelogio.length, margemMs: margem(), aprendizado: aprendizado, ponte: { entregues: ponte.entregues, ultimoErro: ponte.ultimoErro, host: ponte.host, tentativas: ponte.tentativas }, cfg: CFG, leads: memo, diag: diag }, null, 1)
     },
     esquecer: function (id) { delete memo[id]; delete diag[id]; salvar(); gravar(DIAG_KEY, diag) },
-    zerarMargem: function () { aprendizado = { margem: CFG.MARGEM_MS, validosSeguidos: 0, historico: [] }; salvar() },
+    zerarMargem: function () { aprendizado.margem = CFG.MARGEM_MS; aprendizado.validosSeguidos = 0; aprendizado.historico = []; salvar() },
     relogio: function () { return { difServidorMs: Math.round(difServidor()), intervaloMs: relogioLo === null ? null : [Math.round(relogioLo), Math.round(relogioHi)], amostras: amostrasRelogio.length } },
   }
 
