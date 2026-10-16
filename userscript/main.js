@@ -1,4 +1,4 @@
-/* global FiltroIndicacao, GM_xmlhttpRequest, GM_notification, unsafeWindow */
+/* global FiltroIndicacao, GM_xmlhttpRequest, GM_notification, GM_getValue, GM_setValue, unsafeWindow */
 /**
  * Indicações Kommo v3.3: corpo do userscript. NÃO edite o .user.js gerado:
  * edite este arquivo (e o filtro-indicacao.js) e rode `npm run build:userscript`.
@@ -85,7 +85,7 @@
 
     // Lara (agente de IA). AGENTE_SECRET = INDICACAO_SECRET da Vercel.
     AGENTE_URL: 'https://ia-kommo-control-sdr.vercel.app',
-    AGENTE_SECRET: '',
+    AGENTE_SECRET: '',           // preenchida uma vez, fica guardada no Tampermonkey (versão nova colada por cima não apaga)
 
     DIAGNOSTICO: true,
     DEBUG: false,
@@ -95,7 +95,7 @@
   var pageFetch = W.fetch.bind(W)
   var STORE_KEY = 'cg-indicacoes-v3'
   var DIAG_KEY = 'cg-indicacoes-v3-diag'
-  var VERSAO = '3.7.3'
+  var VERSAO = '3.7.4'
 
   if (W.__INDICACOES__ && W.__INDICACOES__.stop) {
     console.warn('[INDICAÇÕES] já ativo, reiniciando...')
@@ -127,6 +127,15 @@
   // Margem acima do teto (aprendida pela regra antiga, até 5s) volta ao ponto de partida
   if (aprendizado.margem > CFG.MARGEM_MAX_MS) { aprendizado.margem = CFG.MARGEM_MS; aprendizado.validosSeguidos = 0 }
   var diag = ler(DIAG_KEY, {})
+
+  // Chave da Lara guardada no armazenamento do Tampermonkey (não no da página): colar uma versão
+  // nova do script, que vem com a chave em branco, não desliga mais o aviso de aceite
+  // (16/10: dois leads aceitos ficaram sem a primeira mensagem por isso)
+  var SECRET_KEY = 'agente-secret'
+  try {
+    if (CFG.AGENTE_SECRET) GM_setValue(SECRET_KEY, CFG.AGENTE_SECRET)
+    else CFG.AGENTE_SECRET = GM_getValue(SECRET_KEY, '') || ''
+  } catch (_) { /* sem GM_*Value: segue com o que está no código */ }
 
   function salvar() {
     var limite = now() - 48 * 3600 * 1000
@@ -933,10 +942,16 @@
       return JSON.stringify({ versao: VERSAO, gerado: new Date().toISOString(), url: location.pathname, apiSessaoOk: apiSessaoOk, difServidorMs: Math.round(difServidor()), relogioIntervaloMs: relogioLo === null ? null : [Math.round(relogioLo), Math.round(relogioHi)], amostrasRelogio: amostrasRelogio.length, margemMs: margem(), aprendizado: aprendizado, ponte: { entregues: ponte.entregues, ultimoErro: ponte.ultimoErro, host: ponte.host, tentativas: ponte.tentativas }, cfg: CFG, leads: memo, diag: diag }, null, 1)
     },
     esquecer: function (id) { delete memo[id]; delete diag[id]; salvar(); gravar(DIAG_KEY, diag) },
+    /** Guarda a chave da Lara (INDICACAO_SECRET) no Tampermonkey; recarregue a aba depois */
+    definirChave: function (chave) { CFG.AGENTE_SECRET = String(chave || '').trim(); try { GM_setValue(SECRET_KEY, CFG.AGENTE_SECRET) } catch (_) { /* sem GM */ } log('🔑', CFG.AGENTE_SECRET ? 'chave guardada: recarregue a aba' : 'chave apagada') },
     zerarMargem: function () { aprendizado.margem = CFG.MARGEM_MS; aprendizado.validosSeguidos = 0; aprendizado.historico = []; salvar() },
     relogio: function () { return { difServidorMs: Math.round(difServidor()), intervaloMs: relogioLo === null ? null : [Math.round(relogioLo), Math.round(relogioHi)], amostras: amostrasRelogio.length } },
   }
 
+  if (!CFG.AGENTE_SECRET) {
+    log('⛔', 'SEM A CHAVE DA LARA: os leads aceitos NÃO vão receber a primeira mensagem. Rode __INDICACOES__.definirChave("...") no console ou preencha AGENTE_SECRET no script.')
+    avisar('Indicações: falta a chave da Lara', 'Os leads aceitos não vão receber a primeira mensagem até a chave ser preenchida.')
+  }
   log('🚀', 'v' + VERSAO + ' ativo · modo ' + CFG.MODO + ' · filtro ' + CFG.FILTRO_MODO + ' · aceita 300s depois de o lead chegar (tela ou created_at, o que for mais cedo e seguro) + ' + margem() + ' ms')
   log('💡', 'parar: __INDICACOES__.stop() · testar filtro: __INDICACOES__.testar("Comment: ...") · relatório: copy(__INDICACOES__.relatorio())')
 })();
