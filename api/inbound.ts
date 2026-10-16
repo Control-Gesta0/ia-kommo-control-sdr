@@ -186,7 +186,7 @@ async function ingest(msgs: InboundMsg[], webhookId: string): Promise<void> {
     }
     await redis.del(k('midia-pendente', m.id))
     const esgotou = await esgotarPendente(m.id, 'o navegador com o script não entregou o arquivo a tempo')
-    if (esgotou) await logExec({ tipo: 'midia', leadId: m.leadId, detalhe: 'áudio não entregue pelo navegador: time avisado' }).catch(() => undefined)
+    if (esgotou) await logExec({ tipo: 'midia', leadId: m.leadId, detalhe: 'mídia (áudio, foto ou arquivo) não carregou: time avisado' }).catch(() => undefined)
   })
   await Promise.all([...[...leads].map(leadId => processLead(leadId, webhookId)), ...esperas])
 }

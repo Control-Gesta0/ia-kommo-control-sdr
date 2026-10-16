@@ -66,11 +66,12 @@ export async function resolverPendente(id: string, texto: string, webhookId: str
   return true
 }
 
-/** O navegador não entregou: a Lara fica quieta e o Rodrigo ouve o áudio no card. */
+/** O navegador não entregou: a Lara fica quieta e o Rodrigo vê a mídia (áudio, foto ou arquivo). */
 export async function esgotarPendente(id: string, motivo: string): Promise<boolean> {
   const p = await tomarPendente(id)
   if (!p) return false
-  await appendMessage(p.leadId, { id: `kommo:${id}`, dir: 'in', text: '[o lead mandou um áudio; o especialista vai ouvir e responder]', ts: Date.now() })
+  // O aviso do WhatsApp Lite não diz o tipo: pode ser áudio, foto, vídeo ou arquivo (16/10: era imagem)
+  await appendMessage(p.leadId, { id: `kommo:${id}`, dir: 'in', text: '[o lead mandou uma mídia (áudio, foto ou arquivo) que não carregou; o especialista vai ver e responder]', ts: Date.now() })
   await cancelarFollowup(p.leadId).catch(() => undefined)
   await avisarTimeAudio(p.leadId, motivo).catch(e => console.warn('[aviso áudio]', e))
   return true
@@ -83,7 +84,7 @@ async function avisarTimeAudio(leadId: number, motivo: string): Promise<void> {
   const lead = await getLead(leadId).catch(() => null)
   const contatoId = (lead?._embedded?.contacts || []).find(c => c.is_main)?.id
   const nome = (contatoId ? (await getContact(contatoId).catch(() => null))?.name : '') || lead?.name || `Lead #${leadId}`
-  await sendReply(alvo, `✉️ *Áudio para você ouvir*\n\n${nome} mandou um áudio e a Lara não conseguiu pegar o arquivo (${motivo}). Ela não respondeu.\nOuça no card e responda por lá:\n\n➡️ https://controlgestao.kommo.com/leads/detail/${leadId}`)
+  await sendReply(alvo, `✉️ *Mídia para você ver*\n\n${nome} mandou uma mídia (áudio, foto ou arquivo) que a Kommo não carregou, então a Lara não conseguiu abrir (${motivo}). Ela não respondeu.\nVeja no WhatsApp do celular conectado e responda pelo card:\n\n➡️ https://controlgestao.kommo.com/leads/detail/${leadId}`)
 }
 
 /** Id do chat da conta (amojo), que o navegador usa para ler as mensagens. */

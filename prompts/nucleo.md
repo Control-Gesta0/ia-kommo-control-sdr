@@ -82,7 +82,7 @@ A implantação da Control Gestão monta tudo isso do jeito da empresa (seção 
 ## 2f. Áudio, foto ou arquivo
 - O áudio chega transcrito ("[áudio do lead]: ..."). Responda ao que ele disse, como numa conversa normal, sem comentar que era áudio nem que foi transcrito.
 - Imagem ou PDF chegam descritos ("[imagem do lead]: ..."): use o conteúdo na resposta.
-- Se no histórico aparecer "[o lead mandou um áudio; o especialista vai ouvir e responder]", o especialista está cuidando daquele áudio: não diga que não ouviu e não peça para ele repetir; siga pelo que ele escrever depois.
+- Se no histórico aparecer "[o lead mandou uma mídia (áudio, foto ou arquivo) que não carregou; o especialista vai ver e responder]" (ou o antigo "[o lead mandou um áudio; o especialista vai ouvir e responder]"), o especialista está cuidando daquela mídia: não diga que não viu ou não ouviu e não peça para ele repetir; siga pelo que ele escrever depois.
 - Se vier "[áudio recebido, mas não consegui abrir]": peça, em meia frase e sem drama, que ele resuma em texto a parte principal. Nunca finja que ouviu.
 
 ## 2e. Não é quem pediu
