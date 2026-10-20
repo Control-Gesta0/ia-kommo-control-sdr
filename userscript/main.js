@@ -57,12 +57,12 @@
 
     // Liberação medida: exatamente 300s depois da chegada do lead
     LIBERACAO_MS: 5 * 60 * 1000,
-    // Folga depois do limite seguro. Sobe sozinha 200 ms se algum aceite sair cedo (teto MARGEM_MAX_MS).
-    MARGEM_MS: 40,
-    // Dispara X ms ANTES do limite calculado. 2000 ms validado em 30/09 (v3.6.0): 6 de 6 leads aceitos
-    // entre +299s e +300s, todos válidos (com contato). Se algum sair cedo, a margem sobe 0,2 s sozinha.
+    // TEMPO FIXO (pedido do comercial, 20/10): aceita 298 s depois de o lead chegar (300 s − ANTECIPAR_MS),
+    // sem ajuste automático. Para mudar o tempo, mude só ANTECIPAR_MS (2000 = 298 s, 1500 = 298,5 s).
+    MARGEM_MS: 0,
     ANTECIPAR_MS: 2000,
-    AJUSTAR_MARGEM: true,
+    // false = o tempo nunca sobe nem desce sozinho (a margem aprendida fica só no histórico)
+    AJUSTAR_MARGEM: false,
     MARGEM_MIN_MS: 0,
     // Teto da margem automática. MEDIDO (07 a 15/10): margem de ~1,5s jogou todo aceite do segundo
     // 300 para o 301 da Kommo e a perda para outros parceiros foi de 4 em 31 para 18 em 35.
@@ -95,7 +95,7 @@
   var pageFetch = W.fetch.bind(W)
   var STORE_KEY = 'cg-indicacoes-v3'
   var DIAG_KEY = 'cg-indicacoes-v3-diag'
-  var VERSAO = '3.7.4'
+  var VERSAO = '3.7.5'
 
   if (W.__INDICACOES__ && W.__INDICACOES__.stop) {
     console.warn('[INDICAÇÕES] já ativo, reiniciando...')
@@ -474,7 +474,7 @@
 
   /** Ajuste automático da margem pelo resultado conferido de cada aceite. */
   function registrarResultado(id, resultado, offset) {
-    aprendizado.historico = (aprendizado.historico || []).concat([{ id: id, resultado: resultado, offsetMs: offset, margemMs: margem(), em: new Date().toISOString() }]).slice(-30)
+    aprendizado.historico = (aprendizado.historico || []).concat([{ id: id, resultado: resultado, offsetMs: offset, segundoKommo: memo[id] && memo[id].segundoKommo, margemMs: margem(), em: new Date().toISOString() }]).slice(-30)
     if (CFG.AJUSTAR_MARGEM) {
       if (resultado === 'cedo') {
         aprendizado.validosSeguidos = 0
@@ -521,6 +521,15 @@
     })
   }
 
+  /** Segundo do aceite no relógio da Kommo: server_time da resposta − created_at do lead (null se não vier) */
+  function segundoKommo(json) {
+    try {
+      var dados = json.response.unsorted.accept.data
+      var criado = dados[Object.keys(dados)[0]].created_at
+      return json.server_time && criado ? json.server_time - criado : null
+    } catch (_) { return null }
+  }
+
   // ---------------- DISPARO ----------------
   var emAndamento = {}   // id -> true enquanto há avaliação/disparo
 
@@ -539,8 +548,10 @@
         var res = interpretar(id, r)
         registrarDiag(id, 'aceite:' + res, { n: n, http: r.status, resposta: String(r.texto || '').slice(0, 600) })
         if (res === 'aceito') {
+          var seg300 = segundoKommo(r.json)
+          if (seg300 !== null) marcar(id, { segundoKommo: seg300 })
           var off = memo[id].criado ? now() + difServidor() - memo[id].criado : null
-          log('✅', 'ACEITO ' + id + ' na tentativa #' + n + ', conferindo se ficou válido...')
+          log('✅', 'ACEITO ' + id + ' na tentativa #' + n + (seg300 !== null ? ' · segundo ' + seg300 + ' da Kommo (o bom é o 300)' : '') + ', conferindo se ficou válido...')
           marcar(id, { estado: 'conferindo', tentativas: n, offsetAceite: off })
           agendar(now() + CFG.CONFERIR_APOS_MS, function () { conferir(id, off, 1) })
           return
@@ -571,12 +582,12 @@
         var motivo = r === 'cedo' ? 'aceito cedo demais (no longer available)' : 'outros parceiros já tinham aceitado'
         log('❌', id + ': ' + motivo + '. A Lara NÃO vai falar com esse lead.')
         marcar(id, { estado: 'aceito_invalido', motivo: motivo })
-        if (off !== null) registrarResultado(id, r, off)
+        if (off !== null || memo[id].segundoKommo != null) registrarResultado(id, r, off)
         avisar('Indicação aceita mas inválida', 'Lead ' + id + ': ' + motivo)
         return
       }
       log(r === 'valido' ? '🟢' : '🟡', id + (r === 'valido' ? ' válido' : ' sem como conferir (API), segue') + (off !== null ? ' · aceito ' + seg(off) + ' depois do created_at' : ''))
-      if (r === 'valido' && off !== null) registrarResultado(id, 'valido', off)
+      if (r === 'valido' && (off !== null || memo[id].segundoKommo != null)) registrarResultado(id, 'valido', off)
       marcar(id, { estado: 'aceito', validacao: r })
       avisar('Indicação aceita', 'Lead ' + id + (memo[id].comentario ? ': ' + memo[id].comentario.slice(0, 80) : ''))
       avisarAgente(id)
@@ -952,6 +963,6 @@
     log('⛔', 'SEM A CHAVE DA LARA: os leads aceitos NÃO vão receber a primeira mensagem. Rode __INDICACOES__.definirChave("...") no console ou preencha AGENTE_SECRET no script.')
     avisar('Indicações: falta a chave da Lara', 'Os leads aceitos não vão receber a primeira mensagem até a chave ser preenchida.')
   }
-  log('🚀', 'v' + VERSAO + ' ativo · modo ' + CFG.MODO + ' · filtro ' + CFG.FILTRO_MODO + ' · aceita 300s depois de o lead chegar (tela ou created_at, o que for mais cedo e seguro) + ' + margem() + ' ms')
+  log('🚀', 'v' + VERSAO + ' ativo · modo ' + CFG.MODO + ' · filtro ' + CFG.FILTRO_MODO + ' · aceita ' + seg(CFG.LIBERACAO_MS - CFG.ANTECIPAR_MS + margem()) + ' depois de o lead chegar (tela ou created_at, o que for mais cedo)' + (CFG.AJUSTAR_MARGEM ? ' · ajuste automático ligado' : ' · tempo fixo'))
   log('💡', 'parar: __INDICACOES__.stop() · testar filtro: __INDICACOES__.testar("Comment: ...") · relatório: copy(__INDICACOES__.relatorio())')
 })();
