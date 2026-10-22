@@ -2,7 +2,7 @@
   "name": "ia-kommo-control-sdr",
   "version": "1.0.0",
   "private": true,
-  "description": "IA SDR das indicações de parceiro Kommo (Control Gestão): filtra teste, inicia a conversa, qualifica e marca reunião. Kommo v4 + Salesbot (WhatsApp Lite) + OpenAI + Upstash Redis.",
+  "description": "IA SDR das indicações de parceiro Kommo (Control Gestão): filtra teste, inicia a conversa, qualifica e marca reunião. Kommo v4 + Salesbot (Stevo) + OpenAI + Upstash Redis.",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "tsx scripts/test-guards.ts",

@@ -7,8 +7,8 @@ function required(name: string): string {
 const list = (v: string | undefined) => (v || '').split(',').map(x => x.trim()).filter(Boolean)
 
 /**
- * Variante KOMMO · Desenho A (envio pelo Salesbot; aqui o canal é o WhatsApp Lite
- * do Kommo). O Kommo não devolve transcript: o histórico é NOSSO (Redis).
+ * Variante KOMMO · Desenho A (envio pelo Salesbot; o canal é a Stevo (WhatsApp) conectada
+ * no Kommo desde 22/10/2026, antes WhatsApp Lite). O Kommo não devolve transcript: o histórico é NOSSO (Redis).
  */
 export const CONFIG = {
   clientName: process.env.CLIENT_NAME || 'Cliente · Agente',

@@ -32,7 +32,7 @@ async function transcribe(url: string): Promise<string | null> {
   return transcreverBuffer(Buffer.from(file.data), file.type, url)
 }
 
-/** Transcreve bytes de áudio (vindos do link do webhook ou do navegador pela ponte de mídia). */
+/** Transcreve bytes de áudio baixados do link do webhook. */
 export async function transcreverBuffer(data: Buffer, type: string, url = ''): Promise<string | null> {
   if (!data.length || data.length > MAX_BYTES) return null
   const file = { data, type }

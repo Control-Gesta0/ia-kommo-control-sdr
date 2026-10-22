@@ -19,7 +19,7 @@ card novo em Incoming leads
   → aceitou ─────────────────────────────────────────→ /api/novo-lead
                                                          confere etapa, telefone, teste
                                                          1ª mensagem (saudação + Lara + Comment)
-                                                         → Salesbot (WhatsApp Lite) → lead
+                                                         → Salesbot (Stevo) → lead
 lead responde no WhatsApp → Kommo (webhook add_message) → /api/inbound
                                                          CHAMP → consultar_horarios → agendar_reuniao
                                                          → tarefa de Reunião + nota + etapa
@@ -68,7 +68,7 @@ Prova em navegador (Chromium + Kommo simulado): `npm i --no-save playwright && n
 4. `npm run typecheck && npm test` (hoje: 118 verificações verdes).
 5. `EVAL_REPS=3 npm run evals`: todos aprovados ou não sobe.
 6. Deploy na Vercel; `GET /api/validate?secret=` tem que dar `ok:true`.
-7. Salesbot de envio (1 bloco "Enviar mensagem" pelo WhatsApp Lite, lendo o campo "Resposta IA (agente)") → `KOMMO_BOT_ID` → redeploy.
+7. Salesbot de envio (1 bloco "Enviar mensagem" pelo canal da Stevo, lendo o campo "Resposta IA (agente)") → `KOMMO_BOT_ID` → redeploy.
 8. `npx tsx scripts/create-webhook.ts` (lista) → `--criar` (só `add_message`).
 9. Userscript no Tampermonkey com `AGENTE_URL` e `AGENTE_SECRET` (= `INDICACAO_SECRET`).
 10. E2E com lead próprio em `TEST_LEAD_IDS` (`MODO_INICIO=teste`): `npx tsx scripts/simulate-novo-lead.ts <LEAD_ID> "Comment"`.
@@ -96,6 +96,6 @@ Importante: publique a tela de consentimento OAuth ("Em produção"); em modo "T
 
 **Tag `ia-sdr` colocada à mão:** assim que a tag aparece no lead (webhook `update_lead` + varredura no cron), a Lara age: indicação que ainda não recebeu abertura → abertura da indicação; lead com quem ela nunca falou → abertura de contato direto; lead que escreveu e ninguém respondeu → responde a mensagem. A decisão do time passa por cima dos filtros (teste, idioma, "aceito por outro parceiro"). Só não envia com `atendimento-humano` ou sem telefone. `reset` não conta como tag nova.
 
-**Mídia:** áudio é reconhecido pelo tipo ou pela extensão do link e transcrito; se não abrir, a Lara pede para escrever (nada é descartado calado). O formato recebido fica 24h em `diag:inbound-midia`.
+**Mídia:** a Stevo entrega o anexo no webhook da Kommo (`attachment.link`, áudio `.m4a`); o servidor baixa e transcreve com a OpenAI, sem navegador. Se não abrir, a Lara pede para escrever; se chegar só o aviso de mídia sem arquivo, ela não responde e o time é avisado no lead de avisos (nada é descartado calado). O formato recebido fica 24h em `diag:inbound-midia`.
 
 **Tom (lib/tom.ts, em toda resposta):** saudação e apresentação só na primeira mensagem; nome só de pessoa, de vez em quando, e nunca o de outra pessoa; pede o nome se não souber; reação repetida sai; generalização sobre o nicho e descrição da solução não se repetem; pergunta 1 dupla (onde + quantos) sem repetir o que o lead já disse.
