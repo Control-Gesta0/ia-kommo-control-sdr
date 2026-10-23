@@ -136,7 +136,8 @@ async function main() {
     eq('reação curta não vira mensagem sozinha', dividirMensagem('Entendi.\n\nHoje vocês usam algum CRM?').length, 1)
   }
 
-  const extra = await import('./test-cliente').catch(() => null)
+  // Suíte que não carrega (erro de sintaxe) é FALHA, não sucesso silencioso
+  const extra = await import('./test-cliente').catch(e => { console.log(`❌ test-cliente não carregou: ${e instanceof Error ? e.message : e}`); falhas++; return null })
   if (extra?.default) { const extras = await extra.default(eq); falhas += extras }
 
   console.log(falhas ? `\n❌ ${falhas} falha(s)` : '\n✅ Todas as travas OK')

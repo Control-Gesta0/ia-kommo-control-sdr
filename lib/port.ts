@@ -1,6 +1,6 @@
 import type { Intervalo } from './agenda'
 import { CRM_MAP } from './crm-map'
-import { agendarLembretes } from './followup'
+import { agendarLembretes, encerrarNoShow } from './followup'
 import { criarEventoGoogle, googleLeitura, googleOAuth, googleOcupados } from './google'
 import { addLeadNote, addLeadTags, contactEmails, createTask, getContact, getLead, leadTags, listOpenTasks, removeLeadTags, updateLeadFields, updateLeadStatus, type KommoFieldValue } from './kommo'
 import { getState, patchState } from './state'
@@ -41,6 +41,7 @@ export function kommoPort(leadId: number): LeadPort {
       await createTask({ leadId, responsibleUserId: CRM_MAP.agenda.responsavelId, taskTypeId: 1, text: texto, completeTill: Math.floor(Date.now() / 1000) + 2 * 3600, duration: 0 })
     },
     agendarLembretes: r => agendarLembretes(leadId, r.ini, r.taskId),
+    encerrarNoShow: () => encerrarNoShow(leadId),
     async avisarCloser(texto, chave) {
       const alvo = CRM_MAP.avisoCloser.leadId
       if (!alvo || alvo === leadId) return

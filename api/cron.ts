@@ -2,7 +2,8 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { brain } from '../lib/agent'
 import { CONFIG } from '../lib/config'
 import { portaById, CRM_MAP } from '../lib/crm-map'
-import { filaResumo, pegarItem, processarItem, varrerNegociacao, vencidos } from '../lib/followup'
+import { filaResumo, pegarItem, processarItem, varrerNegociacao, varrerNoShow, vencidos } from '../lib/followup'
+import { logExec } from '../lib/execlog'
 import { getHistory } from '../lib/history'
 import { getContact, getLead } from '../lib/kommo'
 import { kommoPort } from '../lib/port'
@@ -44,7 +45,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (claim !== 'processar') return res.status(200).json({ ok: true, item, claim })
     // Erro aqui não volta para a fila (igual ao cron): 200 para o QStash não repetir o envio
     try { return res.status(200).json({ ok: true, item, feito: await processarItem(item, gerar) }) } catch (e) {
-      return res.status(200).json({ ok: false, item, erro: e instanceof Error ? e.message : String(e) })
+      const erro = e instanceof Error ? e.message : String(e)
+      await registrarErro(item, erro)
+      return res.status(200).json({ ok: false, item, erro })
     }
   }
 
@@ -53,9 +56,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let novosNeg = 0
   try { novosNeg = await varrerNegociacao() } catch (e) { feitos.push(`varredura negociação: ${e instanceof Error ? e.message : e}`) }
   try { for (const x of await varrerTagManual()) feitos.push(`tag manual ${x}`) } catch (e) { feitos.push(`varredura tag manual: ${e instanceof Error ? e.message : e}`) }
+  try { for (const x of await varrerNoShow()) feitos.push(`no-show ${x}`) } catch (e) { feitos.push(`varredura no-show: ${e instanceof Error ? e.message : e}`) }
   for (const item of await vencidos()) {
     if (Date.now() - t0 > 240_000) break
-    try { feitos.push(`${item}: ${await processarItem(item, gerar)}`) } catch (e) { feitos.push(`${item}: ERRO ${e instanceof Error ? e.message : e}`) }
+    try { feitos.push(`${item}: ${await processarItem(item, gerar)}`) } catch (e) {
+      const erro = e instanceof Error ? e.message : String(e)
+      await registrarErro(item, erro)
+      feitos.push(`${item}: ERRO ${erro}`)
+    }
   }
   return res.status(200).json({ ok: true, novosNaNegociacao: novosNeg, feitos, ms: Date.now() - t0 })
+}
+
+/** Follow-up que falhou não volta para a fila: fica no diário para não sumir calado (23/10: 2 sumiram). */
+async function registrarErro(item: string, erro: string): Promise<void> {
+  const leadId = Number(item.split(':')[1]) || 0
+  await logExec({ tipo: 'erro', leadId, detalhe: `follow-up ${item}: ${erro}`.slice(0, 300) }).catch(() => undefined)
 }

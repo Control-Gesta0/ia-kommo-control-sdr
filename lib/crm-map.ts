@@ -130,6 +130,14 @@ export const CRM_MAP = {
   },
 
   /**
+   * NO-SHOW: o cliente faltou à reunião. Ativado À MÃO pela tag (pedido do comercial, 23/10/2026):
+   * a Lara tenta remarcar 1h, 4h, 1 dia e 2 dias depois da ativação (sempre no expediente).
+   * Respondeu = a cadência para e a Lara remarca na conversa. Sem resposta, 1 dia depois
+   * da última tentativa o lead vai para o REMARKETING (mesmo destino do follow-up esgotado).
+   */
+  noShow: { ativo: true, tag: 'no-show', horas: [1, 4, 24, 48], remarketingDepoisDeHoras: 24, tagFim: 'no-show-sem-resposta' },
+
+  /**
    * Link da reunião: o fixo do Rodrigo (env LINK_REUNIAO) ou o que estiver no campo
    * "Link da Reunião" do lead (o do lead vence). Vai na confirmação e nos lembretes.
    */

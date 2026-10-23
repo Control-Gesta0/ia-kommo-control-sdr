@@ -35,6 +35,8 @@ export interface LeadPort {
   avisarCloser?(texto: string, chave: string): Promise<void>
   /** agenda os lembretes da reunião para o cliente (24h e 1h antes) */
   agendarLembretes(r: { ini: number; taskId: string }): Promise<void>
+  /** remarcou depois de um no-show: encerra as tentativas e tira a tag */
+  encerrarNoShow?(): Promise<void>
   getState(): Promise<LeadState>
   patchState(p: Partial<LeadState>): Promise<LeadState>
 }
@@ -575,7 +577,8 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
         const texto = `Reunião (indicação Kommo) · ${convidado ? `Decisor convidado: ${convidado} · ` : ''}${resumoCampos}${state.comentario ? ` · Comment: ${state.comentario.slice(0, 300)}` : ''}`.slice(0, 1000)
         const criada = await port.criarReuniao({ ini: slot.ini, fim: slot.fim, texto })
         const taskId = criada.id
-        await port.patchState({ reuniao: { ...slot, taskId, em: new Date(agora).toISOString() }, oferta: [] })
+        await port.patchState({ reuniao: { ...slot, taskId, em: new Date(agora).toISOString() }, oferta: [], noShow: undefined })
+        if (state.noShow) await port.encerrarNoShow?.().catch(e => console.warn('[no-show]', e))
         const linkCampo = CRM_MAP.linkReuniaoFieldId ? (await port.getLead()).fields[CRM_MAP.linkReuniaoFieldId]?.value : undefined
         // Link novo da reunião (Meet) vence o campo antigo; sem Meet, vale o campo ou o link fixo
         const link = String(criada.link || linkCampo || process.env.LINK_REUNIAO || '').trim()

@@ -40,6 +40,8 @@ export interface LeadState {
   reuniao?: { ini: number; fim: number; label: string; taskId: string; em: string }
   /** pediu atendimento humano e a IA ofereceu a reunião no lugar; se pedir de novo, passa para o time */
   humanoOferecido?: boolean
+  /** faltou à reunião (tag no-show colocada pelo time): a Lara tenta remarcar */
+  noShow?: { em: string; reuniao?: string }
 }
 
 const TTL = 90 * 86400

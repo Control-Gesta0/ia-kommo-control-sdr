@@ -6,6 +6,7 @@ import { CRM_MAP } from '../lib/crm-map'
 import { extrairComentario } from '../lib/indicacao'
 import { guardarComentarioIncoming, iniciarConversa, iniciarPorTag } from '../lib/iniciar'
 import { getLead, leadTags, sleep } from '../lib/kommo'
+import { ativarNoShow } from '../lib/followup'
 import { conferirReuniaoManual } from '../lib/manual'
 import { k, redis } from '../lib/redis'
 
@@ -47,6 +48,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // gera update_lead, e tratar cada uma como "tag nova" apagava a pausa de humano
     for (const leadId of ev.semTag) await redis.del(k('tag-vista', leadId))
     // Reunião marcada à mão pelo campo do card
+    for (const leadId of ev.noShow) {
+      const r = await ativarNoShow(leadId, 'webhook:tag').catch(e => `erro: ${e instanceof Error ? e.message : e}`)
+      if (r !== 'já ativo') console.log(`[no-show] lead ${leadId}: ${r}`)
+    }
     for (const [leadId, valor] of ev.reunioes) {
       const r = await conferirReuniaoManual(leadId, valor).catch(e => `erro: ${e instanceof Error ? e.message : e}`)
       if (!/sem mudança/.test(r)) console.log(`[reunião manual] lead ${leadId}: ${r}`)
@@ -96,10 +101,12 @@ export interface Entrada {
   semTag: number[]
   /** campo "Reunião" no payload: [leadId, valor bruto] (o handler confere se mudou e se foi uma pessoa) */
   reunioes: Array<[number, string]>
+  /** tag de no-show no payload (colocada pelo time): a Lara tenta remarcar */
+  noShow: number[]
 }
 
 export function parseEntrada(raw: Record<string, unknown>, statusEntrada = CRM_MAP.entrada.statusId, gate = CONFIG.gateTag.toLowerCase(), campoReuniao = CRM_MAP.dataReuniaoFieldId): Entrada {
-  const out: Entrada = { accountId: '', iniciar: [], comentariosIncoming: [], verificar: [], semTag: [], reunioes: [] }
+  const out: Entrada = { accountId: '', iniciar: [], comentariosIncoming: [], verificar: [], semTag: [], reunioes: [], noShow: [] }
   // Userscript (JSON simples)
   if (raw.leadId !== undefined) {
     const leadId = Number(raw.leadId)
@@ -150,6 +157,7 @@ export function parseEntrada(raw: Record<string, unknown>, statusEntrada = CRM_M
     }
     const tags = Object.keys(f).filter(k => new RegExp(`^${pref.replace(/[[\]]/g, '\\$&')}\\[tags\\]\\[\\d+\\]\\[name\\]$`).test(k)).map(k => f[k].trim().toLowerCase())
     const temTagsNoPayload = Object.keys(f).some(k => k.startsWith(`${pref}[tags]`))
+    if (CRM_MAP.noShow.ativo && tags.includes(CRM_MAP.noShow.tag) && !out.noShow.includes(Number(v))) out.noShow.push(Number(v))
     if (tags.includes(gate)) add(Number(v), 'webhook:tag')
     else if (temTagsNoPayload) out.semTag.push(Number(v))
     else if (st === statusEntrada && !out.verificar.includes(Number(v))) out.verificar.push(Number(v))

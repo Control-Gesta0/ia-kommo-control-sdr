@@ -21,6 +21,8 @@ import { sendReply } from './transport'
  *  esg:<lead>  → cadência esgotada: remarketing + motivo "Sem resposta" + Rodrigo.
  *  neg:<lead>  → negociação: 2d, 3d, 5d, 7d e 10d depois de entrar na etapa.
  *  negfim:<lead> → sem resposta depois do último: tarefa para o Rodrigo.
+ *  ns:<lead>   → no-show (tag colocada à mão): tenta remarcar em 1h, 4h, 1d e 2d.
+ *  nsfim:<lead> → no-show sem resposta: remarketing.
  *
  * Lead respondeu (webhook add_message) → cancela tudo daquele lead na mesma volta.
  * Toda saída cai no expediente (dias e horário da agenda). Claim atômico: só quem
@@ -71,7 +73,7 @@ async function ultimoEnvio(leadId: number): Promise<number> {
 
 // ---------- estado ----------
 
-interface Cadencia { passo: number; desde: number; tipo: 'sdr' | 'neg' }
+interface Cadencia { passo: number; desde: number; tipo: 'sdr' | 'neg' | 'ns' }
 
 const chaveEstado = (tipo: string, leadId: number) => k('fu', tipo, leadId)
 
@@ -116,10 +118,10 @@ export async function agendarFollowup(leadId: number, desde: number): Promise<nu
 }
 
 /** Cancela as cadências do lead (respondeu, humano assumiu, finalizou...). */
-export async function cancelarFollowup(leadId: number, tipos: Array<'sdr' | 'neg'> = ['sdr', 'neg']): Promise<void> {
+export async function cancelarFollowup(leadId: number, tipos: Array<'sdr' | 'neg' | 'ns'> = ['sdr', 'neg', 'ns']): Promise<void> {
   for (const t of tipos) {
-    await redis.zrem(FILA(), `${t}:${leadId}`, ...(t === 'sdr' ? [`esg:${leadId}`] : [`negfim:${leadId}`]))
-    if (t === 'sdr' && (await redis.del(chaveEstado('sdr', leadId))) > 0) await campoProximo(leadId, null)
+    await redis.zrem(FILA(), `${t}:${leadId}`, t === 'sdr' ? `esg:${leadId}` : t === 'neg' ? `negfim:${leadId}` : `nsfim:${leadId}`)
+    if ((t === 'sdr' || t === 'ns') && (await redis.del(chaveEstado(t, leadId))) > 0) await campoProximo(leadId, null)
   }
   if (tipos.includes('neg') && await redis.get(chaveEstado('neg', leadId))) {
     await redis.set(chaveEstado('neg', leadId), { passo: -1, desde: Date.now(), tipo: 'neg' } satisfies Cadencia, { ex: 60 * 86400 }) // -1 = respondeu, não recomeça
@@ -175,6 +177,25 @@ export function instrucaoSdr(passo: number, total: number): string {
   const t = TIPOS_SDR[Math.min(passo, TIPOS_SDR.length - 1)]
   const ultimo = passo === total - 1
   return `[FOLLOW-UP ${passo + 1} de ${total} · tipo ${t.tipo}] O lead parou de responder. Escreva UMA mensagem curta de WhatsApp (até 3 linhas). ${t.como} NÃO repita a pergunta nem a frase das mensagens anteriores (leia o histórico e mude de assunto conforme o tipo). Sem cobrar ("vi que você não respondeu" é proibido), sem "bom dia/boa tarde" e sem se apresentar. Use o primeiro nome dele se souber.${ultimo ? ' É a ÚLTIMA tentativa: sem pergunta.' : ''} Responda só com o texto.`
+}
+
+const TIPOS_NS = [
+  { tipo: 'acolher', como: 'Primeira tentativa: diga com leveza que sentiu falta dele na reunião (cite o dia e a hora se souber), que imprevisto acontece, e pergunte se prefere remarcar para outro dia ou turno.' },
+  { tipo: 'facilitar', como: 'Segunda tentativa: facilite. Diga que a análise é rápida (30 a 45 min, pelo Google Meet) e pergunte qual turno costuma ser melhor para ele (manhã ou tarde), para você já ver os horários.' },
+  { tipo: 'valor', como: 'Terceira tentativa: lembre em uma frase o que ele pediu (o problema que contou) e o que a análise resolve, e pergunte se faz sentido remarcar esta semana.' },
+  { tipo: 'retomada', como: 'Última tentativa: deixe a porta aberta com leveza, dizendo que quando ele quiser é só responder por aqui que você encaixa um horário. SEM pergunta.' },
+]
+
+const FIXOS_NS = [
+  'Senti sua falta na nossa reunião, imprevisto acontece! Quer remarcar para outro dia ou turno?',
+  'A análise é rápida, de 30 a 45 minutos pelo Google Meet. Qual turno costuma ser melhor pra você, manhã ou tarde?',
+  'Ainda faz sentido olhar aquele ponto que você contou com o especialista? Posso ver um horário esta semana.',
+  'Quando quiser retomar, é só me responder por aqui que eu encaixo um horário com o especialista.',
+]
+
+export function instrucaoNoShow(passo: number, total: number, reuniao?: string): string {
+  const t = TIPOS_NS[Math.min(passo, TIPOS_NS.length - 1)]
+  return `[NO-SHOW ${passo + 1} de ${total} · tipo ${t.tipo}] Este cliente tinha reunião marcada com o especialista${reuniao ? ` (${reuniao})` : ''} e NÃO compareceu. O objetivo agora é REMARCAR. Escreva UMA mensagem curta de WhatsApp (até 3 linhas). ${t.como} Sem cobrar nem culpar ("você faltou" é proibido), sem "bom dia/boa tarde" e sem se apresentar. Não mande horários nesta mensagem (quando ele responder, você consulta a agenda). NÃO repita frases das mensagens anteriores. Use o primeiro nome dele se souber. Responda só com o texto.`
 }
 
 export function instrucaoNeg(passo: number, total: number): string {
@@ -307,6 +328,61 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
     }
     await addLeadNote(leadId, nota(`Follow-up de negociação ${passo} de ${n.dias.length} enviado`, [linhaProx])).catch(() => undefined)
     return `neg ${passo}/${n.dias.length} enviado`
+  }
+
+  if (tipo === 'ns') {
+    const cfg = CRM_MAP.noShow
+    const est = await redis.get<Cadencia>(chaveEstado('ns', leadId))
+    if (!est) return 'sem estado (respondeu ou cancelado)'
+    const lead = await getLead(leadId)
+    const tags = leadTags(lead).map(t => t.toLowerCase())
+    const st = await getState(leadId)
+    // Remarcou, humano assumiu ou o time tirou a Lara: para de tentar
+    if ((CONFIG.gateTag && !tags.includes(CONFIG.gateTag)) || tags.includes(CONFIG.humanTag) || st.reuniao || !st.noShow || await humanSpokeRecently(leadId)) {
+      await cancelarFollowup(leadId, ['ns'])
+      return 'cancelado (remarcou, humano ou sem a tag da Lara)'
+    }
+    const total = cfg.horas.length
+    const ultimaLara = (await getHistory(leadId).catch(() => [])).filter(m => m.dir === 'out').pop()?.text || ''
+    const texto = semRepetir(await gerar(leadId, instrucaoNoShow(est.passo, total, st.noShow.reuniao)).catch(() => null), ultimaLara, FIXOS_NS[Math.min(est.passo, FIXOS_NS.length - 1)])
+    await enviarFollowup(leadId, texto, 'ns', est.passo)
+    const passo = est.passo + 1
+    let linhaProx: string
+    if (passo < total) {
+      await redis.set(chaveEstado('ns', leadId), { ...est, passo }, { ex: 30 * 86400 })
+      const prox = proximoPasso(est.desde, cfg.horas[passo] * HORA, cfg.horas[passo - 1] * HORA, agora)
+      await enfileirar(`ns:${leadId}`, prox)
+      await campoProximo(leadId, prox)
+      linhaProx = `⏭️ Próxima tentativa de remarcar: ${quando(prox, agora)}`
+    } else {
+      const fim = noExpediente(agora + cfg.remarketingDepoisDeHoras * HORA)
+      await enfileirar(`nsfim:${leadId}`, fim)
+      await campoProximo(leadId, null)
+      linhaProx = `⛳ Última tentativa. Sem resposta até ${quando(fim, agora)}, o lead vai para ${CRM_MAP.followup.esgotar.nome}.`
+    }
+    await addLeadNote(leadId, nota(`No-show: tentativa ${passo} de ${total} de remarcar enviada`, [linhaProx])).catch(() => undefined)
+    return `ns ${passo}/${total} enviado`
+  }
+
+  if (tipo === 'nsfim') {
+    const cfg = CRM_MAP.noShow
+    const est = await redis.get<Cadencia>(chaveEstado('ns', leadId))
+    if (!est) return 'respondeu: fica'
+    const e = CRM_MAP.followup.esgotar
+    const corpo: Record<string, unknown> = { pipeline_id: e.pipelineId, status_id: e.statusId, responsible_user_id: e.responsavelId }
+    try { await patchLead(leadId, { ...corpo, loss_reason_id: e.lossReasonId }) } catch { await patchLead(leadId, corpo) }
+    await removeLeadTags(leadId, [CONFIG.gateTag, cfg.tag].filter(Boolean)).catch(() => undefined)
+    await addLeadTags(leadId, [cfg.tagFim])
+    await redis.del(chaveEstado('ns', leadId), k('noshow', leadId))
+    await addLeadNote(leadId, nota('No-show sem resposta: tentativas de remarcar esgotadas', [
+      `♻️ Tentativas: ${cfg.horas.map(h => (h < 24 ? `${h}h` : `${h / 24}d`)).join(', ')} depois da ativação`,
+      `➡️ Movido para ${e.nome} (Remarketing e Retornos futuros)`,
+      '❌ Motivo de perda: Sem resposta',
+      '☺️ Responsável: Rodrigo',
+    ]))
+    await patchState(leadId, { noShow: undefined, finalizado: { motivo: 'sem_resposta', resumo: 'no-show: tentativas de remarcar esgotadas', em: new Date(agora).toISOString() } })
+    await logExec({ tipo: 'finalizou', leadId, detalhe: `no-show sem resposta → ${e.nome}` })
+    return 'no-show esgotado → remarketing'
   }
 
   const lem = tipo.match(/^lem(m?)(\d+)$/) // lemm10 = minutos; lem24/lem1 (formato antigo) = horas
@@ -443,3 +519,60 @@ export async function filaResumo(): Promise<Array<{ item: string; quando: string
   return out
 }
 
+
+// ---------- no-show (ativado à mão pela tag) ----------
+
+/**
+ * O time pôs a tag de no-show: a Lara volta para o lead para remarcar. Tira a reunião perdida
+ * do estado (o "finalizado" também, senão a próxima mensagem dele zera a conversa), põe a tag
+ * da Lara, para as outras cadências e os lembretes, e agenda a 1ª tentativa. Uma vez por ciclo.
+ */
+export async function ativarNoShow(leadId: number, origem: string, agora = Date.now()): Promise<string> {
+  const cfg = CRM_MAP.noShow
+  if (!cfg.ativo) return 'desligado'
+  if ((await redis.set(k('noshow', leadId), origem, { nx: true, ex: 30 * 86400 })) !== 'OK') return 'já ativo'
+  const lead = await getLead(leadId)
+  if (leadTags(lead).map(t => t.toLowerCase()).includes(CONFIG.humanTag)) return `tag "${CONFIG.humanTag}": não ativa`
+  const st = await getState(leadId)
+  await patchState(leadId, { noShow: { em: new Date(agora).toISOString(), reuniao: st.reuniao?.label }, reuniao: undefined, finalizado: undefined, oferta: [] })
+  await cancelarFollowup(leadId, ['sdr', 'neg'])
+  await redis.zrem(FILA(), ...CRM_MAP.lembretes.minutosAntes.map(m => `lemm${m}:${leadId}`), `lem24:${leadId}`, `lem1:${leadId}`)
+  await redis.del(k('lem', leadId), k('humano', leadId))
+  if (CONFIG.gateTag) await addLeadTags(leadId, [CONFIG.gateTag])
+  await removeLeadTags(leadId, [...CRM_MAP.finalizar.tags, CRM_MAP.tags.reuniao]).catch(() => undefined)
+  await redis.set(chaveEstado('ns', leadId), { passo: 0, desde: agora, tipo: 'ns' } satisfies Cadencia, { ex: 30 * 86400 })
+  const prox = noExpediente(agora + cfg.horas[0] * HORA)
+  await enfileirar(`ns:${leadId}`, prox)
+  await campoProximo(leadId, prox)
+  await addLeadNote(leadId, nota('No-show: a Lara vai tentar remarcar', [
+    st.reuniao?.label ? `⏰ Reunião perdida: ${st.reuniao.label}` : '',
+    `♻️ Tentativas: ${cfg.horas.map(h => (h < 24 ? `${h}h` : `${h / 24}d`)).join(', ')} depois de agora (no expediente)`,
+    `⏭️ Primeira: ${quando(prox, agora)}`,
+    `➡️ Sem resposta: ${CRM_MAP.followup.esgotar.nome}`,
+  ].filter(Boolean))).catch(() => undefined)
+  await logExec({ tipo: 'followup', leadId, detalhe: `no-show ativado (${origem}) · 1ª tentativa ${new Date(prox).toISOString()}` })
+  return `ativado · 1ª tentativa ${new Date(prox).toISOString()}`
+}
+
+/** Remarcou: a cadência de no-show acaba e a tag sai (pode ser ativada de novo num próximo no-show). */
+export async function encerrarNoShow(leadId: number): Promise<void> {
+  await cancelarFollowup(leadId, ['ns'])
+  await redis.del(k('noshow', leadId))
+  await removeLeadTags(leadId, [CRM_MAP.noShow.tag]).catch(() => undefined)
+}
+
+/** Reserva do webhook: leads com a tag de no-show nas etapas de reunião (a cada 15 min, pelo cron). */
+export async function varrerNoShow(): Promise<string[]> {
+  const cfg = CRM_MAP.noShow
+  if (!cfg.ativo) return []
+  const etapas = [CRM_MAP.etapaAgendado, { id: CRM_MAP.negociacao.statusId, pipelineId: CRM_MAP.negociacao.pipelineId }].filter(e => e.id)
+  const filtro = etapas.map((e, i) => `filter[statuses][${i}][pipeline_id]=${e.pipelineId}&filter[statuses][${i}][status_id]=${e.id}`).join('&')
+  const r = await kommoGet<{ _embedded?: { leads?: Array<{ id: number; _embedded?: { tags?: Array<{ name: string }> } }> } }>(`/api/v4/leads?${filtro}&limit=250`)
+  const feitos: string[] = []
+  for (const lead of r?._embedded?.leads || []) {
+    if (!(lead._embedded?.tags || []).some(t => t.name.trim().toLowerCase() === cfg.tag)) continue
+    if (await redis.get(k('noshow', lead.id))) continue
+    feitos.push(`${lead.id}: ${await ativarNoShow(lead.id, 'varredura')}`)
+  }
+  return feitos
+}

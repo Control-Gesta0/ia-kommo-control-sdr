@@ -437,5 +437,20 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   const segunda9h = iso('2026-09-28T12:00:00Z')       // passo 1 (4h) saiu segunda 9h
   eq('passo 2 (1 dia) não sai junto do passo 1 depois do fim de semana', new Date(proximoPasso(sexta, 24 * 3600000, 4 * 3600000, segunda9h)).toISOString(), '2026-09-29T12:00:00.000Z')
   eq('dia normal: passo 2 segue a cadência', new Date(proximoPasso(iso('2026-09-29T13:00:00Z'), 24 * 3600000, 4 * 3600000, iso('2026-09-29T17:00:00Z'))).toISOString(), '2026-09-30T13:00:00.000Z')
+
+  // No-show (comercial, 23/10): tag colocada à mão → 1h, 4h, 1d, 2d e remarketing, no expediente
+  const ns = parseEntrada({ 'leads[update][0][id]': '700', 'leads[update][0][status_id]': '81193772', 'leads[update][0][tags][0][name]': 'No-Show ' }, 55438567, 'ia-sdr')
+  eq('webhook: tag no-show (qualquer caixa) ativa o no-show', ns.noShow, [700])
+  eq('webhook: sem a tag no-show não ativa', parseEntrada({ 'leads[update][0][id]': '701', 'leads[update][0][tags][0][name]': 'reuniao-agendada' }, 55438567, 'ia-sdr').noShow, [])
+  const { instrucaoNoShow, noExpediente: noExp } = await import('../lib/followup')
+  const { CRM_MAP: mapa } = await import('../lib/crm-map')
+  eq('no-show: 1h, 4h, 1d e 2d', mapa.noShow.horas, [1, 4, 24, 48])
+  const ativ = iso('2026-10-23T13:00:00Z') // sexta 10h
+  const H = 3600000
+  let t = noExp(ativ + mapa.noShow.horas[0] * H); const passos = [t]
+  for (let i = 1; i < 4; i++) { t = proximoPasso(ativ, mapa.noShow.horas[i] * H, mapa.noShow.horas[i - 1] * H, t); passos.push(t) }
+  eq('no-show ativado sexta 10h: sexta 11h, sexta 14h, segunda 9h, terça 9h', passos.map(x => new Date(x).toISOString()), ['2026-10-23T14:00:00.000Z', '2026-10-23T17:00:00.000Z', '2026-10-26T12:00:00.000Z', '2026-10-27T12:00:00.000Z'])
+  const inst = instrucaoNoShow(0, 4, 'quinta 22/10 às 10h')
+  eq('no-show: instrução cita a reunião perdida, pede remarcar e proíbe cobrar', [inst.includes('quinta 22/10 às 10h'), /REMARCAR/.test(inst), /proibido/.test(inst), /SEM pergunta/.test(instrucaoNoShow(3, 4))], [true, true, true, true])
   return 0
 }

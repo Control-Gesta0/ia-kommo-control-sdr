@@ -111,6 +111,7 @@ export function createBrain(opts: LlmOptions) {
           ? 'Você JÁ convidou para a reunião na mensagem anterior e ele respondeu outra coisa: use o que ele trouxe e NÃO repita o convite igual. Só convide de novo se for diferente e útil (mais concreto, com 2 horários, ou ligado ao que ele acabou de contar); senão, só responda.'
           : '',
       state.reuniao ? `REUNIÃO JÁ MARCADA: ${state.reuniao.label}. Não marque outra.` : '',
+      state.noShow && !state.reuniao ? `NO-SHOW: este cliente NÃO compareceu à reunião${state.noShow.reuniao ? ` de ${state.noShow.reuniao}` : ''} e o objetivo agora é REMARCAR. Acolha sem cobrar nem culpar, não refaça a qualificação (ele já foi qualificado) e, quando ele topar ou disser dia/turno, chame consultar_horarios e ofereça os horários.` : '',
       ...CRM_MAP.alertas.filter(a => alertaAtivo(a, ctx.lastLeadText)).map(a => `⚠️ ALERTA DO SISTEMA (${a.nome}): ${a.aviso}`),
       ganchoFollowup(ctx.lastLeadText, historico),
       `Perguntas que você já fez nesta conversa: ${ctx.perguntasFeitas ?? 0} (teto de 3 a 4 na conversa inteira)`,
@@ -213,7 +214,7 @@ export function createBrain(opts: LlmOptions) {
       // Convite antes da hora (comercial, 02/10: "chamando para a reunião logo de cara"): sem o lead pedir,
       // só convida depois de entender o problema, quantas pessoas usam e o volume de leads (ou 3 perguntas)
       const snapAgora = snapshot(ctx.porta, estado)
-      if (!handoff && !estado.oferta?.length && !toolsUsed.includes('consultar_horarios') && !pediuReuniao(ctx.lastLeadText, estado.comentario)
+      if (!handoff && !estado.noShow && !estado.oferta?.length && !toolsUsed.includes('consultar_horarios') && !pediuReuniao(ctx.lastLeadText, estado.comentario)
         && !prontoParaReuniao(snapAgora, ctx.perguntasFeitas ?? 0, ctx.temasPerguntados) && temConvite(safe.text)) {
         const falta = lacunasDeQualificacao(snapAgora, ctx.temasPerguntados)
         const fixI: Msg[] = [...messages, { role: 'assistant', content: safe.text }, { role: 'system', content: `[TRAVA DO SISTEMA] Ainda é cedo para convidar para a reunião: você ainda não sabe ${falta.join('; ')}. Tire o convite. Responda o que ele trouxe (mostre que entendeu e como a gente resolve) e faça UMA pergunta sobre o que falta, ligada ao que ele contou, sem repetir pergunta que você já fez. Responda só com o texto do WhatsApp.` }]
