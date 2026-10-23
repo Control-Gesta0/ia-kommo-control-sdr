@@ -110,6 +110,7 @@ export function createBrain(opts: LlmOptions) {
         : convitesSeguidos(historico) === 1
           ? 'Você JÁ convidou para a reunião na mensagem anterior e ele respondeu outra coisa: use o que ele trouxe e NÃO repita o convite igual. Só convide de novo se for diferente e útil (mais concreto, com 2 horários, ou ligado ao que ele acabou de contar); senão, só responda.'
           : '',
+      respostaAtrasada(historico, relogio),
       state.reuniao ? `REUNIÃO JÁ MARCADA: ${state.reuniao.label}. Não marque outra.` : '',
       state.noShow && !state.reuniao ? `NO-SHOW: este cliente NÃO compareceu à reunião${state.noShow.reuniao ? ` de ${state.noShow.reuniao}` : ''} e o objetivo agora é REMARCAR. Acolha sem cobrar nem culpar, não refaça a qualificação (ele já foi qualificado) e, quando ele topar ou disser dia/turno, chame consultar_horarios e ofereça os horários.` : '',
       ...CRM_MAP.alertas.filter(a => alertaAtivo(a, ctx.lastLeadText)).map(a => `⚠️ ALERTA DO SISTEMA (${a.nome}): ${a.aviso}`),
@@ -448,6 +449,19 @@ export function volumeAlto(t: string): boolean {
  * Argumento de organização e cadência de follow-up na hora certa (comercial, 02/10). O dado
  * "o follow-up pode aumentar as respostas em até 49%" sai no máximo uma vez na conversa.
  */
+/**
+ * As mensagens do lead que você vai responder são antigas (ficaram sem resposta, ex.: chegaram
+ * depois da reunião marcada e a Lara voltou com a tag de no-show): "agora", "hoje" e "vamos?"
+ * dele eram daquele momento, não de agora (23/10: respondeu "não temos disponibilidade agora"
+ * a um "vamos?" de 4 dias antes).
+ */
+export function respostaAtrasada(historico: Array<{ dir: string; ts?: number }> = [], agora = Date.now()): string {
+  const ultima = historico[historico.length - 1]
+  if (!ultima || ultima.dir !== 'in' || !ultima.ts || agora - ultima.ts < 2 * 3600_000) return ''
+  const quando = new Date(ultima.ts).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  return `RESPOSTA ATRASADA: a última mensagem do lead é de ${quando} e ficou sem resposta. Comece pedindo desculpa pela demora em meia frase. O que ele disse com "agora", "hoje", "vamos?" ou "tenho até tal hora" valia NAQUELE momento: não responda como se fosse agora. Siga para o que interessa hoje (se ele queria remarcar, ofereça novos horários).`
+}
+
 export function ganchoFollowup(lastLeadText: string, historico: Array<{ dir: string; text: string }> = []): string {
   const alto = volumeAlto(lastLeadText)
   if (!alto && !DOR_FOLLOWUP.test(lastLeadText || '')) return ''

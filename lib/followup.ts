@@ -534,24 +534,34 @@ export async function ativarNoShow(leadId: number, origem: string, agora = Date.
   const lead = await getLead(leadId)
   if (leadTags(lead).map(t => t.toLowerCase()).includes(CONFIG.humanTag)) return `tag "${CONFIG.humanTag}": não ativa`
   const st = await getState(leadId)
+  // Mensagens dele sem resposta (ex.: pediu para remarcar depois da reunião marcada): a Lara
+  // responde já, e essa resposta conta como a 1ª tentativa (23/10, Marizete: senão saíam duas)
+  const hist = await getHistory(leadId).catch(() => [])
+  const esperando = hist[hist.length - 1]?.dir === 'in'
   await patchState(leadId, { noShow: { em: new Date(agora).toISOString(), reuniao: st.reuniao?.label }, reuniao: undefined, finalizado: undefined, oferta: [] })
   await cancelarFollowup(leadId, ['sdr', 'neg'])
   await redis.zrem(FILA(), ...CRM_MAP.lembretes.minutosAntes.map(m => `lemm${m}:${leadId}`), `lem24:${leadId}`, `lem1:${leadId}`)
   await redis.del(k('lem', leadId), k('humano', leadId))
   if (CONFIG.gateTag) await addLeadTags(leadId, [CONFIG.gateTag])
   await removeLeadTags(leadId, [...CRM_MAP.finalizar.tags, CRM_MAP.tags.reuniao]).catch(() => undefined)
-  await redis.set(chaveEstado('ns', leadId), { passo: 0, desde: agora, tipo: 'ns' } satisfies Cadencia, { ex: 30 * 86400 })
-  const prox = noExpediente(agora + cfg.horas[0] * HORA)
+  const passo0 = esperando ? 1 : 0
+  await redis.set(chaveEstado('ns', leadId), { passo: passo0, desde: agora, tipo: 'ns' } satisfies Cadencia, { ex: 30 * 86400 })
+  const prox = noExpediente(agora + cfg.horas[passo0] * HORA)
   await enfileirar(`ns:${leadId}`, prox)
   await campoProximo(leadId, prox)
   await addLeadNote(leadId, nota('No-show: a Lara vai tentar remarcar', [
     st.reuniao?.label ? `⏰ Reunião perdida: ${st.reuniao.label}` : '',
     `♻️ Tentativas: ${cfg.horas.map(h => (h < 24 ? `${h}h` : `${h / 24}d`)).join(', ')} depois de agora (no expediente)`,
-    `⏭️ Primeira: ${quando(prox, agora)}`,
+    esperando ? '✉️ Ele tinha mensagens sem resposta: a Lara responde agora (conta como a 1ª tentativa)' : '',
+    `⏭️ ${esperando ? 'Próxima' : 'Primeira'}: ${quando(prox, agora)}`,
     `➡️ Sem resposta: ${CRM_MAP.followup.esgotar.nome}`,
   ].filter(Boolean))).catch(() => undefined)
-  await logExec({ tipo: 'followup', leadId, detalhe: `no-show ativado (${origem}) · 1ª tentativa ${new Date(prox).toISOString()}` })
-  return `ativado · 1ª tentativa ${new Date(prox).toISOString()}`
+  await logExec({ tipo: 'followup', leadId, detalhe: `no-show ativado (${origem}) · ${esperando ? 'respondendo as mensagens pendentes; ' : ''}próxima tentativa ${new Date(prox).toISOString()}` })
+  if (esperando) {
+    const { processLead } = await import('./agent') // import tardio: agent também importa este arquivo
+    await processLead(leadId, `noshow:${leadId}:${agora}`)
+  }
+  return `ativado · ${esperando ? 'respondeu as pendentes · ' : ''}próxima tentativa ${new Date(prox).toISOString()}`
 }
 
 /** Remarcou: a cadência de no-show acaba e a tag sai (pode ser ativada de novo num próximo no-show). */

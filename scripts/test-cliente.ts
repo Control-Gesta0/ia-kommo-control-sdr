@@ -451,6 +451,10 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   for (let i = 1; i < 4; i++) { t = proximoPasso(ativ, mapa.noShow.horas[i] * H, mapa.noShow.horas[i - 1] * H, t); passos.push(t) }
   eq('no-show ativado sexta 10h: sexta 11h, sexta 14h, segunda 9h, terça 9h', passos.map(x => new Date(x).toISOString()), ['2026-10-23T14:00:00.000Z', '2026-10-23T17:00:00.000Z', '2026-10-26T12:00:00.000Z', '2026-10-27T12:00:00.000Z'])
   const inst = instrucaoNoShow(0, 4, 'quinta 22/10 às 10h')
+  const { respostaAtrasada } = await import('../lib/llm')
+  const agoraT = iso('2026-10-23T14:49:00Z')
+  eq('resposta atrasada (mensagem do lead de 4 dias atrás): pede desculpa e não trata o "agora" dele como agora', /RESPOSTA ATRASADA[\s\S]*desculpa[\s\S]*NAQUELE momento/.test(respostaAtrasada([{ dir: 'in', ts: iso('2026-10-19T17:25:47Z') }], agoraT)), true)
+  eq('resposta no mesmo dia (menos de 2h) ou última mensagem nossa: sem aviso', [respostaAtrasada([{ dir: 'in', ts: agoraT - 30 * 60000 }], agoraT), respostaAtrasada([{ dir: 'out', ts: iso('2026-10-19T17:25:47Z') }], agoraT)], ['', ''])
   eq('no-show: instrução cita a reunião perdida, pede remarcar e proíbe cobrar', [inst.includes('quinta 22/10 às 10h'), /REMARCAR/.test(inst), /proibido/.test(inst), /SEM pergunta/.test(instrucaoNoShow(3, 4))], [true, true, true, true])
   return 0
 }
