@@ -293,9 +293,11 @@ export function createBrain(opts: LlmOptions) {
         messages.push({ role: 'assistant', content: safe.text }, { role: 'system', content: '[TRAVA DO SISTEMA] O lead aceitou ou tem pressa, e você só ofereceu ver horários (ou disse que ia ver e não viu). Chame consultar_horarios agora (com a preferência do lead, se ele disse dia ou turno) e reescreva a resposta: se ele perguntou algo nesta mensagem (preço, dúvida), responda isso PRIMEIRO, em uma ou duas frases; depois mande as opções de horário. Responda só com o texto do WhatsApp.' })
         return { ...safe, voltar: true }
       }
-      // Convite passivo (Thais, 26/10): já qualificado, falou da análise sem convidar nem perguntar
-      // ("quando quiser avançar, me diga o dia") e a conversa parou. Volta: busca a agenda e convida com 2 horários
-      const convitePassivo = /\b(an[aá]lise|especialista|reuni[aã]o|agenda|dia ou turno|quando quiser)\b/i.test(safe.text) && !safe.text.includes('?')
+      // Convite passivo DEPOIS da trava de pergunta repetida (Thais, 26/10): a reescrita tirou a pergunta
+      // e saiu "quando quiser avançar, me diga o dia" com o lead já qualificado; a conversa parou. Só nesse
+      // caso (esperar o decisor ou o lead confirmar continua valendo): busca a agenda e convida com 2 horários
+      const refeitaSemPergunta = safe.guard.some(g => /pergunta repetida/.test(g)) && !safe.text.includes('?')
+      const convitePassivo = refeitaSemPergunta && /\b(an[aá]lise|especialista|reuni[aã]o|agenda|dia ou turno|quando quiser)\b/i.test(safe.text)
       if (!handoff && !cobrouHorario && podeVoltar && convitePassivo && !toolsUsed.includes('consultar_horarios') && !estado.oferta?.length && !estado.reuniao
         && !CONVITE.test(ctx.lastAgentText) && (estado.noShow || prontoParaReuniao(snapAgora, ctx.perguntasFeitas ?? 0, ctx.temasPerguntados))) {
         cobrouHorario = true
