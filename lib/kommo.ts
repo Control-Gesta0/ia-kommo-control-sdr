@@ -159,6 +159,23 @@ export interface KommoContact {
   custom_fields_values?: Array<{ field_code?: string; field_name?: string; values: Array<{ value?: unknown }> }> | null
 }
 
+/** uid do Incoming lead (chat) que gerou este lead, para aceitar pela API. null = não está em Incoming. */
+export async function uidIncomingDoLead(leadId: number, pipelineId: number): Promise<string | null> {
+  const r = await kommo<{ _embedded?: { unsorted?: Array<{ uid: string; category: string; _embedded?: { leads?: Array<{ id: number }> } }> } }>('GET', `/api/v4/leads/unsorted?filter[pipeline_id]=${pipelineId}&limit=50`)
+  return r?._embedded?.unsorted?.find(u => u.category === 'chats' && u._embedded?.leads?.some(l => l.id === leadId))?.uid ?? null
+}
+
+/** Aceita um Incoming lead de CHAT pela API (o problema do aceite por API é só nas indicações de parceiro). */
+export async function aceitarIncoming(uid: string, userId: number, statusId: number): Promise<void> {
+  await kommo('POST', `/api/v4/leads/unsorted/${uid}/accept`, { user_id: userId, status_id: statusId })
+}
+
+/** Quantos leads o contato tem (1 = só este: contato novo). */
+export async function leadsDoContato(contactId: number): Promise<number> {
+  const c = await kommo<{ _embedded?: { leads?: unknown[] } }>('GET', `/api/v4/contacts/${contactId}?with=leads`)
+  return c?._embedded?.leads?.length ?? 0
+}
+
 export async function getContact(contactId: number): Promise<KommoContact> {
   return kommo<KommoContact>('GET', `/api/v4/contacts/${contactId}`)
 }

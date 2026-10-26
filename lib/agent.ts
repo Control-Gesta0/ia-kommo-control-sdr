@@ -17,6 +17,7 @@ import { addLeadNote } from './kommo'
 import { nota } from './notas'
 import { k, redis } from './redis'
 import { sendReply } from './transport'
+import { assumirContatoNovo } from './contato-novo'
 
 /**
  * Núcleo: gate → buffer → roteador (código) → cérebro (LLM) → travas → envio.
@@ -64,8 +65,12 @@ export async function processLead(leadId: number, webhookId: string): Promise<vo
     const nomePessoa = contatoId ? (await getContact(contatoId).catch(() => null))?.name || '' : ''
     const tags = leadTags(lead).map(t => t.toLowerCase())
     if (tags.includes(CONFIG.humanTag)) return pular(`tag "${CONFIG.humanTag}"`, false)
-    // Gate: sem a tag, silêncio (e sem poluir o diário — a conta inteira manda add_message)
-    if (CONFIG.gateTag && !tags.includes(CONFIG.gateTag)) return pular(`sem a tag "${CONFIG.gateTag}"`, false)
+    // Gate: sem a tag, silêncio (e sem poluir o diário — a conta inteira manda add_message).
+    // Exceção: contato NOVO no Incoming do funil de vendas (chat da Stevo) — a Lara aceita e assume
+    if (CONFIG.gateTag && !tags.includes(CONFIG.gateTag)) {
+      const assumiu = await assumirContatoNovo(lead).catch(e => { console.warn('[contato novo]', e instanceof Error ? e.message : e); return false })
+      if (!assumiu) return pular(`sem a tag "${CONFIG.gateTag}"`, false)
+    }
     if (await humanSpokeRecently(leadId)) {
       // Nota uma vez por ciclo (não a cada mensagem)
       if ((await redis.set(k('nota-humano', leadId), 1, { nx: true, ex: 6 * 3600 })) === 'OK') {

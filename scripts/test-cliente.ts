@@ -456,6 +456,17 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   const fora = mapa.alertas.find(x => x.nome === 'fora do assunto')!
   eq('fora do assunto: conta, Freud, piada e curiosidade acionam o bloqueio', ['Lara, quanto é 2+2?', 'E qual a ligação de freud com a teoria sistêmica?', 'me conta uma piada', 'quem foi Einstein?'].map(t => alertaFora(fora, t)), [true, true, true, true])
   eq('fora do assunto: pergunta de negócio NÃO aciona', ['quanto é o plano básico?', 'qual a diferença entre o plano básico e o avançado?', 'o que é a teoria de funil de vendas?', 'qual a relação do Kommo com o WhatsApp?', 'Tenho 2 vendedores e 30 leads por dia'].map(t => alertaFora(fora, t)), [false, false, false, false, false])
+  // Contato novo pelo WhatsApp (26/10): só o Incoming do Funil de vendas - SDR, lead recente, sem humano nem indicação
+  const { motivoParaNaoAssumir } = await import('../lib/contato-novo')
+  const agoraCN = iso('2026-10-26T15:00:00Z'), criado = agoraCN / 1000 - 60
+  eq('contato novo: chat recente no Incoming do funil de vendas = a Lara assume', motivoParaNaoAssumir({ pipeline_id: 4338500, status_id: 40438376, created_at: criado }, [], agoraCN), '')
+  eq('contato novo: outro funil, já aceito, humano, indicação ou lead antigo = fica com o time', [
+    motivoParaNaoAssumir({ pipeline_id: 10547200, status_id: 80881260, created_at: criado }, [], agoraCN),
+    motivoParaNaoAssumir({ pipeline_id: 4338500, status_id: 55438567, created_at: criado }, [], agoraCN),
+    motivoParaNaoAssumir({ pipeline_id: 4338500, status_id: 40438376, created_at: criado }, ['atendimento-humano'], agoraCN),
+    motivoParaNaoAssumir({ pipeline_id: 4338500, status_id: 40438376, created_at: criado }, ['indicacao-kommo'], agoraCN),
+    motivoParaNaoAssumir({ pipeline_id: 4338500, status_id: 40438376, created_at: criado - 3 * 86400 }, [], agoraCN),
+  ].every(Boolean), true)
   const { respostaAtrasada } = await import('../lib/llm')
   const agoraT = iso('2026-10-23T14:49:00Z')
   eq('resposta atrasada (mensagem do lead de 4 dias atrás): pede desculpa e não trata o "agora" dele como agora', /RESPOSTA ATRASADA[\s\S]*desculpa[\s\S]*NAQUELE momento/.test(respostaAtrasada([{ dir: 'in', ts: iso('2026-10-19T17:25:47Z') }], agoraT)), true)

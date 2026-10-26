@@ -130,6 +130,14 @@ export const CRM_MAP = {
   },
 
   /**
+   * CONTATO NOVO PELO WHATSAPP (fora das indicações, pedido do comercial, 26/10/2026): chat novo da
+   * Stevo que cai no Incoming leads do Funil de vendas - SDR. A Lara aceita para a etapa inicial,
+   * põe a tag dela e qualifica pela porta direta. Só contato NOVO (lead criado há pouco, sem outro
+   * lead no contato) e sem ninguém do time na conversa; Incoming de outros funis fica para o time.
+   */
+  contatoNovo: { ativo: true, pipelineId: 4338500, incomingStatusId: 40438376, aceitarEm: 55438567, responsavelId: 12725576, tag: 'lead-direto', criadoHaMaxHoras: 24 },
+
+  /**
    * NO-SHOW: o cliente faltou à reunião. Ativado À MÃO pela tag (pedido do comercial, 23/10/2026):
    * a Lara tenta remarcar 1h, 4h, 1 dia e 2 dias depois da ativação (sempre no expediente).
    * Respondeu = a cadência para e a Lara remarca na conversa. Sem resposta, 1 dia depois
