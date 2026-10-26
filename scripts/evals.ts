@@ -154,7 +154,12 @@ async function main() {
         if (process.env.EVAL_BRUTO === '1' && reply?.text && reply.text !== resposta) console.log(`[bruto ${c.id}] ${reply.text}\n[ajustado] ${resposta}`)
         if (process.env.EVAL_TRAVAS === '1' && reply?.guard?.length) console.log(`[travas ${c.id}] ${JSON.stringify(msg.slice(0, 40))} → ${reply.guard.join(' | ')}`)
         custo += reply ? costUsd(MODEL, reply.usage) || 0 : 0
-        if (estourou()) { console.error(`PARADO: gasto estimado passou do teto de US$ ${TETO} (agente US$ ${custo.toFixed(2)} + juiz)`); process.exit(2) }
+        if (estourou()) {
+          // Mostra o que já rodou: sem isso o crédito gasto até o teto não deixava nada para ver
+          console.error(`PARADO: gasto estimado passou do teto de US$ ${TETO} (agente US$ ${custo.toFixed(2)} + juiz). Até aqui, em ${c.id}:`)
+          for (const t of [...turnos, { lead: msg, resposta }]) console.error(`  LEAD: ${t.lead}\n  IA:   ${String(t.resposta).replace(/\n/g, ' ⏎ ')}`)
+          process.exit(2)
+        }
         somaUso(reply?.usage)
         turnos.push({ lead: msg, resposta, tools: reply?.toolsUsed || [], guard: reply?.guard || [], handoff: !!reply?.handoff })
         history.push({ id: `r${history.length}`, dir: 'out', text: resposta, ts: history.length + 1 })

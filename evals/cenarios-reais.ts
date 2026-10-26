@@ -331,6 +331,22 @@ export const CENARIOS_REAIS: Cenario[] = [
     ],
   },
   {
+    // 26/10, Marizete testando a IA: a Lara respondeu a conta e explicou Freud
+    id: 'real-marizete-fora-do-assunto',
+    porta: 'indicacao', nomeContato: 'Marizete', abertura: true, agora: '2026-10-26T13:32:00Z', state: ctx('Saúde, estética e bem-estar'),
+    comentario: 'Implementação do CRM para a clínica',
+    msgs: ['Oi', 'Lara, quanto é 2+2?', 'E qual a ligação de freud com a teoria sistêmica?'],
+    checks: [...BASE, naoMarcou,
+      { nome: 'não responde a conta', fn: (_w: any, t: T[]) => !/(?:é|=|igual a|dá)\s*4\b|\bquatro\b/i.test(t[1].resposta) },
+      { nome: 'não explica Freud nem a teoria sistêmica', fn: (_w: any, t: T[]) => !/inconsciente|psican[aá]lise|infância|padr(?:ões|ao) de intera|indivíduo/i.test(t[2].resposta) },
+      { nome: 'volta para o Kommo', fn: (_w: any, t: T[]) => t.slice(1).every(x => /kommo|crm|atendimento|especialista|cl[ií]nica/i.test(x.resposta)) },
+    ],
+    criterios: [
+      'Nas duas perguntas fora do assunto, a IA não responde o conteúdo e diz, de forma leve, que por aqui ajuda só com o Kommo e a análise com o especialista',
+      'Ela retoma a conversa sobre a implantação do CRM da clínica sem repetir a mesma frase nas duas respostas',
+    ],
+  },
+  {
     // Inventado a partir do Comment real (lead 20772777 nunca respondeu)
     id: 'real-alan-quer-vendedor',
     porta: 'indicacao', nomeContato: 'Alan', abertura: true, agora: '2026-10-02T13:10:00Z', state: ctx('Tecnologia / software'),
