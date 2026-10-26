@@ -451,6 +451,11 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   for (let i = 1; i < 4; i++) { t = proximoPasso(ativ, mapa.noShow.horas[i] * H, mapa.noShow.horas[i - 1] * H, t); passos.push(t) }
   eq('no-show ativado sexta 10h: sexta 11h, sexta 14h, segunda 9h, terça 9h', passos.map(x => new Date(x).toISOString()), ['2026-10-23T14:00:00.000Z', '2026-10-23T17:00:00.000Z', '2026-10-26T12:00:00.000Z', '2026-10-27T12:00:00.000Z'])
   const inst = instrucaoNoShow(0, 4, 'quinta 22/10 às 10h')
+  // Fora do assunto (26/10, Marizete testando a IA): conta e conhecimento geral não são respondidos
+  const { alertaAtivo: alertaFora } = await import('../lib/llm')
+  const fora = mapa.alertas.find(x => x.nome === 'fora do assunto')!
+  eq('fora do assunto: conta, Freud, piada e curiosidade acionam o bloqueio', ['Lara, quanto é 2+2?', 'E qual a ligação de freud com a teoria sistêmica?', 'me conta uma piada', 'quem foi Einstein?'].map(t => alertaFora(fora, t)), [true, true, true, true])
+  eq('fora do assunto: pergunta de negócio NÃO aciona', ['quanto é o plano básico?', 'qual a diferença entre o plano básico e o avançado?', 'o que é a teoria de funil de vendas?', 'qual a relação do Kommo com o WhatsApp?', 'Tenho 2 vendedores e 30 leads por dia'].map(t => alertaFora(fora, t)), [false, false, false, false, false])
   const { respostaAtrasada } = await import('../lib/llm')
   const agoraT = iso('2026-10-23T14:49:00Z')
   eq('resposta atrasada (mensagem do lead de 4 dias atrás): pede desculpa e não trata o "agora" dele como agora', /RESPOSTA ATRASADA[\s\S]*desculpa[\s\S]*NAQUELE momento/.test(respostaAtrasada([{ dir: 'in', ts: iso('2026-10-19T17:25:47Z') }], agoraT)), true)

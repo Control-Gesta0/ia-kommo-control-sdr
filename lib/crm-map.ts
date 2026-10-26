@@ -243,6 +243,14 @@ export const CRM_MAP = {
 
   alertas: [
     {
+      nome: 'fora do assunto',
+      // 26/10, Marizete testando: "quanto é 2+2?" e "qual a ligação de freud com a teoria sistêmica?",
+      // e a Lara respondeu as duas. Conta, conhecimento geral e curiosidade = não responde, retoma.
+      re: /\bquanto\s+(?:é|e|da|dá)\s+\d+\s*[+\-x×*/÷]\s*\d+|\b(?:quem\s+(?:foi|descobriu|inventou|escreveu|pintou|ganhou)|qual\s+(?:é\s+)?(?:a|o)\s+(?:capital|liga[cç][aã]o|rela[cç][aã]o|significado|origem|f[oó]rmula|raiz)|o\s+que\s+(?:é|significa|foi)\s+(?:a\s+|o\s+)?(?:teoria|filosofia|psican[aá]lise|f[ií]sica|qu[ií]mica|hist[oó]ria)|me\s+(?:conta|conte|fala|fale)\s+uma\s+(?:piada|hist[oó]ria)|(?:receita|piada)\s+de|freud|jung|lacan|einstein|teoria\s+sist[eê]mica|hor[oó]scopo|signo)\b/i,
+      exceto: /\b(?:kommo|crm|leads?|funil|funis|whats\w*|vend\w*|clientes?|atendimento|automa\w*|reuni[aã]o|plano|pre[cç]o|valor|sistema|integra\w*|salesbot|bot|agente|equipe|empresa|implanta\w*|configura\w*|especialista)\b/i,
+      aviso: 'O lead perguntou algo FORA do assunto (conta, conhecimento geral, curiosidade ou teste da IA). NÃO responda o conteúdo, nem em parte. Diga numa frase leve que por aqui você ajuda só com o Kommo e com a análise com o especialista, e retome de onde a conversa parou (se não havia nada em aberto, pergunte como pode ajudar com o Kommo).',
+    },
+    {
       nome: 'perguntou preço',
       // Só PEDIDO de preço (02/10): "o pior é orçamento que a gente manda e ninguém retorna" ou "o valor do
       // nosso ticket" é o negócio do lead, e a Lara respondia como se ele tivesse perguntado o preço
