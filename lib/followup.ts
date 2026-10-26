@@ -364,6 +364,29 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
     return `ns ${passo}/${total} enviado`
   }
 
+  if (tipo === 'convite') {
+    // Convite com 2 horários sob demanda (26/10, Thais: qualificada e ficou sem horários): a Lara
+    // consulta a agenda de verdade (consultar_horarios grava a oferta, a escolha dela marca sozinha)
+    const lead = await getLead(leadId)
+    const tags = leadTags(lead).map(t => t.toLowerCase())
+    const st = await getState(leadId)
+    if ((CONFIG.gateTag && !tags.includes(CONFIG.gateTag)) || tags.includes(CONFIG.humanTag) || st.reuniao || st.finalizado) return 'não convidado (sem a tag da Lara, humano, reunião marcada ou finalizado)'
+    const { runTool } = await import('./tools')
+    const { kommoPort } = await import('./port')
+    const { portaById } = await import('./crm-map')
+    const porta = portaById(st.porta) || portaById('direto')
+    if (!porta) return 'sem porta'
+    const r = await runTool({ port: kommoPort(leadId), porta, gateTag: CONFIG.gateTag, leadText: '', lastLeadText: '', lastAgentText: '', agora }, 'consultar_horarios', {})
+    const oferta = (await getState(leadId)).oferta || []
+    if (r.isError || !oferta.length) return `sem horários: ${r.content.slice(0, 120)}`
+    const contatoId = (lead._embedded?.contacts || []).find(c => c.is_main)?.id
+    const nome = primeiroNomeDe((contatoId ? (await getContact(contatoId).catch(() => null))?.name : '') || lead.name || '')
+    const texto = `${nome ? `${nome}, ` : ''}posso marcar a análise gratuita com o especialista? É uma conversa rápida pelo Google Meet, sem compromisso, pra ver isso na prática com vocês.\n\nTenho ${oferta.map(o => o.label).join(' ou ')}. Qual fica melhor?`
+    await enviarFollowup(leadId, texto, 'convite', 0)
+    await agendarFollowup(leadId, Date.now())
+    return `convite enviado: ${oferta.map(o => o.label).join(' | ')}`
+  }
+
   if (tipo === 'nsfim') {
     const cfg = CRM_MAP.noShow
     const est = await redis.get<Cadencia>(chaveEstado('ns', leadId))
