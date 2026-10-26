@@ -293,6 +293,15 @@ export function createBrain(opts: LlmOptions) {
         messages.push({ role: 'assistant', content: safe.text }, { role: 'system', content: '[TRAVA DO SISTEMA] O lead aceitou ou tem pressa, e você só ofereceu ver horários (ou disse que ia ver e não viu). Chame consultar_horarios agora (com a preferência do lead, se ele disse dia ou turno) e reescreva a resposta: se ele perguntou algo nesta mensagem (preço, dúvida), responda isso PRIMEIRO, em uma ou duas frases; depois mande as opções de horário. Responda só com o texto do WhatsApp.' })
         return { ...safe, voltar: true }
       }
+      // Convite passivo (Thais, 26/10): já qualificado, falou da análise sem convidar nem perguntar
+      // ("quando quiser avançar, me diga o dia") e a conversa parou. Volta: busca a agenda e convida com 2 horários
+      const convitePassivo = /\b(an[aá]lise|especialista|reuni[aã]o|agenda|dia ou turno|quando quiser)\b/i.test(safe.text) && !safe.text.includes('?')
+      if (!handoff && !cobrouHorario && podeVoltar && convitePassivo && !toolsUsed.includes('consultar_horarios') && !estado.oferta?.length && !estado.reuniao
+        && !CONVITE.test(ctx.lastAgentText) && (estado.noShow || prontoParaReuniao(snapAgora, ctx.perguntasFeitas ?? 0, ctx.temasPerguntados))) {
+        cobrouHorario = true
+        messages.push({ role: 'assistant', content: safe.text }, { role: 'system', content: '[TRAVA DO SISTEMA] O lead já está qualificado e você falou da análise sem convidar de verdade: a mensagem não tem pergunta e ele não tem o que responder. Chame consultar_horarios agora e reescreva: em uma frase, ligue o que ele contou ao que o especialista mostra na análise gratuita (se ainda não apresentou a análise, apresente: conversa rápida pelo Google Meet, sem compromisso) e termine com o convite com as 2 opções de horário, em pergunta ("Qual fica melhor?"). Responda só com o texto do WhatsApp.' })
+        return { ...safe, guard: [...safe.guard, 'convite passivo: refeito com horários'], voltar: true }
+      }
       // Ofereceu horário sem consultar a agenda (Leandro, 02/10: "amanhã às 10h ou às 15h?" inventado):
       // volta ao loop para buscar de verdade; sem como voltar, a frase com o horário sai
       if (!handoff && !estado.oferta?.length && !toolsUsed.includes('consultar_horarios') && OFERECEU_HORA.test(safe.text)) {
