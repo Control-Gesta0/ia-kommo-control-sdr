@@ -52,7 +52,7 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   vm.runInNewContext(`${bloco}\nthis.FiltroIndicacao = FiltroIndicacao`, sandbox)
   const divergentes = [...BLOQUEIA, ...PASSA].filter(c => sandbox.FiltroIndicacao!.classificarTeste(c, 'inteligente').teste !== teste(c))
   eq('userscript e servidor decidem igual', divergentes, [])
-  eq('userscript: aceite fixo em 598 s (10 min − 2 s, sem ajuste), automático', [/LIBERACAO_MS: 10 \* 60 \* 1000/.test(src), /ANTECIPAR_MS: 2000/.test(src), /MARGEM_MS: 0,/.test(src), /AJUSTAR_MARGEM: false/.test(src), /MODO: 'automatico'/.test(src)], [true, true, true, true, true])
+  eq('userscript: base 598 s (10 min − 2 s), ajuste sutil de −0,5 a +0,6 s, automático', [/LIBERACAO_MS: 10 \* 60 \* 1000/.test(src), /ANTECIPAR_MS: 2000/.test(src), /MARGEM_MS: 0,/.test(src), /AJUSTAR_MARGEM: true/.test(src), /MARGEM_MIN_MS: -500/.test(src), /MARGEM_MAX_MS: 600/.test(src), /MARGEM_SOBE_MS: 150/.test(src), /MARGEM_DESCE_MS: 50/.test(src), /MODO: 'automatico'/.test(src)], [true, true, true, true, true, true, true, true, true])
   eq('userscript entende as mensagens da Kommo', ['no longer available', 'already been accepted', 'requested lead is not found'].every(m => src.includes(m)), true)
   eq('userscript: sem sonda antes da liberação, relógio do servidor, só o funil 4338500', [!/SONDA_|RAJADA_/.test(src), /amostrarRelogio/.test(src), /PIPELINE_ID: 4338500/.test(src), /CATEGORIAS_IGNORADAS: \['chats', 'mail', 'sip'\]/.test(src)], [true, true, true, true])
 

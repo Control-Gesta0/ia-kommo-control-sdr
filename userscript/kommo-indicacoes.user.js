@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kommo · Indicações de parceiro (Control Gestão)
 // @namespace    https://controlgestao.com.br/
-// @version      3.8.1
+// @version      3.8.2
 // @description  Filtra indicações de TESTE pelo "Comment:", aceita no tempo certo (ou avisa, no modo assistido) e aciona o agente de IA SDR.
 // @match        https://*.kommo.com/*
 // @run-at       document-idle
@@ -233,18 +233,21 @@ var FiltroIndicacao = (function () {
     // Liberação: 10 minutos depois da chegada do lead. A Kommo mudou de 5 para 10 min (descoberto em
     // 27/10; desde 16/10 todo aceite aos 5 min voltava "no longer available", até os de 303-304 s)
     LIBERACAO_MS: 10 * 60 * 1000,
-    // TEMPO FIXO (pedido do comercial, 20/10): aceita 2 s antes da liberação (600 s − ANTECIPAR_MS = 598 s),
-    // sem ajuste automático. Para mudar o tempo, mude só ANTECIPAR_MS (2000 = 598 s, 1500 = 598,5 s, 0 = 600 s).
+    // Ponto de partida: 2 s antes da liberação (600 s − ANTECIPAR_MS = 598 s). Para mudar a base, mude
+    // ANTECIPAR_MS (2000 = 598 s, 1500 = 598,5 s, 0 = 600 s).
     MARGEM_MS: 0,
     ANTECIPAR_MS: 2000,
-    // false = o tempo nunca sobe nem desce sozinho (a margem aprendida fica só no histórico)
-    AJUSTAR_MARGEM: false,
-    MARGEM_MIN_MS: 0,
-    // Teto da margem automática. MEDIDO (07 a 15/10): margem de ~1,5s jogou todo aceite do segundo
-    // 300 para o 301 da Kommo e a perda para outros parceiros foi de 4 em 31 para 18 em 35.
+    // AJUSTE SUTIL (pedido do comercial, 27/10): a partir da base, o tempo anda em passos pequenos
+    // e nunca sai da faixa de −0,5 s a +0,6 s (597,5 s a 598,6 s):
+    //   aceite cedo → +0,15 s (vários cedos em 2 min contam uma vez) · perdido para outro parceiro → −0,05 s
+    //   3 válidos seguidos → −0,05 s (testa chegar um pouco antes enquanto está dando certo)
+    // MEDIDO (07 a 15/10, regra antiga): passos de 0,5 s sem limite jogaram a margem para 1,5 s e a
+    // perda para outros parceiros foi de 4 em 31 para 18 em 35. Por isso os passos são pequenos e a faixa é curta.
+    AJUSTAR_MARGEM: true,
+    MARGEM_MIN_MS: -500,
     MARGEM_MAX_MS: 600,
-    MARGEM_SOBE_MS: 200,          // aceite cedo (rajada de cedos em 2 min conta uma vez só)
-    MARGEM_DESCE_MS: 100,         // lead perdido para outro parceiro, ou VALIDOS_PARA_DESCER válidos seguidos
+    MARGEM_SOBE_MS: 150,
+    MARGEM_DESCE_MS: 50,
     VALIDOS_PARA_DESCER: 3,
 
     JANELA_MS: 8000,             // depois do disparo, repete só enquanto não houver sucesso
@@ -271,7 +274,7 @@ var FiltroIndicacao = (function () {
   var pageFetch = W.fetch.bind(W)
   var STORE_KEY = 'cg-indicacoes-v3'
   var DIAG_KEY = 'cg-indicacoes-v3-diag'
-  var VERSAO = '3.8.1'
+  var VERSAO = '3.8.2'
 
   if (W.__INDICACOES__ && W.__INDICACOES__.stop) {
     console.warn('[INDICAÇÕES] já ativo, reiniciando...')
@@ -300,8 +303,10 @@ var FiltroIndicacao = (function () {
   if (memo.leads || memo.aprendizado) memo = {}
   var aprendizado = store.aprendizado || {}
   if (typeof aprendizado.margem !== 'number') aprendizado = { margem: CFG.MARGEM_MS, validosSeguidos: 0, historico: [] }
-  // Margem acima do teto (aprendida pela regra antiga, até 5s) volta ao ponto de partida
-  if (aprendizado.margem > CFG.MARGEM_MAX_MS) { aprendizado.margem = CFG.MARGEM_MS; aprendizado.validosSeguidos = 0 }
+  // Margem fora da faixa, ou aprendida com outro tempo de liberação (5 min, antes de 16/10), volta ao ponto de partida
+  if (aprendizado.margem > CFG.MARGEM_MAX_MS || aprendizado.margem < CFG.MARGEM_MIN_MS || aprendizado.liberacao !== CFG.LIBERACAO_MS) {
+    aprendizado.margem = CFG.MARGEM_MS; aprendizado.validosSeguidos = 0; aprendizado.liberacao = CFG.LIBERACAO_MS
+  }
   var diag = ler(DIAG_KEY, {})
 
   // Chave da Lara guardada no armazenamento do Tampermonkey (não no da página): colar uma versão
@@ -650,6 +655,10 @@ var FiltroIndicacao = (function () {
 
   /** Ajuste automático da margem pelo resultado conferido de cada aceite. */
   function registrarResultado(id, resultado, offset) {
+    // "no longer available" com o aceite já claramente depois da liberação (segundo da Kommo ≥ 601)
+    // não foi cedo: outro parceiro levou (a Kommo às vezes usa a mesma mensagem)
+    var segK = memo[id] && memo[id].segundoKommo
+    if (resultado === 'cedo' && typeof segK === 'number' && segK >= CFG.LIBERACAO_MS / 1000 + 1) resultado = 'outros'
     aprendizado.historico = (aprendizado.historico || []).concat([{ id: id, resultado: resultado, offsetMs: offset, segundoKommo: memo[id] && memo[id].segundoKommo, margemMs: margem(), em: new Date().toISOString() }]).slice(-30)
     if (CFG.AJUSTAR_MARGEM) {
       if (resultado === 'cedo') {
@@ -660,15 +669,15 @@ var FiltroIndicacao = (function () {
         aprendizado.margem = Math.min(CFG.MARGEM_MAX_MS, aprendizado.margem + CFG.MARGEM_SOBE_MS)
         log('📈', 'aceite saiu CEDO: margem sobe para ' + seg(aprendizado.margem))
       } else if (resultado === 'outros') {
-        // Outro parceiro chegou antes: a margem está custando lead, desce
-        if (aprendizado.margem > CFG.MARGEM_MS) {
-          aprendizado.margem = Math.max(CFG.MARGEM_MS, aprendizado.margem - CFG.MARGEM_DESCE_MS)
+        // Outro parceiro chegou antes: chega um pouco antes da próxima vez
+        if (aprendizado.margem > CFG.MARGEM_MIN_MS) {
+          aprendizado.margem = Math.max(CFG.MARGEM_MIN_MS, aprendizado.margem - CFG.MARGEM_DESCE_MS)
           log('📉', 'perdido para outro parceiro: margem desce para ' + seg(aprendizado.margem))
         }
       } else if (resultado === 'valido') {
         aprendizado.validosSeguidos = (aprendizado.validosSeguidos || 0) + 1
-        if (aprendizado.validosSeguidos >= CFG.VALIDOS_PARA_DESCER && aprendizado.margem > CFG.MARGEM_MS) {
-          aprendizado.margem = Math.max(CFG.MARGEM_MS, aprendizado.margem - CFG.MARGEM_DESCE_MS)
+        if (aprendizado.validosSeguidos >= CFG.VALIDOS_PARA_DESCER && aprendizado.margem > CFG.MARGEM_MIN_MS) {
+          aprendizado.margem = Math.max(CFG.MARGEM_MIN_MS, aprendizado.margem - CFG.MARGEM_DESCE_MS)
           aprendizado.validosSeguidos = 0
           log('📉', CFG.VALIDOS_PARA_DESCER + ' aceites válidos seguidos: margem desce para ' + seg(aprendizado.margem))
         }
