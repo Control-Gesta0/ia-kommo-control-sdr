@@ -18,8 +18,8 @@ const USER_ID = 12725576
 const STATUS_ID = 55438567
 const PIPELINE_ID = 4338500
 const CATEGORIAS_IGNORADAS = ['chats', 'mail', 'sip']
-// Mesmo instante do userscript 3.7.x: created_at + 1s + 300s − 2s (ANTECIPAR) + 40ms (margem), no relógio da Kommo
-const DISPARO_MS = 1000 + 300_000 - 2000 + 40
+// Mesmo instante do userscript 3.8.1: created_at + 1s + 600s − 2s (ANTECIPAR), no relógio da Kommo
+const DISPARO_MS = 1000 + 600_000 - 2000 // liberação de 10 min (desde 16/10/2026), 2 s antes
 const JANELA_MS = 8000
 const POLL_MS = 3000
 

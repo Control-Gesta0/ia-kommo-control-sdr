@@ -10,8 +10,8 @@
  * longer available"). Não existe "tentar de novo": o primeiro aceite que dá
  * sucesso é o único tiro.
  *
- * MEDIDO na conta (62 indicações, ago a set/2026, eventos da API): a Kommo libera
- * EXATAMENTE 300s depois da chegada. Aceites aos 299s: 11 queimados em 16. Aos
+ * MEDIDO na conta (62 indicações, ago a set/2026, eventos da API): a Kommo liberava
+ * EXATAMENTE 300s depois da chegada. Desde 16/10/2026 são 10 minutos (LIBERACAO_MS). Aceites aos 299s: 11 queimados em 16. Aos
  * 300 a 301s: válidos, mas 8 perdidos para outros parceiros por milissegundos.
  * O v2.1 disparava 4min57s depois de o card APARECER NA TELA: caía às vezes nos 299s.
  *
@@ -55,10 +55,11 @@
     // 'automatico' = o script aceita sozinho · 'assistido' = filtra e avisa, você clica
     MODO: 'automatico',
 
-    // Liberação medida: exatamente 300s depois da chegada do lead
-    LIBERACAO_MS: 5 * 60 * 1000,
-    // TEMPO FIXO (pedido do comercial, 20/10): aceita 298 s depois de o lead chegar (300 s − ANTECIPAR_MS),
-    // sem ajuste automático. Para mudar o tempo, mude só ANTECIPAR_MS (2000 = 298 s, 1500 = 298,5 s).
+    // Liberação: 10 minutos depois da chegada do lead. A Kommo mudou de 5 para 10 min (descoberto em
+    // 27/10; desde 16/10 todo aceite aos 5 min voltava "no longer available", até os de 303-304 s)
+    LIBERACAO_MS: 10 * 60 * 1000,
+    // TEMPO FIXO (pedido do comercial, 20/10): aceita 2 s antes da liberação (600 s − ANTECIPAR_MS = 598 s),
+    // sem ajuste automático. Para mudar o tempo, mude só ANTECIPAR_MS (2000 = 598 s, 1500 = 598,5 s, 0 = 600 s).
     MARGEM_MS: 0,
     ANTECIPAR_MS: 2000,
     // false = o tempo nunca sobe nem desce sozinho (a margem aprendida fica só no histórico)
@@ -95,7 +96,7 @@
   var pageFetch = W.fetch.bind(W)
   var STORE_KEY = 'cg-indicacoes-v3'
   var DIAG_KEY = 'cg-indicacoes-v3-diag'
-  var VERSAO = '3.8.0'
+  var VERSAO = '3.8.1'
 
   if (W.__INDICACOES__ && W.__INDICACOES__.stop) {
     console.warn('[INDICAÇÕES] já ativo, reiniciando...')
