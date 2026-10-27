@@ -63,14 +63,14 @@
     MARGEM_MS: 0,
     ANTECIPAR_MS: 2000,
     // AJUSTE SUTIL (pedido do comercial, 27/10): a partir da base, o tempo anda em passos pequenos
-    // e nunca sai da faixa de −0,5 s a +0,6 s (597,5 s a 598,6 s):
+    // e nunca sai da faixa de −0,5 s a +3 s (597,5 s a 601 s; teto pedido pelo comercial em 27/10):
     //   aceite cedo → +0,15 s (vários cedos em 2 min contam uma vez) · perdido para outro parceiro → −0,05 s
     //   3 válidos seguidos → −0,05 s (testa chegar um pouco antes enquanto está dando certo)
     // MEDIDO (07 a 15/10, regra antiga): passos de 0,5 s sem limite jogaram a margem para 1,5 s e a
     // perda para outros parceiros foi de 4 em 31 para 18 em 35. Por isso os passos são pequenos e a faixa é curta.
     AJUSTAR_MARGEM: true,
     MARGEM_MIN_MS: -500,
-    MARGEM_MAX_MS: 600,
+    MARGEM_MAX_MS: 3000,
     MARGEM_SOBE_MS: 150,
     MARGEM_DESCE_MS: 50,
     VALIDOS_PARA_DESCER: 3,
@@ -99,7 +99,7 @@
   var pageFetch = W.fetch.bind(W)
   var STORE_KEY = 'cg-indicacoes-v3'
   var DIAG_KEY = 'cg-indicacoes-v3-diag'
-  var VERSAO = '3.8.2'
+  var VERSAO = '3.8.3'
 
   if (W.__INDICACOES__ && W.__INDICACOES__.stop) {
     console.warn('[INDICAÇÕES] já ativo, reiniciando...')
