@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kommo · Indicações de parceiro (Control Gestão)
 // @namespace    https://controlgestao.com.br/
-// @version      3.8.3
+// @version      3.8.4
 // @description  Filtra indicações de TESTE pelo "Comment:", aceita no tempo certo (ou avisa, no modo assistido) e aciona o agente de IA SDR.
 // @match        https://*.kommo.com/*
 // @run-at       document-idle
@@ -237,10 +237,10 @@ var FiltroIndicacao = (function () {
     // ANTECIPAR_MS (2000 = 598 s, 1500 = 598,5 s, 0 = 600 s).
     MARGEM_MS: 0,
     ANTECIPAR_MS: 2000,
-    // AJUSTE SUTIL (pedido do comercial, 27/10): a partir da base, o tempo anda em passos pequenos
-    // e nunca sai da faixa de −0,5 s a +3 s (597,5 s a 601 s; teto pedido pelo comercial em 27/10):
-    //   aceite cedo → +0,15 s (vários cedos em 2 min contam uma vez) · perdido para outro parceiro → −0,05 s
-    //   3 válidos seguidos → −0,05 s (testa chegar um pouco antes enquanto está dando certo)
+    // AJUSTE SUTIL (pedido do comercial, 27 e 28/10): a partir da base, o tempo anda em passos pequenos
+    // e nunca sai da faixa de −0,5 s a +3 s (597,5 s a 601 s):
+    //   cedo ("no longer available") → +0,15 s, ou volta ao último tempo que deu certo + 0,05 s
+    //   outro parceiro aceitou antes → −0,05 s · aceite válido → mantém (o tempo está certo)
     // MEDIDO (07 a 15/10, regra antiga): passos de 0,5 s sem limite jogaram a margem para 1,5 s e a
     // perda para outros parceiros foi de 4 em 31 para 18 em 35. Por isso os passos são pequenos e a faixa é curta.
     AJUSTAR_MARGEM: true,
@@ -248,7 +248,6 @@ var FiltroIndicacao = (function () {
     MARGEM_MAX_MS: 3000,
     MARGEM_SOBE_MS: 150,
     MARGEM_DESCE_MS: 50,
-    VALIDOS_PARA_DESCER: 3,
 
     JANELA_MS: 8000,             // depois do disparo, repete só enquanto não houver sucesso
     MIN_INTERVALO_MS: 150,
@@ -274,7 +273,7 @@ var FiltroIndicacao = (function () {
   var pageFetch = W.fetch.bind(W)
   var STORE_KEY = 'cg-indicacoes-v3'
   var DIAG_KEY = 'cg-indicacoes-v3-diag'
-  var VERSAO = '3.8.3'
+  var VERSAO = '3.8.4'
 
   if (W.__INDICACOES__ && W.__INDICACOES__.stop) {
     console.warn('[INDICAÇÕES] já ativo, reiniciando...')
@@ -659,31 +658,45 @@ var FiltroIndicacao = (function () {
     // não foi cedo: outro parceiro levou (a Kommo às vezes usa a mesma mensagem)
     var segK = memo[id] && memo[id].segundoKommo
     if (resultado === 'cedo' && typeof segK === 'number' && segK >= CFG.LIBERACAO_MS / 1000 + 1) resultado = 'outros'
-    aprendizado.historico = (aprendizado.historico || []).concat([{ id: id, resultado: resultado, offsetMs: offset, segundoKommo: memo[id] && memo[id].segundoKommo, margemMs: margem(), em: new Date().toISOString() }]).slice(-30)
+    aprendizado.historico = (aprendizado.historico || []).concat([{ id: id, resultado: resultado, offsetMs: offset, segundoKommo: segK, margemMs: margem(), em: new Date().toISOString() }]).slice(-100)
     if (CFG.AJUSTAR_MARGEM) {
-      if (resultado === 'cedo') {
-        aprendizado.validosSeguidos = 0
-        // Cedos em rajada (07/10: 3 no mesmo minuto) vêm da mesma leitura de relógio: sobe uma vez só
-        if (now() - (aprendizado.ultimaSubida || 0) < 2 * 60 * 1000) { log('📈', 'aceite saiu CEDO (mesma rajada): margem fica em ' + seg(aprendizado.margem)); salvar(); return }
-        aprendizado.ultimaSubida = now()
-        aprendizado.margem = Math.min(CFG.MARGEM_MAX_MS, aprendizado.margem + CFG.MARGEM_SOBE_MS)
-        log('📈', 'aceite saiu CEDO: margem sobe para ' + seg(aprendizado.margem))
+      // Regra do comercial (28/10): o objetivo é o tempo com MAIS aceites válidos.
+      //   "no longer available" = cedo demais → sobe; se já tinha dado certo num tempo acima do atual,
+      //     volta para ele + 0,05 s (não passa do ponto que funcionava); senão +0,15 s.
+      //   "already been accepted by other partners" = chegou tarde → desce 0,05 s.
+      //   aceite válido = o tempo está certo → mantém (vários válidos juntos não mexem em nada).
+      // Vários resultados iguais em 2 min (rajada de leads) contam uma vez só.
+      var rajada = now() - (aprendizado['ultimo_' + resultado] || 0) < 2 * 60 * 1000
+      if (resultado === 'valido') {
+        aprendizado.ultimoValido = aprendizado.margem
+        log('🟰', 'aceite válido: tempo mantido em ' + seg(CFG.LIBERACAO_MS - CFG.ANTECIPAR_MS + aprendizado.margem))
+      } else if ((resultado === 'cedo' || resultado === 'outros') && rajada) {
+        log(resultado === 'cedo' ? '📈' : '📉', (resultado === 'cedo' ? 'cedo' : 'outro parceiro') + ' de novo na mesma rajada: tempo fica em ' + seg(CFG.LIBERACAO_MS - CFG.ANTECIPAR_MS + aprendizado.margem))
+      } else if (resultado === 'cedo') {
+        aprendizado.ultimo_cedo = now()
+        var bom = typeof aprendizado.ultimoValido === 'number' && aprendizado.ultimoValido > aprendizado.margem ? aprendizado.ultimoValido : null
+        aprendizado.margem = Math.min(CFG.MARGEM_MAX_MS, bom !== null ? bom + CFG.MARGEM_DESCE_MS : aprendizado.margem + CFG.MARGEM_SOBE_MS)
+        log('📈', 'aceite saiu CEDO (no longer available): tempo sobe para ' + seg(CFG.LIBERACAO_MS - CFG.ANTECIPAR_MS + aprendizado.margem) + (bom !== null ? ' (último tempo que deu certo + 0,05 s)' : ''))
       } else if (resultado === 'outros') {
-        // Outro parceiro chegou antes: chega um pouco antes da próxima vez
-        if (aprendizado.margem > CFG.MARGEM_MIN_MS) {
-          aprendizado.margem = Math.max(CFG.MARGEM_MIN_MS, aprendizado.margem - CFG.MARGEM_DESCE_MS)
-          log('📉', 'perdido para outro parceiro: margem desce para ' + seg(aprendizado.margem))
-        }
-      } else if (resultado === 'valido') {
-        aprendizado.validosSeguidos = (aprendizado.validosSeguidos || 0) + 1
-        if (aprendizado.validosSeguidos >= CFG.VALIDOS_PARA_DESCER && aprendizado.margem > CFG.MARGEM_MIN_MS) {
-          aprendizado.margem = Math.max(CFG.MARGEM_MIN_MS, aprendizado.margem - CFG.MARGEM_DESCE_MS)
-          aprendizado.validosSeguidos = 0
-          log('📉', CFG.VALIDOS_PARA_DESCER + ' aceites válidos seguidos: margem desce para ' + seg(aprendizado.margem))
-        }
+        aprendizado.ultimo_outros = now()
+        aprendizado.margem = Math.max(CFG.MARGEM_MIN_MS, aprendizado.margem - CFG.MARGEM_DESCE_MS)
+        log('📉', 'outro parceiro aceitou antes: tempo desce para ' + seg(CFG.LIBERACAO_MS - CFG.ANTECIPAR_MS + aprendizado.margem))
       }
     }
     salvar()
+  }
+
+  /** Aceites por tempo usado (a partir do histórico): onde a taxa de válidos é maior. */
+  function estatistica() {
+    var porTempo = {}
+    ;(aprendizado.historico || []).forEach(function (h) {
+      if (typeof h.margemMs !== 'number') return
+      var t = ((CFG.LIBERACAO_MS - CFG.ANTECIPAR_MS + h.margemMs) / 1000).toFixed(2) + 's'
+      var x = porTempo[t] = porTempo[t] || { valido: 0, cedo: 0, outros: 0 }
+      if (x[h.resultado] !== undefined) x[h.resultado]++
+    })
+    Object.keys(porTempo).forEach(function (t) { var x = porTempo[t], n = x.valido + x.cedo + x.outros; x.taxaValidos = n ? Math.round(100 * x.valido / n) + '%' : '—' })
+    return porTempo
   }
 
   // ---------------- CONFERÊNCIA DEPOIS DO ACEITE ----------------
@@ -965,12 +978,14 @@ var FiltroIndicacao = (function () {
     },
     /** copy(__INDICACOES__.relatorio()) e cole para o suporte */
     relatorio: function () {
-      return JSON.stringify({ versao: VERSAO, gerado: new Date().toISOString(), url: location.pathname, apiSessaoOk: apiSessaoOk, difServidorMs: Math.round(difServidor()), relogioIntervaloMs: relogioLo === null ? null : [Math.round(relogioLo), Math.round(relogioHi)], amostrasRelogio: amostrasRelogio.length, margemMs: margem(), aprendizado: aprendizado, cfg: CFG, leads: memo, diag: diag }, null, 1)
+      return JSON.stringify({ versao: VERSAO, gerado: new Date().toISOString(), url: location.pathname, apiSessaoOk: apiSessaoOk, difServidorMs: Math.round(difServidor()), relogioIntervaloMs: relogioLo === null ? null : [Math.round(relogioLo), Math.round(relogioHi)], amostrasRelogio: amostrasRelogio.length, margemMs: margem(), tempoAtual: seg(CFG.LIBERACAO_MS - CFG.ANTECIPAR_MS + margem()), estatistica: estatistica(), aprendizado: aprendizado, cfg: CFG, leads: memo, diag: diag }, null, 1)
     },
     esquecer: function (id) { delete memo[id]; delete diag[id]; salvar(); gravar(DIAG_KEY, diag) },
     /** Guarda a chave da Lara (INDICACAO_SECRET) no Tampermonkey; recarregue a aba depois */
     definirChave: function (chave) { CFG.AGENTE_SECRET = String(chave || '').trim(); try { GM_setValue(SECRET_KEY, CFG.AGENTE_SECRET) } catch (_) { /* sem GM */ } log('🔑', CFG.AGENTE_SECRET ? 'chave guardada: recarregue a aba' : 'chave apagada') },
-    zerarMargem: function () { aprendizado.margem = CFG.MARGEM_MS; aprendizado.validosSeguidos = 0; aprendizado.historico = []; salvar() },
+    zerarMargem: function () { aprendizado.margem = CFG.MARGEM_MS; aprendizado.validosSeguidos = 0; aprendizado.ultimoValido = null; aprendizado.historico = []; salvar() },
+    /** Tempo atual do aceite e a taxa de válidos por tempo: __INDICACOES__.tempo() */
+    tempo: function () { var r = { tempoAtual: seg(CFG.LIBERACAO_MS - CFG.ANTECIPAR_MS + margem()), ultimoQueDeuCerto: typeof aprendizado.ultimoValido === 'number' ? seg(CFG.LIBERACAO_MS - CFG.ANTECIPAR_MS + aprendizado.ultimoValido) : '—' }; console.log(r); console.table(estatistica()); return r },
     relogio: function () { return { difServidorMs: Math.round(difServidor()), intervaloMs: relogioLo === null ? null : [Math.round(relogioLo), Math.round(relogioHi)], amostras: amostrasRelogio.length } },
   }
 
