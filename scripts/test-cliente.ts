@@ -467,6 +467,18 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   const fora = mapa.alertas.find(x => x.nome === 'fora do assunto')!
   eq('fora do assunto: conta, Freud, piada e curiosidade acionam o bloqueio', ['Lara, quanto é 2+2?', 'E qual a ligação de freud com a teoria sistêmica?', 'me conta uma piada', 'quem foi Einstein?'].map(t => alertaFora(fora, t)), [true, true, true, true])
   eq('fora do assunto: pergunta de negócio NÃO aciona', ['quanto é o plano básico?', 'qual a diferença entre o plano básico e o avançado?', 'o que é a teoria de funil de vendas?', 'qual a relação do Kommo com o WhatsApp?', 'Tenho 2 vendedores e 30 leads por dia'].map(t => alertaFora(fora, t)), [false, false, false, false, false])
+  // Reativar follow-up da negociação pela tag (05/11): 1ª em 1h e as outras com o espaçamento da cadência
+  {
+    const n = mapa.negociacao, DIA = 86400000
+    const ativ = iso('2026-11-05T14:00:00Z') // quinta 11h
+    const prox = noExp(ativ + n.reativar.primeiraEmHoras * 3600000)
+    const desde = prox - n.dias[0] * DIA
+    let t = prox; const passos = [t]
+    for (let i = 1; i < n.dias.length; i++) { t = proximoPasso(desde, n.dias[i] * DIA, n.dias[i - 1] * DIA, t); passos.push(t) }
+    eq('reativar negociação: tag reativar-follow-up, 1ª em 1h', [n.reativar.tag, new Date(prox).toISOString()], ['reativar-follow-up', '2026-11-05T15:00:00.000Z'])
+    // qui 05/11 → sex 06 → (domingo vira) seg 09 → +2 dias qua 11 → +3 dias cai no sábado, vira seg 16
+    eq('reativar negociação: depois mantém o intervalo da cadência e pula o fim de semana', passos.map(x => new Date(x).toISOString().slice(0, 10)), ['2026-11-05', '2026-11-06', '2026-11-09', '2026-11-11', '2026-11-16'])
+  }
   // Contato novo pelo WhatsApp (26/10): só o Incoming do Funil de vendas - SDR, lead recente, sem humano nem indicação
   const { motivoParaNaoAssumir } = await import('../lib/contato-novo')
   const agoraCN = iso('2026-10-26T15:00:00Z'), criado = agoraCN / 1000 - 60

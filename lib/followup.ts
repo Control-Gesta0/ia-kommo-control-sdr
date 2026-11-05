@@ -513,9 +513,14 @@ async function processarLembrete(minutos: number, leadId: number, agora: number)
 export async function varrerNegociacao(agora = Date.now()): Promise<number> {
   const n = CRM_MAP.negociacao
   if (!n.ativo || !n.statusId) return 0
-  const r = await kommoGet<{ _embedded?: { leads?: Array<{ id: number }> } }>(`/api/v4/leads?filter[statuses][0][pipeline_id]=${n.pipelineId}&filter[statuses][0][status_id]=${n.statusId}&limit=250`)
+  const r = await kommoGet<{ _embedded?: { leads?: Array<{ id: number; _embedded?: { tags?: Array<{ name: string }> } }> } }>(`/api/v4/leads?filter[statuses][0][pipeline_id]=${n.pipelineId}&filter[statuses][0][status_id]=${n.statusId}&limit=250`)
   let novos = 0
   for (const l of r._embedded?.leads || []) {
+    if ((l._embedded?.tags || []).some(t => t.name.trim().toLowerCase() === n.reativar.tag)) {
+      await reativarNegociacao(l.id, agora)
+      novos++
+      continue
+    }
     const ok = await redis.set(chaveEstado('neg', l.id), { passo: 0, desde: agora, tipo: 'neg' } satisfies Cadencia, { nx: true, ex: 60 * 86400 })
     if (ok !== 'OK') continue
     const prox = noExpediente(agora + n.dias[0] * DIA)
@@ -525,6 +530,28 @@ export async function varrerNegociacao(agora = Date.now()): Promise<number> {
     novos++
   }
   return novos
+}
+
+/**
+ * Tag de reativar no card (Negociação): recomeça a cadência do zero, mesmo que o cliente tenha
+ * respondido (-1) ou que ela já tenha acabado. 1ª mensagem em 1h; as outras com o espaçamento normal.
+ */
+export async function reativarNegociacao(leadId: number, agora = Date.now()): Promise<number> {
+  const n = CRM_MAP.negociacao
+  const prox = noExpediente(agora + n.reativar.primeiraEmHoras * HORA)
+  // "desde" recuado: proximoPasso calcula os passos seguintes a partir dele (dias[1], dias[2]... depois)
+  await redis.set(chaveEstado('neg', leadId), { passo: 0, desde: prox - n.dias[0] * DIA, tipo: 'neg' } satisfies Cadencia, { ex: 60 * 86400 })
+  await redis.zrem(FILA(), `negfim:${leadId}`)
+  await enfileirar(`neg:${leadId}`, prox)
+  await campoProximo(leadId, prox)
+  await removeLeadTags(leadId, [n.reativar.tag]).catch(() => undefined)
+  await addLeadNote(leadId, nota('Follow-up de negociação reativado pelo time', [
+    `⏭️ Primeira mensagem: ${quando(prox, agora)}`,
+    `♻️ Depois: ${n.dias.slice(1).map(d => `${d - n.dias[0]}d`).join(', ')} após a primeira (sem resposta)`,
+    '✋ Para sozinho quando o cliente responder · para reativar de novo, coloque a tag outra vez',
+  ])).catch(() => undefined)
+  await logExec({ tipo: 'followup', leadId, detalhe: `negociação reativada pela tag · 1ª ${new Date(prox).toISOString()}` })
+  return prox
 }
 
 /** Itens vencidos, com claim atômico (ZREM: só quem remove processa). */

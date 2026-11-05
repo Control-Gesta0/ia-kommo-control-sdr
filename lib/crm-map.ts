@@ -127,6 +127,12 @@ export const CRM_MAP = {
     dias: [2, 3, 5, 7, 10],
     proximoFollowupFieldId: 1048617, // campo date_time "Próximo Follow-up" (criado em 25/09/2026)
     tarefa: { taskTypeId: 1, responsavelId: 12725576, texto: 'Proposta sem resposta depois de 5 follow-ups: ligar ou marcar como Perdido' },
+    /**
+     * Reativar à mão (pedido do comercial, 05/11): tag no card de um lead em Negociação recomeça a
+     * cadência inteira (mesmo depois de o cliente ter respondido ou de ela ter acabado). A 1ª mensagem
+     * sai em 1h (no expediente) e as outras mantêm o espaçamento da cadência. A tag sai sozinha.
+     */
+    reativar: { tag: 'reativar-follow-up', primeiraEmHoras: 1 },
   },
 
   /**
