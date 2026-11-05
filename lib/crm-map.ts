@@ -132,7 +132,7 @@ export const CRM_MAP = {
      * cadência inteira (mesmo depois de o cliente ter respondido ou de ela ter acabado). A 1ª mensagem
      * sai em 1h (no expediente) e as outras mantêm o espaçamento da cadência. A tag sai sozinha.
      */
-    reativar: { tag: 'follow up negociacao', primeiraEmHoras: 1 }, // vale com ou sem acento, hífen ou maiúscula
+    reativar: { tag: 'follow-up-negociacao', primeiraEmHoras: 1 }, // vale com ou sem acento, hífen ou maiúscula
   },
 
   /**
