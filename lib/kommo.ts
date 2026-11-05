@@ -159,6 +159,23 @@ export interface KommoContact {
   custom_fields_values?: Array<{ field_code?: string; field_name?: string; values: Array<{ value?: unknown }> }> | null
 }
 
+/**
+ * Última mensagem que uma PESSOA do time mandou no chat do lead (ms), lida nos eventos da Kommo.
+ * O webhook de mensagem enviada não chega (diag:saida vazio): 04/11, Ana, o Rodrigo respondeu pela
+ * Kommo às 18:31 e a Lara respondeu por cima às 18:39. No evento, robô = created_by 0, pessoa = id do usuário.
+ */
+export async function ultimaMensagemHumana(leadId: number, janelaMs: number): Promise<number | null> {
+  const lead = await kommo<KommoLead>('GET', `/api/v4/leads/${leadId}?with=contacts`)
+  const contatos = (lead._embedded?.contacts || []).map(c => c.id)
+  const desde = Math.floor((Date.now() - janelaMs) / 1000)
+  let ultima: number | null = null
+  for (const cid of contatos.slice(0, 3)) {
+    const r = await kommo<{ _embedded?: { events?: Array<{ created_at: number; created_by: number }> } }>('GET', `/api/v4/events?filter[entity]=contact&filter[entity_id]=${cid}&filter[type]=outgoing_chat_message&filter[created_at][from]=${desde}&limit=50`)
+    for (const e of r?._embedded?.events || []) if (e.created_by && (ultima === null || e.created_at * 1000 > ultima)) ultima = e.created_at * 1000
+  }
+  return ultima
+}
+
 /** uid do Incoming lead (chat) que gerou este lead, para aceitar pela API. null = não está em Incoming. */
 export async function uidIncomingDoLead(leadId: number, pipelineId: number): Promise<string | null> {
   const r = await kommo<{ _embedded?: { unsorted?: Array<{ uid: string; category: string; _embedded?: { leads?: Array<{ id: number }> } }> } }>('GET', `/api/v4/leads/unsorted?filter[pipeline_id]=${pipelineId}&limit=50`)

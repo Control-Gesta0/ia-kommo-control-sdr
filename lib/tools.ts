@@ -1,5 +1,5 @@
 import type OpenAI from 'openai'
-import { ehAfirmativo, escolherOpcoes, gerarLivres, parsePreferencia, resolverEscolha, slotsCitados, type Intervalo, type Slot } from './agenda'
+import { ehAfirmativo, escolherOpcoes, gerarLivres, parsePreferencia, RECUSA_HORARIO, resolverEscolha, semRecusas, slotsCitados, type Intervalo, type Slot } from './agenda'
 import { CRM_MAP, campoByKey, type Campo, type Porta } from './crm-map'
 import { avancar, champCompleto, NOMES } from './etapas'
 import { classificarSuporte } from './indicacao'
@@ -511,7 +511,11 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
         try { ocupados = await port.buscarOcupados(agora, fimJanela) } catch (e) {
           return err(`Não consegui ler a agenda agora (${e instanceof Error ? e.message : String(e)}). Diga ao lead que o time confirma o horário por aqui e chame finalizar_atendimento(qualificado_sem_reuniao).`)
         }
-        const livres = gerarLivres(agora, cfg, ocupados)
+        // Horários que o lead já recusou não voltam (04/11, Certfly: "esses horários são ruins, tem outras
+        // opções?" e a Lara mandou os mesmos dois). Recusou agora = a oferta atual também sai.
+        const recusados = new Set([...(state.recusados || []), ...(RECUSA_HORARIO.test(ctx.lastLeadText) ? (state.oferta || []).map(o => o.ini) : [])])
+        if (recusados.size) await port.patchState({ recusados: [...recusados].filter(ini => ini > agora) })
+        const livres = gerarLivres(agora, cfg, ocupados).filter(s => !recusados.has(s.ini))
         if (!livres.length) return err('Sem horário livre na janela. Diga que o time vai propor um horário por aqui e chame finalizar_atendimento(qualificado_sem_reuniao).')
         const pref = parsePreferencia(`${String(input.preferencia || '')}\n${ctx.lastLeadText}`, agora)
         const { opcoes, respeitouPreferencia } = escolherOpcoes(livres, pref, cfg.maxOpcoes)
@@ -545,7 +549,10 @@ export async function runTool(ctx: ToolCtx, name: string, input: Record<string, 
         const agora = ctx.agora ?? Date.now()
         if (!oferta.length) return err('Nenhum horário foi oferecido ainda. Chame consultar_horarios e ofereça as opções.')
         // A escolha tem que vir do LEAD: resolvida no texto dele contra a oferta gravada
-        let slot = resolverEscolha(ctx.lastLeadText, oferta, agora)
+        // Só vale como escolha o que o lead NÃO recusou ("as 15h não consigo" não marca as 15h)
+        const textoEscolha = semRecusas(ctx.lastLeadText)
+        if (RECUSA_HORARIO.test(ctx.lastLeadText)) await port.patchState({ recusados: [...new Set([...(state.recusados || []), ...oferta.filter(o => !resolverEscolha(textoEscolha, [o], agora)).map(o => o.ini)])] })
+        let slot = resolverEscolha(textoEscolha, oferta, agora)
         if (!slot && ehAfirmativo(ctx.lastLeadText)) {
           const citados = slotsCitados(ctx.lastAgentText, oferta)
           if (citados.length === 1) slot = citados[0]

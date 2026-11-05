@@ -37,6 +37,8 @@ export interface LeadState {
   /** opções de horário que a IA ofereceu (gravadas em código; a escolha é resolvida contra elas) */
   oferta?: Array<{ ini: number; fim: number; label: string }>
   ofertaEm?: number
+  /** horários (ini) que o lead recusou: não são oferecidos de novo */
+  recusados?: number[]
   reuniao?: { ini: number; fim: number; label: string; taskId: string; em: string }
   /** pediu atendimento humano e a IA ofereceu a reunião no lugar; se pedir de novo, passa para o time */
   humanoOferecido?: boolean

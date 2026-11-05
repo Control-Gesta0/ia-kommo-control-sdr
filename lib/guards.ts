@@ -125,3 +125,16 @@ export function semEspanhol(text: string): string {
   for (const [re, pt] of ESPANHOL) t = t.replace(re, m => (m[0] === m[0].toUpperCase() ? pt[0].toUpperCase() + pt.slice(1) : pt))
   return t
 }
+
+/**
+ * A saída do modelo é rascunho/raciocínio e não mensagem ao cliente: inglês dominante, nome de
+ * ferramenta ou anotação interna (05/11, Ana recebeu "We need reply based current context says...").
+ */
+export function vazouRaciocinio(texto: string): boolean {
+  const t = texto || ''
+  if (/\b(?:salvar_respostas|consultar_horarios|agendar_reuniao|finalizar_atendimento|registrar_respondente|pediu_humano)\b|\[TRAVA|\bsystem prompt\b/i.test(t)) return true
+  if (/\b(?:we need|need (?:to|tool)|context says|lead says|the lead|no question|message short|respond (?:active|with)|tool save)\b/i.test(t)) return true
+  const en = (t.match(/\b(?:the|and|we|you|your|need|reply|based|current|context|says|already|maybe|should|would|could|message|question|lead|then|also|but|if|with|without)\b/gi) || []).length
+  const pt = (t.match(/\b(?:voc[eê]s?|que|para|pra|n[aã]o|com|uma?|de|do|da|reuni[aã]o|hor[aá]rio|especialista|a gente|vamos|seu|sua)\b/gi) || []).length
+  return en >= 5 && en > pt
+}

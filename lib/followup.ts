@@ -2,11 +2,11 @@ import { fromLocal, local, rotulo } from './agenda'
 import { CONFIG } from './config'
 import { CRM_MAP } from './crm-map'
 import { logExec } from './execlog'
-import { appendMessage, getHistory, humanSpokeRecently } from './history'
+import { appendMessage, getHistory, humanSpokeRecently, liberarHumano } from './history'
 import { addLeadNote, addLeadTags, createTask, getContact, getLead, getTask, kommoGet, leadTags, patchLead, removeLeadTags, updateLeadFields } from './kommo'
 import { lerEventoGoogle } from './google'
 import { nota, quando } from './notas'
-import { overlap } from './guards'
+import { overlap, vazouRaciocinio } from './guards'
 import { despertar } from './qstash'
 import { primeiroNomeDe } from './saudacao'
 import { k, redis } from './redis'
@@ -206,7 +206,7 @@ export function instrucaoNeg(passo: number, total: number): string {
 
 /** Saiu parecido com a última mensagem da Lara? Então vai o texto fixo do tipo deste passo. */
 function semRepetir(texto: string | null, ultimaLara: string, fixo: string): string {
-  if (!texto) return fixo
+  if (!texto || vazouRaciocinio(texto)) return fixo // rascunho/inglês do modelo nunca vai para o cliente
   return ultimaLara && overlap(texto, ultimaLara) >= 0.6 ? fixo : texto
 }
 
@@ -564,7 +564,8 @@ export async function ativarNoShow(leadId: number, origem: string, agora = Date.
   await patchState(leadId, { noShow: { em: new Date(agora).toISOString(), reuniao: st.reuniao?.label }, reuniao: undefined, finalizado: undefined, oferta: [] })
   await cancelarFollowup(leadId, ['sdr', 'neg'])
   await redis.zrem(FILA(), ...CRM_MAP.lembretes.minutosAntes.map(m => `lemm${m}:${leadId}`), `lem24:${leadId}`, `lem1:${leadId}`)
-  await redis.del(k('lem', leadId), k('humano', leadId))
+  await redis.del(k('lem', leadId))
+  await liberarHumano(leadId)
   if (CONFIG.gateTag) await addLeadTags(leadId, [CONFIG.gateTag])
   await removeLeadTags(leadId, [...CRM_MAP.finalizar.tags, CRM_MAP.tags.reuniao]).catch(() => undefined)
   const passo0 = esperando ? 1 : 0

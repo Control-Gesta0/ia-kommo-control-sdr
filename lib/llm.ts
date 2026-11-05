@@ -3,7 +3,7 @@ import path from 'path'
 import OpenAI from 'openai'
 import { CRM_MAP, type Porta } from './crm-map'
 import { addUsage, emptyUsage, type Usage } from './execlog'
-import { checkReply, keepLastQuestion, overlap, semEspanhol, semTravessao, type Violation } from './guards'
+import { checkReply, keepLastQuestion, overlap, semEspanhol, semTravessao, vazouRaciocinio, type Violation } from './guards'
 import { abreComPergunta, garantirSaudacao, primeiroNomeDe, saudacao, SO_CUMPRIMENTO } from './saudacao'
 import type { ChatMsg } from './history'
 import { aplicarFinalizacao, buildTools, describeOpen, lacunasDeQualificacao, pediuReuniao, prontoParaReuniao, runTool, snapshot, temasPerguntados, type ToolCtx } from './tools'
@@ -185,6 +185,16 @@ export function createBrain(opts: LlmOptions) {
      */
     async function revisar(s0: { text: string; guard: string[] }, podeVoltar: boolean): Promise<{ text: string; guard: string[]; voltar?: boolean }> {
       let safe = s0
+      // Raciocínio interno vazado (05/11, Ana: "We need reply based current context says...") ou resposta em
+      // inglês: refaz uma vez; se vazar de novo, NÃO envia (texto vazio = a Lara fica quieta nesta vez)
+      if (vazouRaciocinio(safe.text)) {
+        const fixV: Msg[] = [...messages, { role: 'system', content: '[TRAVA DO SISTEMA] Sua última saída não foi enviada: veio em inglês ou com anotações internas. Escreva SÓ a mensagem de WhatsApp para o cliente, em português do Brasil, sem comentar instruções, contexto ou ferramentas.' }]
+        const cV = await call(fixV, null, usage)
+        const tV = (cV.message?.content || '').trim()
+        if (!tV || vazouRaciocinio(tV)) return { text: '', guard: [...safe.guard, 'raciocínio vazado: não enviado'] }
+        safe = await enforce(fixV, tV, usage, handoff, ctx.lastLeadText)
+        safe = { ...safe, guard: [...safe.guard, 'raciocínio vazado: refeito'] }
+      }
       // Copiou a própria mensagem anterior (raro, mas acontece): refaz uma vez respondendo ao lead
       if (ctx.lastAgentText && overlap(safe.text, ctx.lastAgentText) >= 0.85 && overlap(ctx.lastAgentText, safe.text) >= 0.85) {
         const fixRep: Msg[] = [...messages, { role: 'assistant', content: safe.text }, { role: 'system', content: '[TRAVA DO SISTEMA] Você repetiu a sua mensagem anterior. Responda ao que o lead ACABOU de escrever (se ele perguntou algo, responda primeiro) e siga com a próxima pergunta que falta. Sem saudação e sem se apresentar de novo. Responda só com o texto do WhatsApp.' }]
@@ -411,7 +421,7 @@ export function createBrain(opts: LlmOptions) {
     ]
     const c = await call(messages, null, usage, 600)
     const bruto = (c.message?.content || '').trim()
-    if (!bruto) return null
+    if (!bruto || vazouRaciocinio(bruto)) return null // quem chama usa a abertura fixa
     let safe = await enforce(messages, bruto, usage, false, '')
     if (safe.guard.includes('fallback')) return null
     // Abertura não convida para a reunião (comercial, 02/10): o convite sai; sem pergunta, vale a abertura fixa
@@ -437,7 +447,7 @@ export function createBrain(opts: LlmOptions) {
     const messages: Msg[] = [...(await buildSystem(ctx, lead)), ...historyToMessages(history), { role: 'system', content: instrucao }]
     const c = await call(messages, null, usage, 300)
     const bruto = (c.message?.content || '').trim()
-    if (!bruto) return null
+    if (!bruto || vazouRaciocinio(bruto)) return null
     const safe = await enforce(messages, bruto, usage, true, '')
     return safe.guard.includes('fallback') ? null : safe.text
   }

@@ -3,7 +3,7 @@ import { brain, enviarResposta, processLead } from './agent'
 import { CONFIG } from './config'
 import { CRM_MAP, portaById } from './crm-map'
 import { logExec } from './execlog'
-import { appendMessage, getHistory } from './history'
+import { appendMessage, getHistory, liberarHumano } from './history'
 import { acharComentario, classificarSuporte, extrairContexto, foraDoIdioma, marcaDeInvalido, segmentoPt, type Classificacao, type ContextoIndicacao } from './indicacao'
 import { classificarIntencao } from './intencao'
 import {
@@ -187,7 +187,7 @@ export async function iniciarConversa(leadId: number, origem: string, comentario
     }
 
     // Tag à mão num lead sem indicação: abertura de contato direto (sem falar de indicação)
-    if (opts.manual) await redis.del(k('humano', leadId)) // o time passou o lead para a Lara
+    if (opts.manual) await liberarHumano(leadId) // o time passou o lead para a Lara
     if (opts.manual && !comentario) return await iniciarDireto(leadId, nome, origem, t0, !!opts.responder)
 
     const porta = portaById(CRM_MAP.menu.portaUnica)!
@@ -265,7 +265,7 @@ async function iniciarDireto(leadId: number, nome: string, origem: string, t0: n
  * quando o lead responder.
  */
 export async function iniciarPorTag(leadId: number, origem = 'tag-manual'): Promise<ResultadoInicio> {
-  await redis.del(k('humano', leadId)) // o time passou o lead para a Lara: sem pausa de humano
+  await liberarHumano(leadId) // o time passou o lead para a Lara: sem pausa de humano
   const hist = await getHistory(leadId).catch(() => [])
   // Mensagens do time também ficam no histórico como saída (id "kommo:..."): só conta o que a Lara mandou
   const laraFalou = hist.some(m => m.dir === 'out' && !String(m.id).startsWith('kommo:'))

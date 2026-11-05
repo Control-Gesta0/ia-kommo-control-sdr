@@ -1,5 +1,6 @@
 import crypto from 'crypto'
 import { k, redis } from './redis'
+import { ultimaMensagemHumana } from './kommo'
 
 /**
  * Histórico da conversa no Redis (o Kommo não devolve transcript).
@@ -71,6 +72,22 @@ export async function markHumanSpoke(leadId: number): Promise<void> {
   await redis.set(k('humano', leadId), String(Date.now()), { ex: HUMANO_TTL })
 }
 
+/** O time devolveu o lead para a Lara: mensagens do time até agora não pausam mais. */
+export async function liberarHumano(leadId: number): Promise<void> {
+  await redis.del(k('humano', leadId))
+  await redis.set(k('humano-liberado', leadId), String(Date.now()), { ex: HUMANO_TTL })
+}
+
 export async function humanSpokeRecently(leadId: number): Promise<boolean> {
-  return !!(await redis.get(k('humano', leadId)))
+  if (await redis.get(k('humano', leadId))) return true
+  // Reserva: a Kommo não manda o webhook de mensagem enviada, então confere nos eventos do chat.
+  // Achou mensagem de pessoa nas últimas 6h: pausa até 6h depois dela. Erro na leitura = segue (não trava a Lara).
+  const ultima = await ultimaMensagemHumana(leadId, HUMANO_TTL * 1000).catch(() => null)
+  // O time devolveu o lead para a Lara (tag colocada de novo) depois dessa mensagem: não pausa
+  const liberado = Number(await redis.get(k('humano-liberado', leadId))) || 0
+  if (!ultima || ultima <= liberado) return false
+  const resta = Math.ceil((ultima + HUMANO_TTL * 1000 - Date.now()) / 1000)
+  if (resta <= 0) return false
+  await redis.set(k('humano', leadId), String(ultima), { ex: resta })
+  return true
 }

@@ -196,6 +196,17 @@ export function horaCitada(texto: string): number | null {
  * Qual slot da OFERTA o texto escolhe. null = ambíguo ou fora da oferta
  * (nunca troca por outro dia com a mesma hora).
  */
+/**
+ * O lead RECUSOU horário ("as 15h não consigo", "esses horários são ruins", "tem outras opções?").
+ * 04/11, Alessandra: "hoje vc teria outro horario? pois as 15h nao consigoo" virou reunião às 15h.
+ */
+export const RECUSA_HORARIO = /\b(?:n[aã]o|nem)\s+(?:consigo+|posso|d[aá]|vai\s+dar|rola|tenho\s+como|fica\s+bom|serve|funciona|encaixa)|\b(?:ruim|ruins|p[eé]ssimo|complicad[oa]s?|imposs[ií]vel|indispon[ií]ve(?:l|is))\b|\boutr[oa]s?\s+(?:hor[aá]rios?|op[cç](?:[aã]o|[oõ]es)|dias?|datas?|turnos?)|\bnenhum[a]?\b/i
+
+/** Tira do texto as frases em que o lead recusa: só o que sobra vale como escolha de horário. */
+export function semRecusas(texto: string): string {
+  return (texto || '').split(/\n+|(?<=[.!?;])\s+|,\s*|\s+(?:pois|porque|mas|só que)\s+/i).filter(f => f.trim() && !RECUSA_HORARIO.test(f)).join('\n')
+}
+
 export function resolverEscolha(texto: string, oferta: Slot[], agora: number): Slot | null {
   if (!oferta.length || !texto.trim()) return null
   const n = normalizar(texto)

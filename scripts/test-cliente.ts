@@ -376,6 +376,17 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   await runTool(ctx('pode ser quinta de manhã'), 'consultar_horarios', { preferencia: 'quinta de manhã' })
   out = await runTool(ctx('beleza'), 'agendar_reuniao', { horario: 'quinta 01/10 às 9h' })
   eq('"beleza" sem escolher entre 2 opções é recusado', out.isError, true)
+  // Recusou os horários (Certfly, 04/11): a nova consulta não devolve os mesmos e eles não voltam depois
+  {
+    const antes = structuredClone(w.state)
+    const ofertados = w.state.oferta.map((s: any) => s.label)
+    const rec = await runTool(ctx('esses horários são ruins, tem outras opções?'), 'consultar_horarios', {})
+    const novos = w.state.oferta.map((s: any) => s.label)
+    eq('pediu outras opções: a agenda não devolve os horários recusados', [rec.isError, novos.some((l: string) => ofertados.includes(l)), novos.length > 0], [false, false, true])
+    const de9h = await runTool(ctx('as 9h nao consigo'), 'agendar_reuniao', { horario: 'quinta 01/10 às 9h' })
+    eq('"as 9h nao consigo" não vira reunião às 9h', [de9h.isError, w.reunioes.length], [true, 0])
+    w.state = antes
+  }
   w.ocupados.push({ ini: iso('2026-10-01T12:00:00Z'), fim: iso('2026-10-01T12:30:00Z') })
   out = await runTool(ctx('9h30 fica ótimo'), 'agendar_reuniao', { horario: 'quinta 01/10 às 9h30' })
   eq('horário ocupado na revalidação é recusado', [out.isError, /ocupado/.test(out.content), w.reunioes.length], [true, true, 0])
@@ -467,6 +478,27 @@ export default async function testesCliente(eq: Eq): Promise<number> {
     motivoParaNaoAssumir({ pipeline_id: 4338500, status_id: 40438376, created_at: criado }, ['indicacao-kommo'], agoraCN),
     motivoParaNaoAssumir({ pipeline_id: 4338500, status_id: 40438376, created_at: criado - 3 * 86400 }, [], agoraCN),
   ].every(Boolean), true)
+  // 05/11: raciocínio do modelo em inglês enviado à Ana; textos reais e mensagens normais
+  const { vazouRaciocinio } = await import('../lib/guards')
+  eq('raciocínio vazado em inglês é barrado', [
+    vazouRaciocinio('We need reply based current context says already invited, offered slots, no qualification, ask selection maybe tomorrow callback. Need save answers literal.'),
+    vazouRaciocinio('We need respond to auto message? It says first message already sent presumably ours, but lead sent canned message.'),
+    vazouRaciocinio('Vou chamar consultar_horarios agora'),
+  ], [true, true, true])
+  eq('mensagem normal da Lara passa', [
+    vazouRaciocinio('Com esse volume, uma cadência de follow-up com mensagens e lembretes no tempo certo evita que interessados esfriem. Quer marcar uma reunião?'),
+    vazouRaciocinio('Tenho estes horários com o especialista: 1) amanhã, quinta 05/11 às 11h 2) sexta 06/11 às 10h. Qual fica melhor pra você?'),
+    vazouRaciocinio('Entendi. Cada lead entra no funil com etapa, responsável e follow-up automático no Kommo.'),
+  ], [false, false, false])
+  // 04/11: Alessandra recusou as 15h e a Lara marcou as 15h; Certfly pediu outras opções e recebeu as mesmas
+  const { semRecusas, resolverEscolha: escolher, RECUSA_HORARIO } = await import('../lib/agenda')
+  const agoraR = iso('2026-11-04T14:39:00Z')
+  const oferR = [{ ini: iso('2026-11-04T18:00:00Z'), fim: 0, label: 'hoje, quarta 04/11 às 15h' }, { ini: iso('2026-11-05T13:00:00Z'), fim: 0, label: 'amanhã, quinta 05/11 às 10h' }]
+  const pega = (t: string) => escolher(semRecusas(t), oferR, agoraR)?.label || null
+  eq('recusou o horário ("as 15h nao consigoo") não marca esse horário', pega('hoje vc teria outro horario? pois as 15h nao consigoo'), null)
+  eq('recusou um e escolheu outro ("nao consigo / quero amanha as 10h") marca o escolhido', pega('nao consigo\nquero amanha as 10h'), 'amanhã, quinta 05/11 às 10h')
+  eq('escolha normal continua valendo', [pega('Amanhã às 10'), pega('Pode ser às 15h')], ['amanhã, quinta 05/11 às 10h', 'hoje, quarta 04/11 às 15h'])
+  eq('"esses horários são ruins, tem outras opções?" é recusa', [RECUSA_HORARIO.test('Estes horários é ruim\nTem outras opções pra ?'), RECUSA_HORARIO.test('Pode ser amanhã às 10h')], [true, false])
   const { respostaAtrasada } = await import('../lib/llm')
   const agoraT = iso('2026-10-23T14:49:00Z')
   eq('resposta atrasada (mensagem do lead de 4 dias atrás): pede desculpa e não trata o "agora" dele como agora', /RESPOSTA ATRASADA[\s\S]*desculpa[\s\S]*NAQUELE momento/.test(respostaAtrasada([{ dir: 'in', ts: iso('2026-10-19T17:25:47Z') }], agoraT)), true)
