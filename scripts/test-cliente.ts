@@ -475,7 +475,9 @@ export default async function testesCliente(eq: Eq): Promise<number> {
     const desde = prox - n.dias[0] * DIA
     let t = prox; const passos = [t]
     for (let i = 1; i < n.dias.length; i++) { t = proximoPasso(desde, n.dias[i] * DIA, n.dias[i - 1] * DIA, t); passos.push(t) }
-    eq('reativar negociação: tag reativar-follow-up, 1ª em 1h', [n.reativar.tag, new Date(prox).toISOString()], ['reativar-follow-up', '2026-11-05T15:00:00.000Z'])
+    const { nomeTag } = await import('../lib/followup')
+    eq('reativar negociação: tag "follow up negociacao", 1ª em 1h', [n.reativar.tag, new Date(prox).toISOString()], ['follow up negociacao', '2026-11-05T15:00:00.000Z'])
+    eq('a tag vale com acento, hífen ou maiúscula', ['Follow-up Negociação', 'follow up negociacao', 'FOLLOW_UP_NEGOCIACAO', 'follow-up'].map(t => nomeTag(t) === nomeTag(n.reativar.tag)), [true, true, true, false])
     // qui 05/11 → sex 06 → (domingo vira) seg 09 → +2 dias qua 11 → +3 dias cai no sábado, vira seg 16
     eq('reativar negociação: depois mantém o intervalo da cadência e pula o fim de semana', passos.map(x => new Date(x).toISOString().slice(0, 10)), ['2026-11-05', '2026-11-06', '2026-11-09', '2026-11-11', '2026-11-16'])
   }

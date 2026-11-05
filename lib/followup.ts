@@ -516,8 +516,9 @@ export async function varrerNegociacao(agora = Date.now()): Promise<number> {
   const r = await kommoGet<{ _embedded?: { leads?: Array<{ id: number; _embedded?: { tags?: Array<{ name: string }> } }> } }>(`/api/v4/leads?filter[statuses][0][pipeline_id]=${n.pipelineId}&filter[statuses][0][status_id]=${n.statusId}&limit=250`)
   let novos = 0
   for (const l of r._embedded?.leads || []) {
-    if ((l._embedded?.tags || []).some(t => t.name.trim().toLowerCase() === n.reativar.tag)) {
-      await reativarNegociacao(l.id, agora)
+    const tagReativar = (l._embedded?.tags || []).find(t => nomeTag(t.name) === nomeTag(n.reativar.tag))
+    if (tagReativar) {
+      await reativarNegociacao(l.id, agora, tagReativar.name)
       novos++
       continue
     }
@@ -536,7 +537,12 @@ export async function varrerNegociacao(agora = Date.now()): Promise<number> {
  * Tag de reativar no card (Negociação): recomeça a cadência do zero, mesmo que o cliente tenha
  * respondido (-1) ou que ela já tenha acabado. 1ª mensagem em 1h; as outras com o espaçamento normal.
  */
-export async function reativarNegociacao(leadId: number, agora = Date.now()): Promise<number> {
+/** "Follow-up Negociação", "follow up negociacao" e "follow_up_negociação" são a mesma tag */
+export function nomeTag(nome: string): string {
+  return (nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[-_\s]+/g, ' ').trim()
+}
+
+export async function reativarNegociacao(leadId: number, agora = Date.now(), tagNoCard = CRM_MAP.negociacao.reativar.tag): Promise<number> {
   const n = CRM_MAP.negociacao
   const prox = noExpediente(agora + n.reativar.primeiraEmHoras * HORA)
   // "desde" recuado: proximoPasso calcula os passos seguintes a partir dele (dias[1], dias[2]... depois)
@@ -544,7 +550,7 @@ export async function reativarNegociacao(leadId: number, agora = Date.now()): Pr
   await redis.zrem(FILA(), `negfim:${leadId}`)
   await enfileirar(`neg:${leadId}`, prox)
   await campoProximo(leadId, prox)
-  await removeLeadTags(leadId, [n.reativar.tag]).catch(() => undefined)
+  await removeLeadTags(leadId, [tagNoCard]).catch(() => undefined)
   await addLeadNote(leadId, nota('Follow-up de negociação reativado pelo time', [
     `⏭️ Primeira mensagem: ${quando(prox, agora)}`,
     `♻️ Depois: ${n.dias.slice(1).map(d => `${d - n.dias[0]}d`).join(', ')} após a primeira (sem resposta)`,
