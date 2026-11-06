@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kommo · Indicações de parceiro (Control Gestão)
 // @namespace    https://controlgestao.com.br/
-// @version      3.8.4
+// @version      3.8.5
 // @description  Filtra indicações de TESTE pelo "Comment:", aceita no tempo certo (ou avisa, no modo assistido) e aciona o agente de IA SDR.
 // @match        https://*.kommo.com/*
 // @run-at       document-idle
@@ -273,7 +273,7 @@ var FiltroIndicacao = (function () {
   var pageFetch = W.fetch.bind(W)
   var STORE_KEY = 'cg-indicacoes-v3'
   var DIAG_KEY = 'cg-indicacoes-v3-diag'
-  var VERSAO = '3.8.4'
+  var VERSAO = '3.8.5'
 
   if (W.__INDICACOES__ && W.__INDICACOES__.stop) {
     console.warn('[INDICAÇÕES] já ativo, reiniciando...')
@@ -713,6 +713,8 @@ var FiltroIndicacao = (function () {
       registrarDiag(id, 'conferencia', t.slice(0, 1500))
       // 204 (lista vazia) é resposta válida; só é "desconhecido" se TODAS as leituras falharam
       if (rs.every(function (r) { return r === FALHOU })) return 'desconhecido'
+      // Limite diário de indicações da Kommo (06/11): não diz nada sobre o tempo, não mexe no ajuste
+      if (t.indexOf('daily leads limit') >= 0) return 'limite'
       if (t.indexOf('no longer available') >= 0) return 'cedo'
       if (t.indexOf('already been accepted') >= 0 || t.indexOf('accepted by other partners') >= 0) return 'outros'
       return 'valido'
@@ -776,6 +778,12 @@ var FiltroIndicacao = (function () {
     conferirLead(id).then(function (r) {
       if (r === 'desconhecido' && vez < 3) { agendar(now() + 5000, function () { conferir(id, off, vez + 1) }); return }
       delete emAndamento[id]
+      if (r === 'limite') {
+        log('⛔', id + ': limite diário de indicações da Kommo atingido. O tempo de aceite NÃO muda e a Lara não é avisada.')
+        marcar(id, { estado: 'aceito_invalido', motivo: 'limite diário de indicações da Kommo' })
+        avisar('Limite diário da Kommo', 'Lead ' + id + ': a Kommo bloqueou por limite diário de indicações')
+        return
+      }
       if (r === 'cedo' || r === 'outros') {
         var motivo = r === 'cedo' ? 'aceito cedo demais (no longer available)' : 'outros parceiros já tinham aceitado'
         log('❌', id + ': ' + motivo + '. A Lara NÃO vai falar com esse lead.')

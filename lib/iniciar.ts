@@ -43,7 +43,7 @@ export interface FatosInicio {
   tags: string[]
   comentario: string | null
   /** a Kommo marcou o aceite como inválido ("no longer available" / "already accepted") */
-  invalido?: 'cedo' | 'outros' | null
+  invalido?: 'cedo' | 'outros' | 'limite' | null
   /** só atendemos em português: motivo se a indicação é de outro país/idioma */
   foraDoIdioma?: string | null
   /** pedido de suporte básico da Kommo (não é implantação): motivo */
@@ -68,7 +68,7 @@ export function decidirInicio(f: FatosInicio, cfg = {
   }
   if (f.foraDoIdioma) return { acao: 'outro-idioma', motivo: f.foraDoIdioma }
   if (f.suporte) return { acao: 'suporte', motivo: f.suporte }
-  if (f.invalido) return { acao: 'invalido', motivo: f.invalido === 'cedo' ? 'aceito antes da liberação (The leads is no longer available)' : 'outros parceiros já tinham aceitado (already accepted by other partners)' }
+  if (f.invalido) return { acao: 'invalido', motivo: f.invalido === 'limite' ? 'limite diário de indicações da Kommo atingido (Your daily leads limit has been exceeded)' : f.invalido === 'cedo' ? 'aceito antes da liberação (The leads is no longer available)' : 'outros parceiros já tinham aceitado (already accepted by other partners)' }
   if (f.statusId !== cfg.entrada.statusId || (cfg.entrada.pipelineId && f.pipelineId !== cfg.entrada.pipelineId)) {
     return { acao: 'fora-da-entrada', motivo: `lead em ${f.pipelineId}/${f.statusId}, entrada é ${cfg.entrada.pipelineId || '*'}/${cfg.entrada.statusId}` }
   }
@@ -90,7 +90,7 @@ export async function guardarComentarioIncoming(leadId: number, comentario: stri
   await redis.set(k('incoming', leadId), comentario, { ex: 7 * 86400 })
 }
 
-interface Leitura { comentario: string | null; contexto: ContextoIndicacao; invalido: 'cedo' | 'outros' | null; textoIndicacao: string }
+interface Leitura { comentario: string | null; contexto: ContextoIndicacao; invalido: 'cedo' | 'outros' | 'limite' | null; textoIndicacao: string }
 
 /**
  * Tudo que a indicação carrega. Formato real da conta (25/09/2026): nota "common"

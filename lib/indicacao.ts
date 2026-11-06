@@ -75,8 +75,9 @@ export function extrairContexto(texto: string): ContextoIndicacao {
 }
 
 /** Marcas que a Kommo põe no lead quando o aceite não valeu. */
-export function marcaDeInvalido(texto: string): 'cedo' | 'outros' | null {
+export function marcaDeInvalido(texto: string): 'cedo' | 'outros' | 'limite' | null {
   const t = String(texto || '').toLowerCase()
+  if (t.includes('daily leads limit')) return 'limite'
   if (t.includes('no longer available')) return 'cedo'
   if (t.includes('already been accepted') || t.includes('accepted by other partners')) return 'outros'
   return null

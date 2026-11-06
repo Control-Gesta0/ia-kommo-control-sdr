@@ -492,6 +492,10 @@ export default async function testesCliente(eq: Eq): Promise<number> {
     motivoParaNaoAssumir({ pipeline_id: 4338500, status_id: 40438376, created_at: criado }, ['indicacao-kommo'], agoraCN),
     motivoParaNaoAssumir({ pipeline_id: 4338500, status_id: 40438376, created_at: criado - 3 * 86400 }, [], agoraCN),
   ].every(Boolean), true)
+  // 06/11: limite diário de indicações da Kommo não é "sem telefone" nem aceite válido
+  const { marcaDeInvalido: marcaInv } = await import('../lib/indicacao')
+  eq('nota "daily leads limit" = limite (não é cedo nem outros parceiros)', [marcaInv('Your daily leads limit has been exceeded'), marcaInv('The leads is no longer available')], ['limite', 'cedo'])
+  eq('userscript: limite diário não mexe no tempo de aceite nem avisa a Lara', [/daily leads limit'\) >= 0\) return 'limite'/.test(src), /r === 'limite'[\s\S]{0,400}return\n/.test(src)], [true, true])
   // 05/11: raciocínio do modelo em inglês enviado à Ana; textos reais e mensagens normais
   const { vazouRaciocinio } = await import('../lib/guards')
   eq('raciocínio vazado em inglês é barrado', [
