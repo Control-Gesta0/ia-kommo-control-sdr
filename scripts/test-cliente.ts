@@ -512,6 +512,8 @@ export default async function testesCliente(eq: Eq): Promise<number> {
   eq('recusou o horário ("as 15h nao consigoo") não marca esse horário', pega('hoje vc teria outro horario? pois as 15h nao consigoo'), null)
   eq('recusou um e escolheu outro ("nao consigo / quero amanha as 10h") marca o escolhido', pega('nao consigo\nquero amanha as 10h'), 'amanhã, quinta 05/11 às 10h')
   eq('escolha normal continua valendo', [pega('Amanhã às 10'), pega('Pode ser às 15h')], ['amanhã, quinta 05/11 às 10h', 'hoje, quarta 04/11 às 15h'])
+  // 06/11, Catarine respondeu "14hs" e a Lara perguntou de novo qual horário
+  eq('"15hs", "às 10hs" e "10hrs" contam como escolha', [pega('15hs'), pega('às 10hs'), pega('10hrs')], ['hoje, quarta 04/11 às 15h', 'amanhã, quinta 05/11 às 10h', 'amanhã, quinta 05/11 às 10h'])
   eq('"esses horários são ruins, tem outras opções?" é recusa', [RECUSA_HORARIO.test('Estes horários é ruim\nTem outras opções pra ?'), RECUSA_HORARIO.test('Pode ser amanhã às 10h')], [true, false])
   const { respostaAtrasada } = await import('../lib/llm')
   const agoraT = iso('2026-10-23T14:49:00Z')

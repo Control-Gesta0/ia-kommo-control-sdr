@@ -12,7 +12,13 @@
  *
  * Fuso: America/Sao_Paulo (UTC-3, sem horário de verão desde 2019).
  */
-import { normalizar } from './indicacao'
+import { normalizar as normalizarTexto } from './indicacao'
+
+/**
+ * Normaliza e padroniza o jeito de escrever hora: "14hs", "14hrs" e "14hr" viram "14h"
+ * (06/11, Catarine respondeu "14hs" e a Lara não entendeu a escolha).
+ */
+const normalizar = (t: string) => normalizarTexto(t).replace(/(\d{1,2})\s*h(?:rs?|s)\b/g, '$1h')
 
 export const TZ = 'America/Sao_Paulo'
 const OFFSET_H = 3 // UTC = local + 3h
