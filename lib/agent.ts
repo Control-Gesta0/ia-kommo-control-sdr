@@ -12,7 +12,7 @@ import { kommoPort } from './port'
 import { rotear } from './router'
 import { clearState, getState, patchState } from './state'
 import { aplicarFinalizacao, type ToolCtx } from './tools'
-import { agendarFollowup, cancelarFollowup } from './followup'
+import { agendarFollowup, agendarRetomada, cancelarFollowup } from './followup'
 import { addLeadNote } from './kommo'
 import { nota } from './notas'
 import { k, redis } from './redis'
@@ -184,7 +184,10 @@ export async function processLead(leadId: number, webhookId: string): Promise<vo
   } catch (e) {
     const msg = (e instanceof Error ? e.message : String(e)).slice(0, 300)
     console.error(`[agente] ERRO lead ${leadId} após ${Date.now() - t0}ms: ${msg}`, e)
-    await logExec({ tipo: 'erro', leadId, nome, ms: Date.now() - t0, detalhe: msg })
+    // Queda de rede / instabilidade (OpenAI, Kommo, Google): tenta responder de novo em 1 minuto
+    const passageiro = /fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket|network|timeout|-> 5\d\d|\b50[234]\b/i.test(msg)
+    const retomada = passageiro ? await agendarRetomada(leadId).catch(() => false) : false
+    await logExec({ tipo: 'erro', leadId, nome, ms: Date.now() - t0, detalhe: `${msg}${retomada ? ' · tenta de novo em 1 min' : ''}` })
   } finally {
     await releaseLock(leadId, lockOwner)
   }

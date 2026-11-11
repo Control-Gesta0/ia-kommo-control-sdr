@@ -364,6 +364,13 @@ export async function processarItem(membro: string, gerar: Gerador, agora = Date
     return `ns ${passo}/${total} enviado`
   }
 
+  if (tipo === 'responder') {
+    // Retomada depois de queda de rede no meio da resposta (11/11, Diego: "fetch failed" e silêncio)
+    const { processLead } = await import('./agent')
+    await processLead(leadId, `retomada:${leadId}:${agora}`)
+    return 'retomada da resposta'
+  }
+
   if (tipo === 'convite') {
     // Convite com 2 horários sob demanda (26/10, Thais: qualificada e ficou sem horários): a Lara
     // consulta a agenda de verdade (consultar_horarios grava a oferta, a escolha dela marca sozinha)
@@ -619,6 +626,13 @@ export async function ativarNoShow(leadId: number, origem: string, agora = Date.
     await processLead(leadId, `noshow:${leadId}:${agora}`)
   }
   return `ativado · ${esperando ? 'respondeu as pendentes · ' : ''}próxima tentativa ${new Date(prox).toISOString()}`
+}
+
+/** Erro passageiro no meio da resposta: tenta responder de novo em 1 min (uma vez a cada 10 min por lead). */
+export async function agendarRetomada(leadId: number, agora = Date.now()): Promise<boolean> {
+  if ((await redis.set(k('retomada', leadId), 1, { nx: true, ex: 600 })) !== 'OK') return false
+  await enfileirar(`responder:${leadId}`, agora + MIN)
+  return true
 }
 
 /** Remarcou: a cadência de no-show acaba e a tag sai (pode ser ativada de novo num próximo no-show). */
